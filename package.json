@@ -1,0 +1,25 @@
+{
+  "name": "turbocut",
+  "version": "0.0.1",
+  "description": "A lightweight, cross-platform multi-track video editor with built-in auto captions.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "turbothemes": "github:TurboNZL/turbothemes"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vite": "^8.3.4",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22.6"
+  }
+}
