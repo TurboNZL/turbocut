@@ -22,7 +22,7 @@ export interface TimedWord {
 /**
  * One interface, several places the model can run:
  *  - local:  Transformers.js + WebGPU inside the app (browser, Electron, Android WebView)
- *  - remote: a turbocut transcription server on your LAN (desktop GPU) or any machine you trust
+ *  - remote: a TurboCut transcription server on your LAN (desktop GPU) or any machine you trust
  * The editor never knows which one it is talking to.
  */
 export interface Transcriber {

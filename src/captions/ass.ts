@@ -153,7 +153,7 @@ export interface WriteAssOptions {
 export function writeAss(o: WriteAssOptions): string {
   const lines = [
     '[Script Info]',
-    '; Written by turbocut',
+    '; Written by TurboCut',
     `PlayResX: ${o.playResX}`,
     `PlayResY: ${o.playResY}`,
     'ScaledBorderAndShadow: yes',

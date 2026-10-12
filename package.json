@@ -1,7 +1,7 @@
 {
   "name": "turbocut",
   "version": "0.0.1",
-  "description": "A lightweight, cross-platform multi-track video editor with built-in auto captions.",
+  "description": "TurboCut: a lightweight, cross-platform multi-track video editor with built-in auto captions.",
   "private": true,
   "type": "module",
   "scripts": {

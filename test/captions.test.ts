@@ -45,7 +45,7 @@ describe('presets', () => {
 
   it('rejects junk with a readable reason', () => {
     expect(() => importPreset('nope')).toThrow(PresetError);
-    expect(() => importPreset('{"format":"x"}')).toThrow('Not a turbocut caption preset');
+    expect(() => importPreset('{"format":"x"}')).toThrow('Not a TurboCut caption preset');
     const p = presetFromAss('P', sample);
     const bad = JSON.parse(exportPreset(p));
     bad.animation = { type: 'bounce', frames: 0, overshoot: 1.1 };

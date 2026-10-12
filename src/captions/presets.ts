@@ -36,7 +36,7 @@ export function importPreset(json: string): CaptionPreset {
   } catch {
     throw new PresetError('Not valid JSON');
   }
-  if (data?.format !== 'turbocut.captionPreset') throw new PresetError('Not a turbocut caption preset');
+  if (data?.format !== 'turbocut.captionPreset') throw new PresetError('Not a TurboCut caption preset');
   if (data.version !== 1) throw new PresetError(`Unsupported preset version ${data.version}`);
   if (typeof data.name !== 'string' || !data.name) throw new PresetError('Preset has no name');
   if (!Array.isArray(data.styles) || data.styles.length === 0) throw new PresetError('Preset has no styles');

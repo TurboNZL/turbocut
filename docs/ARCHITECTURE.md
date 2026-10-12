@@ -1,4 +1,4 @@
-# turbocut architecture
+# TurboCut architecture
 
 Goal: a lightweight multi-track editor where **low friction beats high detail**. Shorts (under a minute, 9:16) are the main case; 16:9 edits up to about 20 minutes must also work.
 
