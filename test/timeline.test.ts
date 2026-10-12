@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { audioGain, evalProp, setKeyframe } from '../src/core/keyframes.ts';
+import { audioGain, evalProp, gainAtRel, setKeyframe } from '../src/core/keyframes.ts';
 import { addClip, createClip, createProject, moveClip, projectDuration, rippleDelete, splitAt, trimEnd, trimStart } from '../src/core/timeline.ts';
 import { groupWords, SHORTS_GROUPING } from '../src/transcribe/provider.ts';
 import { parseClipSlug } from '../src/twitch/clip.ts';
@@ -80,6 +80,9 @@ describe('keyframes and audio', () => {
     expect(audioGain(c, 150)).toBe(1);
     expect(audioGain(c, 285)).toBeCloseTo(0.5);
     expect(audioGain(c, 300)).toBe(0);
+    expect(gainAtRel(c, 300)).toBe(0); // fade-out ends silent, inclusive end
+    c.audioFadeOut = 0;
+    expect(gainAtRel(c, 300)).toBe(1);
   });
 });
 

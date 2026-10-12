@@ -40,14 +40,19 @@ export function evalProp(clip: Clip, prop: AnimProp, timelineFrame: Frame): numb
   return sample(keys, timelineFrame - clip.start, fallback);
 }
 
-/** Audio gain at a timeline frame: volume property times linear fade in/out. */
-export function audioGain(clip: Clip, timelineFrame: Frame): number {
+/** Gain at a frame offset inside the clip, for 0 <= rel <= duration (inclusive, so automation can end on the last frame). */
+export function gainAtRel(clip: Clip, rel: number): number {
   if (clip.muted) return 0;
-  const rel = timelineFrame - clip.start;
-  if (rel < 0 || rel >= clip.duration) return 0;
-  let g = evalProp(clip, 'volume', timelineFrame);
+  let g = evalProp(clip, 'volume', clip.start + rel);
   if (clip.audioFadeIn > 0 && rel < clip.audioFadeIn) g *= rel / clip.audioFadeIn;
   const fromEnd = clip.duration - rel;
   if (clip.audioFadeOut > 0 && fromEnd < clip.audioFadeOut) g *= fromEnd / clip.audioFadeOut;
   return g;
+}
+
+/** Audio gain at a timeline frame: volume property times linear fade in/out. Zero outside the clip. */
+export function audioGain(clip: Clip, timelineFrame: Frame): number {
+  const rel = timelineFrame - clip.start;
+  if (rel < 0 || rel >= clip.duration) return 0;
+  return gainAtRel(clip, rel);
 }

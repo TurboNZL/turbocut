@@ -21,6 +21,6 @@ A lightweight, cross-platform multi-track video editor with built-in auto captio
 - Twitch import: paste a clip URL; resolver runs outside the page.
 
 ## Commands
-`pnpm install --ignore-scripts`, `pnpm test`, `pnpm typecheck`.
+`pnpm install --ignore-scripts`, `pnpm test`, `pnpm typecheck`, `pnpm e2e` (real export in headless Chromium; run `e2e/make-media.sh` once first; the sandbox Chromium cannot decode H.264).
 
 ## Unverified (see ARCHITECTURE.md): Android WebView WebCodecs encode, WebGPU Whisper word timestamps, Twitch resolver.

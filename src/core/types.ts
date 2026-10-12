@@ -25,7 +25,8 @@ export const ANIM_DEFAULTS: Record<AnimProp, number> = {
   volume: 1,
 };
 
-export type BlurKind = 'gaussian' | 'box' | 'zoom' | 'pixelate';
+/** Kinds the renderer implements today. Box and zoom blur need a shader pass and are not built yet. */
+export type BlurKind = 'gaussian' | 'pixelate';
 
 export interface BlurEffect {
   type: 'blur';

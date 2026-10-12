@@ -8,13 +8,16 @@
     "dev": "vite",
     "build": "vite build",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e2e": "node e2e/run.mjs"
   },
   "dependencies": {
+    "mediabunny": "^1.61.3",
     "turbothemes": "github:TurboNZL/turbothemes"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "playwright-core": "^1.64.0",
     "typescript": "^5.7.2",
     "vite": "^8.3.4",
     "vitest": "^3.0.0"

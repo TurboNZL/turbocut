@@ -15,9 +15,19 @@ Goal: a lightweight multi-track editor where **low friction beats high detail**.
 | Transcription | `src/transcribe`: one `Transcriber` interface. Providers: local (Transformers.js, WebGPU), and **remote** (a small HTTP protocol, see `provider.ts`) so a phone or browser can use a desktop GPU on the LAN. Words are grouped into short cues with `groupWords`. |
 | Twitch | `src/twitch`: slug parsing plus a `ClipResolver` interface. The resolver runs outside the page (Electron main, Android native, or LAN host) because of CORS. |
 
+## Render and export pipeline (built)
+
+`src/media` decodes and `src/render` composites (cover fit, x/y/scale/rotation/opacity keyframes, gaussian blur, pixelate, captions with the bounce entrance). `src/export` mixes audio in 30 s windows (a single 20 minute stereo buffer would be ~460 MB) and encodes with mediabunny/WebCodecs. Export prefers H.264 + AAC in MP4 and falls back to VP9/AV1 + Opus in WebM when the runtime cannot encode H.264.
+
+Verified by `pnpm e2e` (headless Chromium, real WebCodecs, checked with ffprobe/ffmpeg): output size, exact frame count, audio present, fade in and out levels; and by eye on extracted frames (cut, blur, caption styles). Not covered by an automated check yet: caption pixel position, zoom keyframe values.
+
+**Measured, and it changed the design.** Per frame at 1080x1920 (software-only sandbox, 4 cores, no GPU): random-access decode 154 ms, pipelined sequential decode 15 ms, VP9 encode 37 ms. Export therefore uses one pipelined decoder per clip (`MediaLibrary.sequential`) and random access only for scrubbing. Output was pixel-identical between the two paths. End-to-end export went from 2.5 to about 12 fps. These are software numbers; GPU and hardware-encoder numbers on real devices are unknown.
+
+Known gaps: box blur and zoom blur (need a shader pass, removed from the type until built); audio speed change shifts pitch; no preview playback loop yet; the first decode of a clip is not pre-warmed.
+
 ## Planned, not built yet
 
-1. Preview and export pipeline: WebCodecs decode, canvas/WebGPU compositing (transform, opacity, blur), WebCodecs encode, a muxer (mediabunny is the candidate).
+1. Playback and scrubbing preview (use `getFrame` for scrubs, a sequential feed for play).
 2. Timeline UI, shortcuts, theme picker wiring.
 3. Electron main + preload, Capacitor project.
 4. Local Whisper provider, reference transcription server.
@@ -25,6 +35,7 @@ Goal: a lightweight multi-track editor where **low friction beats high detail**.
 
 ## Not verified yet (do not rely on these)
 
+- **Codec support differs by runtime.** The sandbox Chromium has no H.264/AAC encoder (tested with `isConfigSupported`); Electron and Android WebView may. Check at startup with the same negotiation the exporter uses.
 - **Android WebView WebCodecs.** Support is listed from WebView 94 on a docs mirror, but I have not confirmed hardware encode, nor tested in a Capacitor app. Needs a device test before the export design is final. Fallback if poor: native MediaCodec encode via a Capacitor plugin.
 - **Word timestamps with Transformers.js on WebGPU.** An older upstream issue said they were unsupported; I have not checked whether it was resolved. This is the first thing to prove, because word-by-word captions depend on it. The remote provider and a CPU path are the fallbacks.
 - **Twitch resolver.** Community tools fetch a playback token through Twitch's unofficial GraphQL endpoint and append `sig` and `token` to the quality's source URL. The query hash and client id can change without notice, and downloading may conflict with Twitch's terms or the creator's rights. Not implemented; will be tested against a live clip before it is trusted.
