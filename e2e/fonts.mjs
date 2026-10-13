@@ -64,6 +64,9 @@ try {
   // remove: gone from the page and the device, default falls back
   await page.getByRole('button', { name: 'Remove Turbo Test Font' }).click();
   await page.waitForFunction(() => ![...document.fonts].some((f) => f.family.replace(/"/g, '') === 'Turbo Test Font'));
+  // removal is several awaited steps (page, storage, default, redraw): wait for the end of them, not the first
+  await page.waitForFunction(() => window.turbocutApp.store.settings.defaultFont !== 'Turbo Test Font', null, { timeout: 10000 });
+  await page.waitForFunction(() => /None yet/.test(document.querySelector('.font-manager')?.textContent ?? ''), null, { timeout: 10000 });
   const after = await state();
   assert.notEqual(after.def, 'Turbo Test Font', 'default no longer points at a removed font');
   await page.reload();

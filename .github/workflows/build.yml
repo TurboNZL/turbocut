@@ -12,9 +12,12 @@ on:
     paths-ignore: ['docs/**', '*.md']
   workflow_dispatch:
 
+# One build at a time for the whole repository. Two runs (for example the same commit pushed to a branch and to main)
+# would pick the same next version number and the second release would fail with "tag already exists".
+# A run waiting behind another is replaced by a newer one; the one already running is never cancelled mid-release.
 concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: true
+  group: build
+  cancel-in-progress: false
 
 permissions:
   contents: read
