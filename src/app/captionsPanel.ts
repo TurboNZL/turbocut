@@ -10,33 +10,18 @@ import { importFont } from './fonts.ts';
 import { pickFiles, saveFile } from './platform.ts';
 import type { Store } from './store.ts';
 
-const SETTINGS = 'turbocut.transcribe';
-interface Settings {
-  mode: string;
-  url: string;
-  token: string;
-  lang: string;
-  model: string;
-  compute: Compute;
-}
-const DEFAULTS: Settings = { mode: 'local', url: '', token: '', lang: 'english', model: MODELS[0].id, compute: 'auto' };
-const load = (): Settings => {
-  try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS) ?? '{}') };
-  } catch {
-    return { ...DEFAULTS };
-  }
-};
-
 export class CaptionsPanel {
   readonly el = h('div', { class: 'caps' });
   private list = h('div', { class: 'cue-list' });
   private abort: AbortController | null = null;
+  /** Set by the app so the panel can open Settings on the Captions tab. */
+  openEngineSettings?: () => void;
   private report = '';
   private reportBtn = h('button', { class: 'btn', style: { display: 'none' }, onclick: () => navigator.clipboard?.writeText(this.report).then(() => this.store.say('Captions report copied.')) }, 'Copy captions report');
 
   constructor(private store: Store) {
     store.on('preset', () => this.build());
+    store.on('settings', () => this.build());
     store.on('project', () => this.renderCues());
     store.on('selection', () => this.renderCues());
     this.build();
@@ -55,41 +40,28 @@ export class CaptionsPanel {
     const fontBtn = h('button', { class: 'btn', onclick: () => this.importFont() }, 'Add font');
     const fontNote = h('p', { class: 'hint' }, `Style uses: ${[...new Set(store.preset.styles.map((s) => s.fontname))].join(', ')}. If a font is missing, add its file here and it is remembered on this device.`);
 
-    // auto captions
-    const s = load();
-    const mode = h('select', { class: 'input' }, h('option', { value: 'local', selected: s.mode === 'local' }, 'On this device'), h('option', { value: 'remote', selected: s.mode === 'remote' }, 'Server on my network'));
-    const url = h('input', { class: 'input', placeholder: 'http://192.168.1.20:8787', value: s.url, 'aria-label': 'Server address' });
-    const token = h('input', { class: 'input', type: 'password', placeholder: 'Access token (optional)', value: s.token, 'aria-label': 'Server token' });
-    // English is the default: with a multilingual model, auto-detect can pick the wrong language on game or
-    // stream audio and then produce text that makes no sense.
-    const lang = h('input', { class: 'input', placeholder: 'Language, e.g. english (blank = detect)', value: s.lang, 'aria-label': 'Language' });
-    const model = h('select', { class: 'input', 'aria-label': 'Speech model' }, ...MODELS.map((m) => h('option', { value: m.id, selected: m.id === s.model }, m.label)));
-    const compute = h('select', { class: 'input', 'aria-label': 'Processor' },
-      h('option', { value: 'auto', selected: s.compute === 'auto' }, 'Processor: automatic'),
-      h('option', { value: 'webgpu', selected: s.compute === 'webgpu' }, 'Processor: graphics chip (WebGPU)'),
-      h('option', { value: 'wasm', selected: s.compute === 'wasm' }, 'Processor: CPU (slower, most compatible)'));
-    const localBox = h('div', { class: 'stack' }, model, compute);
-    const remoteBox = h('div', { class: 'stack' }, url, token);
-    const sync = () => {
-      remoteBox.style.display = mode.value === 'remote' ? '' : 'none';
-      localBox.style.display = mode.value === 'remote' ? 'none' : '';
-      localStorage.setItem(SETTINGS, JSON.stringify({ mode: mode.value, url: url.value, token: token.value, lang: lang.value, model: model.value, compute: compute.value }));
+    // Auto captions: the engine (device or server, model, processor, language) is chosen in Settings.
+    const summary = h('p', { class: 'hint' });
+    const describeEngine = () => {
+      const t = this.store.settings.transcribe;
+      const model = MODELS.find((m) => m.id === t.model)?.label ?? t.model;
+      summary.textContent = t.mode === 'remote' ? `Engine: server ${t.url || '(not set)'}, ${t.lang || 'language detected'}.` : `Engine: this device, ${model}, ${t.lang || 'language detected'}.`;
     };
-    for (const el of [mode, url, token, lang, model, compute]) el.addEventListener('change', sync);
-    sync();
+    describeEngine();
+    const change = h('button', { class: 'btn btn-ghost', onclick: () => this.openEngineSettings?.() }, 'Change…');
     const progress = h('progress', { class: 'prog', max: 1, value: 0, style: { display: 'none' } });
     const go = h('button', { class: 'btn btn-accent' }, 'Generate captions');
     const cancel = h('button', { class: 'btn', style: { display: 'none' } }, 'Cancel');
     cancel.addEventListener('click', () => this.abort?.abort());
     go.addEventListener('click', async () => {
-      sync();
       go.disabled = true;
       cancel.style.display = '';
       progress.style.display = '';
       progress.removeAttribute('value');
       this.abort = new AbortController();
       try {
-        await this.generate(mode.value, url.value.trim(), token.value.trim() || undefined, lang.value.trim() || undefined, { model: model.value, compute: compute.value as Compute }, (label, f) => {
+        const t = this.store.settings.transcribe;
+        await this.generate(t.mode, t.url, t.token || undefined, t.lang || undefined, { model: t.model, compute: t.compute }, (label, f) => {
           store.say(label);
           if (f != null) progress.value = f;
           else progress.removeAttribute('value');
@@ -115,14 +87,10 @@ export class CaptionsPanel {
       h('div', { class: 'row' }, importPresetBtn, exportPresetBtn, fontBtn),
       fontNote,
       h('div', { class: 'bt-panel-title' }, 'Auto captions'),
-      mode,
-      localBox,
-      remoteBox,
-      lang,
-      h('div', { class: 'row' }, go, cancel),
+      summary,
+      h('div', { class: 'row' }, go, cancel, change),
       progress,
       this.reportBtn,
-      h('p', { class: 'hint' }, 'On this device downloads a speech model (about 80 MB) the first time, then works offline.'),
       h('div', { class: 'bt-panel-title' }, 'Captions'),
       h('div', { class: 'row' }, addCue, assIn, assOut, clear),
       this.list,

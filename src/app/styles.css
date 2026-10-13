@@ -110,3 +110,27 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; padding: 0 0.35rem;
   input[type='number'].input, select.input, input.input { min-height: 44px; }
   .kf { min-width: 44px; }
 }
+
+/* ---------------------------------------------------------------- settings dialog */
+.dlg-wide { width: min(780px, calc(100vw - 16px)); height: min(640px, calc(100vh - 16px)); }
+.dlg-wide .bt-body { flex: 1; min-height: 0; padding: 0; display: flex; }
+.settings { display: grid; grid-template-columns: 150px minmax(0, 1fr); flex: 1; min-height: 0; width: 100%; }
+.settings-nav { display: flex; flex-direction: column; border-right: 1px solid hsl(var(--line)); overflow-y: auto; }
+.settings-nav .bt-tab { text-align: left; justify-content: flex-start; padding: 0.7rem 0.9rem; }
+.settings-body { overflow-y: auto; padding: 0.9rem; min-width: 0; }
+.setting { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.3rem 0; }
+.setting.col { flex-direction: column; gap: 0.25rem; }
+.setting input[type='checkbox'] { margin-top: 0.25rem; }
+.setting small { display: block; }
+.key-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) auto auto; gap: 0.4rem; align-items: center; padding: 0.2rem 0; border-bottom: 1px solid hsl(var(--line) / 0.4); }
+.key-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.kbd-chip { font-family: ui-monospace, Menlo, Consolas, monospace; min-height: 0; padding: 0.1rem 0.5rem; }
+.capture { padding: 0.7rem; border: 2px dashed hsl(var(--accent)); border-radius: var(--radius, 6px); text-align: center; }
+.edit-bar .btn.on { outline: 2px solid hsl(var(--accent)); outline-offset: -2px; }
+@media (max-width: 640px) {
+  .settings { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .settings-nav { flex-direction: row; border-right: 0; border-bottom: 1px solid hsl(var(--line)); overflow-x: auto; overflow-y: hidden; }
+  .settings-nav .bt-tab { flex: none; }
+  .key-row { grid-template-columns: 1fr auto; }
+  .key-label { grid-column: 1 / -1; font-weight: 600; }
+}

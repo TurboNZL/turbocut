@@ -114,11 +114,34 @@ try {
   console.log('after moving selected clip +60px:', JSON.stringify(st.clips));
   assert.ok(st.clips[1][0] - before3 >= 10, 'dragging the selected clip body moves it');
 
-  // 7. Pinch to zoom (informational: reported, asserted only if the page received it).
-  const z0 = (await state()).zoom;
-  await cdp.send('Input.synthesizePinchGesture', { x: 195, y: 560, scaleFactor: 2, relativeSpeed: 400, gestureSourceType: 'touch' }).catch((e) => console.log('pinch not available:', e.message));
+  // 7. Pinch to zoom with two real fingers: spread zooms in, pinch zooms out, and the frame in the middle stays put.
+  await page.evaluate(() => window.turbocutApp.store.setZoom(3));
+  await page.evaluate(() => window.turbocutApp.store.seek(40));
   await page.waitForTimeout(300);
-  console.log('zoom before/after pinch:', z0, (await state()).zoom);
+  const y = (await rect('.tl-track.tl-video')).y + 20;
+  const two = async (a0, b0, a1, b1, steps = 8) => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: a0, y, id: 1 }, { x: b0, y, id: 2 }] });
+    for (let i = 1; i <= steps; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: a0 + ((a1 - a0) * i) / steps, y, id: 1 }, { x: b0 + ((b1 - b0) * i) / steps, y, id: 2 }] });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(250);
+  };
+  const z0 = (await state()).zoom, f0 = (await state()).playhead;
+  await two(170, 220, 100, 290); // fingers 50 px apart -> 190 px apart: about 3.8x
+  let st2 = await state();
+  console.log(`pinch out (spread): zoom ${z0} -> ${st2.zoom.toFixed(2)}, playhead ${f0} -> ${st2.playhead}`);
+  assert.ok(st2.zoom > z0 * 2, 'spreading two fingers zooms in');
+  assert.ok(Math.abs(st2.playhead - f0) <= 2, 'the frame under the middle marker stays put while zooming');
+  assert.ok(Math.abs(st2.scrollLeft - st2.playhead * st2.zoom) < 4, 'and stays centred');
+  const z1 = st2.zoom;
+  await two(100, 290, 170, 220); // back together
+  st2 = await state();
+  console.log(`pinch in: zoom ${z1.toFixed(2)} -> ${st2.zoom.toFixed(2)}, playhead ${st2.playhead}`);
+  assert.ok(st2.zoom < z1 / 2, 'pinching two fingers together zooms out');
+  assert.ok(Math.abs(st2.playhead - f0) <= 2, 'playhead still where it was');
+  assert.deepEqual((await state()).clips, st.clips ?? (await state()).clips, 'zooming does not touch the clips');
 
   await page.screenshot({ path: `${out}touch-final.png` });
   assert.deepEqual(errors, [], 'no page errors');

@@ -28,12 +28,12 @@ export const fmtTime = (frames: number, fps: number): string => {
 };
 
 /** Show a themed dialog (uses the turbothemes `.bt-window` hooks). Resolves nothing; call `close()`. */
-export function dialog(title: string, body: Node, buttons: HTMLElement[] = []): { close: () => void; el: HTMLElement } {
+export function dialog(title: string, body: Node, buttons: HTMLElement[] = [], extraClass = ''): { close: () => void; el: HTMLElement } {
   const backdrop = h('div', { class: 'bt-backdrop dlg-backdrop' });
   const close = () => backdrop.remove();
   const win = h(
     'div',
-    { class: 'bt-window dlg', role: 'dialog', 'aria-label': title },
+    { class: `bt-window dlg ${extraClass}`.trim(), role: 'dialog', 'aria-label': title },
     h('div', { class: 'bt-titlebar' }, h('span', {}, title), h('button', { class: 'bt-close', 'aria-label': 'Close', onclick: close }, '×')),
     h('div', { class: 'bt-body' }, body),
     buttons.length ? h('div', { class: 'bt-footer' }, buttons) : null,

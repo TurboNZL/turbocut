@@ -3,8 +3,13 @@ import { createProject } from '../core/timeline.ts';
 import type { Frame, Project } from '../core/types.ts';
 import { MediaLibrary } from '../media/library.ts';
 import { BUILTIN_PRESET } from './builtin.ts';
+import { loadSettings, saveSettings, type Settings } from './settings.ts';
 
-export type Topic = 'project' | 'playhead' | 'selection' | 'play' | 'view' | 'status' | 'preset';
+export type Topic = 'project' | 'playhead' | 'selection' | 'play' | 'view' | 'status' | 'preset' | 'settings';
+
+/** Timeline zoom limits in pixels per frame: from a whole 20 minute edit on a phone to single frames. */
+export const ZOOM_MIN = 0.02;
+export const ZOOM_MAX = 40;
 
 const PRESETS_KEY = 'turbocut.presets';
 const ACTIVE_KEY = 'turbocut.preset.active';
@@ -29,6 +34,7 @@ export class Store {
   /** Timeline zoom in CSS pixels per frame. */
   zoom = 3;
   status = '';
+  settings: Settings = loadSettings(typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
   presets: CaptionPreset[] = [BUILTIN_PRESET, ...readPresets()];
   preset: CaptionPreset = this.presets.find((p) => p.name === localStorage.getItem(ACTIVE_KEY)) ?? BUILTIN_PRESET;
 
@@ -80,6 +86,19 @@ export class Store {
     const ids = new Set(this.project.tracks.flatMap((t) => t.clips.map((c) => c.id)));
     if (this.selected && !ids.has(this.selected)) this.selected = null;
     this.emit('project', 'selection');
+  }
+
+  /** Change settings (and keep them). */
+  updateSettings(patch: Partial<Settings> | ((s: Settings) => void)): void {
+    if (typeof patch === 'function') patch(this.settings);
+    else Object.assign(this.settings, patch);
+    saveSettings(this.settings);
+    this.emit('settings');
+  }
+
+  setZoom(z: number): void {
+    this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+    this.emit('view');
   }
 
   seek(frame: Frame): void {

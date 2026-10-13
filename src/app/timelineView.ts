@@ -31,6 +31,7 @@ export class TimelineView {
   private pad = HEAD_W;
   private dragging = false;
   private fromScroll = false;
+  private pinching = false;
   private lastWritten = -1;
 
   constructor(private store: Store, private opts: TimelineOptions = {}) {
@@ -40,10 +41,13 @@ export class TimelineView {
     if (this.touch) this.el.append(this.playhead);
     store.on('project', () => this.render());
     store.on('selection', () => this.render());
-    store.on('view', () => this.render());
+    store.on('view', () => this.applyZoom());
     store.on('preset', () => this.render());
+    store.on('settings', () => this.render());
     store.on('playhead', () => this.movePlayhead());
     this.scroller.addEventListener('scroll', () => this.onScroll(), { passive: true });
+    this.scroller.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+    this.setupPinch();
     this.scroller.addEventListener('pointerdown', () => this.opts.onUserTouch?.());
     new ResizeObserver(() => this.render()).observe(this.scroller);
     this.el.addEventListener('contextmenu', (e) => e.preventDefault()); // no long-press menu on clips
@@ -61,6 +65,7 @@ export class TimelineView {
   }
 
   private snap(frame: number, points: number[]): number {
+    if (!this.store.settings.snapping) return frame;
     const tol = (this.touch ? 14 : 8) / this.store.zoom;
     let best = frame;
     let d = tol;
@@ -68,23 +73,56 @@ export class TimelineView {
     return best;
   }
 
-  render(): void {
+  /** Frame at the far end of the timeline: past the last clip, with room to work. */
+  private endFrame(): number {
+    const { project: p } = this.store;
+    return Math.max(p.fps * 20, ...p.tracks.flatMap((t) => t.clips.map(clipEnd)), ...p.captions.map((c) => c.end)) + (this.touch ? 0 : p.fps * 10);
+  }
+
+  private contentWidth(): number {
+    return this.pad + this.endFrame() * this.store.zoom + (this.touch ? this.pad : 0);
+  }
+
+  private fillRuler(ruler: HTMLElement): void {
     const { project: p, zoom } = this.store;
+    const end = this.endFrame();
+    const step = [1, 2, 5, 10, 15, 30, 60, 120, 300].find((s) => s * p.fps * zoom >= 70) ?? 600; // seconds between labels
+    ruler.replaceChildren();
+    for (let s = 0; s * p.fps < end; s += step) ruler.append(h('span', { class: 'tl-tick', style: { left: `${this.pad + s * p.fps * zoom}px` } }, fmtTime(s * p.fps, p.fps).replace(/\.\d+$/, '')));
+  }
+
+  /**
+   * Zoom without rebuilding anything: move and resize the elements that are already there. Rebuilding would remove the
+   * element a finger is touching, and the browser then stops sending touch events, which broke pinch-to-zoom.
+   */
+  private applyZoom(): void {
+    const z = this.store.zoom;
+    this.content.style.width = `${this.contentWidth()}px`;
+    for (const el of this.content.querySelectorAll<HTMLElement>('[data-start]')) {
+      el.style.left = `${this.pad + Number(el.dataset.start) * z}px`;
+      el.style.width = `${Math.max(2, Number(el.dataset.dur) * z)}px`;
+    }
+    for (const el of this.content.querySelectorAll<HTMLElement>('[data-edge]')) el.style.left = `${this.pad + Number(el.dataset.edge) * z - 16}px`;
+    const ruler = this.content.querySelector<HTMLElement>('.tl-ruler');
+    if (ruler) this.fillRuler(ruler);
+    this.movePlayhead(true);
+  }
+
+  render(): void {
+    const { project: p } = this.store;
     const view = this.scroller.clientWidth;
     this.pad = this.touch ? Math.round(view / 2) : HEAD_W;
-    const end = Math.max(p.fps * 20, ...p.tracks.flatMap((t) => t.clips.map(clipEnd)), ...p.captions.map((c) => c.end)) + (this.touch ? 0 : p.fps * 10);
-    const width = this.pad + end * zoom + (this.touch ? this.pad : 0);
-    const content = h('div', { class: 'tl-content', style: { width: `${width}px` } });
+    const content = h('div', { class: 'tl-content', style: { width: `${this.contentWidth()}px` } });
 
-    // ruler
-    const step = [1, 2, 5, 10, 15, 30, 60, 120, 300].find((s) => s * p.fps * zoom >= 70) ?? 600; // seconds between labels
     const ruler = h('div', { class: 'tl-ruler' });
-    for (let s = 0; s * p.fps < end; s += step) ruler.append(h('span', { class: 'tl-tick', style: { left: `${this.pad + s * p.fps * zoom}px` } }, fmtTime(s * p.fps, p.fps).replace(/\.\d+$/, '')));
+    this.fillRuler(ruler);
     if (!this.touch) ruler.addEventListener('pointerdown', (e) => this.scrub(e));
     content.append(ruler);
 
-    // tracks, top of the screen = last track (higher layers above)
-    for (const track of [...p.tracks].reverse()) content.append(this.trackRow(track));
+    // Within a kind the highest track is on top (higher layers above). The setting picks which kind is on top.
+    const videoOnTop = this.store.settings.videoOnTop;
+    const ordered = [...p.tracks].reverse().sort((a, b) => (a.kind === b.kind ? 0 : (a.kind === 'video') === videoOnTop ? -1 : 1));
+    for (const track of ordered) content.append(this.trackRow(track));
     content.append(this.captionRow());
     if (!this.touch) content.append(this.playhead);
 
@@ -103,7 +141,7 @@ export class TimelineView {
       if (isSel) selectedClip = clip;
       const el = h(
         'div',
-        { class: `tl-clip${isSel ? ' sel' : ''}${clip.muted ? ' muted' : ''}`, style: { left: `${this.pad + this.px(clip.start)}px`, width: `${Math.max(2, this.px(clip.duration))}px` }, title: asset?.name },
+        { class: `tl-clip${isSel ? ' sel' : ''}${clip.muted ? ' muted' : ''}`, 'data-start': clip.start, 'data-dur': clip.duration, style: { left: `${this.pad + this.px(clip.start)}px`, width: `${Math.max(2, this.px(clip.duration))}px` }, title: asset?.name },
         h('span', { class: 'tl-name' }, asset?.name ?? ''),
         clip.effects.length ? h('span', { class: 'tl-fx' }, 'fx') : null,
         Object.values(clip.keys).some((k) => k?.length) ? h('span', { class: 'tl-fx' }, '◆') : null,
@@ -118,7 +156,7 @@ export class TimelineView {
     if (this.touch && selectedClip) {
       for (const side of ['left', 'right'] as const) {
         const x = this.pad + this.px(side === 'left' ? selectedClip.start : clipEnd(selectedClip));
-        const handle = h('div', { class: `tl-handle ${side}`, style: { left: `${x - 16}px` }, 'aria-label': side === 'left' ? 'Trim start' : 'Trim end' }, h('i'));
+        const handle = h('div', { class: `tl-handle ${side}`, 'data-edge': side === 'left' ? selectedClip.start : clipEnd(selectedClip), style: { left: `${x - 16}px` }, 'aria-label': side === 'left' ? 'Trim start' : 'Trim end' }, h('i'));
         const c = selectedClip;
         handle.addEventListener('pointerdown', (e) => this.clipDrag(e, c, track, side));
         row.append(handle);
@@ -139,7 +177,7 @@ export class TimelineView {
     const { project: p } = this.store;
     const row = h('div', { class: 'tl-track tl-caption' }, h('div', { class: 'tl-head' }, 'CC'));
     for (const cue of p.captions) {
-      const el = h('div', { class: `tl-clip tl-cue${cue.id === this.store.selectedCue ? ' sel' : ''}`, style: { left: `${this.pad + this.px(cue.start)}px`, width: `${Math.max(2, this.px(cue.end - cue.start))}px` }, title: cue.text }, h('span', { class: 'tl-name' }, cue.text));
+      const el = h('div', { class: `tl-clip tl-cue${cue.id === this.store.selectedCue ? ' sel' : ''}`, 'data-start': cue.start, 'data-dur': cue.end - cue.start, style: { left: `${this.pad + this.px(cue.start)}px`, width: `${Math.max(2, this.px(cue.end - cue.start))}px` }, title: cue.text }, h('span', { class: 'tl-name' }, cue.text));
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         this.store.selectedCue = cue.id;
@@ -166,10 +204,11 @@ export class TimelineView {
     e.stopPropagation();
     e.preventDefault();
     const store = this.store;
-    store.select(clip.id);
-    const el = e.currentTarget as HTMLElement;
-    const rect = el.getBoundingClientRect();
+    // Measure BEFORE selecting: selecting re-renders the timeline and detaches this element, and a detached element
+    // measures as zero, which made every grab look like the end handle.
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const mode: 'move' | 'left' | 'right' = forced ?? (e.clientX - rect.left < EDGE ? 'left' : rect.right - e.clientX < EDGE ? 'right' : 'move');
+    store.select(clip.id);
     const startX = e.clientX;
     const startY = e.clientY;
     const origStart = clip.start;
@@ -191,9 +230,14 @@ export class TimelineView {
       let edgeFrame = cur.start;
       if (mode === 'move') {
         let start = origStart + dx;
-        const s1 = this.snap(start, points);
-        const s2 = this.snap(start + cur.duration, points) - cur.duration;
-        start = Math.abs(s1 - start) <= Math.abs(s2 - start) ? s1 : s2;
+        // Try snapping the clip's start and its end. A candidate that snapped beats one that did not; if both snapped, the nearer wins.
+        const a = this.snap(start, points);
+        const b = this.snap(start + cur.duration, points) - cur.duration;
+        const aSnapped = a !== start;
+        const bSnapped = b !== start;
+        if (aSnapped && bSnapped) start = Math.abs(a - start) <= Math.abs(b - start) ? a : b;
+        else if (aSnapped) start = a;
+        else if (bSnapped) start = b;
         // Which track is the pointer over? Only same-kind tracks accept the clip.
         const under = document.elementsFromPoint(ev.clientX, ev.clientY).find((n) => (n as HTMLElement).dataset?.track) as HTMLElement | undefined;
         const toTrack = under?.dataset.track && store.project.tracks.find((t) => t.id === under.dataset.track && t.kind === track.kind) ? under.dataset.track : undefined;
@@ -235,9 +279,58 @@ export class TimelineView {
     this.tip.style.top = `${Math.max(2, y - r.top - 64)}px`;
   }
 
+  /** Zoom while keeping the frame under `clientX` where it is, so the timeline grows around the cursor. */
+  private zoomAt(newZoom: number, clientX: number): void {
+    const s = this.scroller;
+    const x = clientX - s.getBoundingClientRect().left;
+    const frame = (s.scrollLeft + x - this.pad) / this.store.zoom;
+    this.store.setZoom(newZoom); // re-renders synchronously
+    if (!this.touch) s.scrollLeft = Math.max(0, this.pad + frame * this.store.zoom - x);
+  }
+
+  /** Ctrl+wheel or Alt+wheel (and a laptop trackpad pinch, which arrives as Ctrl+wheel) zooms; Shift+wheel scrolls sideways. */
+  private onWheel(e: WheelEvent): void {
+    if (e.ctrlKey || e.altKey) {
+      e.preventDefault();
+      this.zoomAt(this.store.zoom * Math.exp(-e.deltaY * 0.0022), e.clientX);
+    } else if (e.shiftKey && !this.touch) {
+      e.preventDefault();
+      this.scroller.scrollLeft += e.deltaY || e.deltaX;
+    }
+  }
+
+  /** Two fingers on the timeline: spread to zoom in, pinch to zoom out, around the playhead in the middle. */
+  private setupPinch(): void {
+    let start: { dist: number; zoom: number } | null = null;
+    const dist = (t: TouchList) => Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY);
+    const s = this.scroller;
+    s.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        start = { dist: dist(e.touches), zoom: this.store.zoom };
+        this.pinching = true;
+        this.opts.onUserTouch?.();
+      }
+    }, { passive: true });
+    s.addEventListener('touchmove', (e) => {
+      if (!start || e.touches.length !== 2) return;
+      if (e.cancelable) e.preventDefault(); // once the browser has begun scrolling this cannot be cancelled; the scroll is ignored below
+      const mid = (e.touches[0]!.clientX + e.touches[1]!.clientX) / 2;
+      this.zoomAt(start.zoom * (dist(e.touches) / start.dist), this.touch ? s.getBoundingClientRect().left + s.clientWidth / 2 : mid);
+    }, { passive: false });
+    const end = (e: TouchEvent) => {
+      if (e.touches.length < 2 && start) {
+        start = null;
+        this.pinching = false;
+        this.movePlayhead(true);
+      }
+    };
+    s.addEventListener('touchend', end, { passive: true });
+    s.addEventListener('touchcancel', end, { passive: true });
+  }
+
   /** Touch: the person scrolled the timeline, so that is the new playhead position. */
   private onScroll(): void {
-    if (!this.touch || this.dragging) return;
+    if (!this.touch || this.dragging || this.pinching) return;
     // A scroll we wrote ourselves (following playback, or after a drag) must not seek again.
     if (Math.abs(this.scroller.scrollLeft - this.lastWritten) < 2) return;
     this.lastWritten = -1;

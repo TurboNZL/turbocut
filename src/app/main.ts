@@ -1,20 +1,23 @@
 import 'turbothemes/base.css';
 import './styles.css';
 import { start } from 'turbothemes';
-import { addClip, clipEnd, createClip, newId, projectDuration, removeLinked, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
+import { projectDuration } from '../core/timeline.ts';
 import { exportProject } from '../export/exporter.ts';
 import { mixWindow } from '../export/audio.ts';
 import { drawVideo } from '../render/compose.ts';
 import { VideoSampleSink } from 'mediabunny';
+import { Actions } from './actions.ts';
 import { CaptionsPanel } from './captionsPanel.ts';
-import { deviceCheck } from './deviceCheck.ts';
-import { dialog, fmtTime, h } from './dom.ts';
+import { fmtTime, h } from './dom.ts';
 import { importFont, loadStoredFonts } from './fonts.ts';
+import { Hotkeys, type HotkeyAction } from './hotkeys.ts';
 import { Inspector } from './inspector.ts';
-import { keepAwake, pickFiles, platform, saveFile } from './platform.ts';
+import { pickFiles, platform } from './platform.ts';
 import { Player } from './player.ts';
-import { Store } from './store.ts';
+import { openSettings, capturingKey, type SettingsTab } from './settingsDialog.ts';
+import { Store, ZOOM_MAX, ZOOM_MIN } from './store.ts';
 import { TimelineView } from './timelineView.ts';
+import { checkForUpdate } from './updater.ts';
 
 // Phones and some webviews cannot do the Liquid Glass lens; everything else about the look still applies.
 const themes = start({ persist: true, picker: true, lens: platform === 'web' || platform === 'electron', appearance: { theme: 'auto', ui: 'auto' } });
@@ -22,118 +25,53 @@ void loadStoredFonts();
 
 const store = new Store();
 const player = new Player(store);
+const actions = new Actions(store, player);
 const timeline = new TimelineView(store, { onUserTouch: () => store.playing && player.pause() });
 const inspector = new Inspector(store);
 const captions = new CaptionsPanel(store);
+const hotkeys = new Hotkeys(() => store.settings.hotkeys, (o) => store.updateSettings({ hotkeys: o }));
+const touch = timeline.touch;
+const settings = (tab?: SettingsTab) => openSettings({ store, hotkeys, touch }, tab);
+captions.openEngineSettings = () => settings('Captions');
 
-// ---------------------------------------------------------------- actions
-async function importMedia(files: File[]): Promise<void> {
-  for (const file of files) {
-    try {
-      store.say(`Importing ${file.name}…`);
-      const asset = await store.lib.importFile(file, file.name, store.project.fps);
-      store.edit((p) => {
-        p.assets[asset.id] = asset;
-        const v = p.tracks.find((t) => t.kind === 'video')!;
-        const a = p.tracks.find((t) => t.kind === 'audio')!;
-        const startOf = (t: typeof v) => t.clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
-        const at = asset.hasVideo ? startOf(v) : startOf(a);
-        const link = asset.hasVideo && asset.hasAudio ? newId('l') : undefined;
-        if (asset.hasVideo) addClip(p, v.id, { ...createClip(asset.id, at, asset.duration), link });
-        if (asset.hasAudio) addClip(p, a.id, { ...createClip(asset.id, at, asset.duration), link });
-      });
-      store.say(`Imported ${file.name}.`);
-    } catch (e) {
-      store.say(`Could not open ${file.name}: ${e instanceof Error ? e.message : e}. This device may not support its format.`);
-    }
-  }
-}
+const importFiles = async () => actions.importMedia(await pickFiles('video/*,audio/*,.mkv,.webm,.mov', true));
 
-function split(): void {
-  const p = store.project;
-  const f = store.playhead;
-  store.edit(() => {
-    if (store.selected) splitLinked(p, store.selected, f);
-    else for (const t of p.tracks) if (!t.locked) for (const c of [...t.clips]) if (f > c.start && f < clipEnd(c)) splitLinked(p, c.id, f);
-  });
-}
-
-function remove(ripple: boolean): void {
-  if (store.selectedCue) {
-    const id = store.selectedCue;
-    store.selectedCue = null;
-    store.edit((p) => (p.captions = p.captions.filter((c) => c.id !== id)));
-    return;
-  }
-  if (!store.selected) return;
-  const id = store.selected;
-  store.select(null);
-  store.edit((p) => removeLinked(p, id, ripple));
-}
-
-function trimToPlayhead(side: 'start' | 'end'): void {
-  if (!store.selected) return;
-  const id = store.selected;
-  store.edit((p) => {
-    const group = p.tracks.flatMap((t) => t.clips).filter((c) => c.id === id || (c.link && c.link === p.tracks.flatMap((t) => t.clips).find((x) => x.id === id)?.link));
-    for (const c of group) (side === 'start' ? trimStart : trimEnd)(p, c.id, store.playhead);
-  });
-}
-
-async function runExport(): Promise<void> {
-  if (projectDuration(store.project) === 0) return store.say('Nothing to export yet. Import a clip first.');
-  player.pause();
-  const abort = new AbortController();
-  const bar = h('progress', { class: 'prog', max: 1, value: 0 });
-  const info = h('p', { class: 'hint' }, 'Rendering at full size. Keep this screen open.');
-  const cancel = h('button', { class: 'btn', onclick: () => abort.abort() }, 'Cancel');
-  const dlg = dialog('Exporting', h('div', { class: 'stack' }, bar, info), [cancel]);
-  const release = await keepAwake();
-  try {
-    const r = await exportProject(store.project, store.lib, { preset: store.preset, signal: abort.signal, onProgress: (f) => (bar.value = f) });
-    const name = `${store.project.name || 'TurboCut'}.${r.container}`;
-    bar.value = 1;
-    info.textContent = `Done: ${r.videoCodec}${r.audioCodec ? ' + ' + r.audioCodec : ''}, ${(r.data.byteLength / 1e6).toFixed(1)} MB, ${(r.frames / r.seconds).toFixed(1)} frames/s.`;
-    await saveFile(new Blob([r.data], { type: r.mime }), name, r.mime);
-    store.say(`Exported ${name}.`);
-    cancel.textContent = 'Close';
-    cancel.onclick = () => dlg.close();
-  } catch (e) {
-    dlg.close();
-    store.say(e instanceof DOMException && e.name === 'AbortError' ? 'Export cancelled.' : `Export failed: ${e instanceof Error ? e.message : e}`);
-  } finally {
-    release();
-  }
-}
-
-async function showDeviceCheck(): Promise<void> {
-  const pre = h('pre', { class: 'report' }, 'Checking this device…');
-  const copy = h('button', { class: 'btn btn-accent', onclick: () => navigator.clipboard?.writeText(pre.textContent ?? '').then(() => store.say('Report copied.')) }, 'Copy report');
-  dialog('Device check', pre, [copy]);
-  const { project: p } = store;
-  pre.textContent = (await deviceCheck(p.width, p.height)).text;
-}
-
-function showHelp(): void {
-  const rows: [string, string][] = [
-    ['Space', 'Play / pause'], ['← →', 'Step one frame (Shift: one second)'], ['Home / End', 'Start / end'],
-    ['S', 'Split at playhead (selected clip, or everything under it)'], ['Delete', 'Remove selection'], ['Shift+Delete', 'Remove and close the gap'],
-    ['[  ]', 'Trim start / end to playhead'], ['K', 'Keyframe zoom and position here'], ['M', 'Mute selected clip'],
-    ['Ctrl+Z / Ctrl+Shift+Z', 'Undo / redo'], ['Ctrl+I', 'Import media'], ['Ctrl+E', 'Export'], ['+ / −', 'Zoom the timeline'],
-  ];
-  dialog('Shortcuts', h('table', { class: 'keys' }, ...rows.map(([k, d]) => h('tr', {}, h('td', {}, h('kbd', {}, k)), h('td', {}, d)))));
-}
+// ---------------------------------------------------------------- shortcuts (the person can change all of these in Settings)
+const act = (group: string, id: string, label: string, keys: string[], run: HotkeyAction['run']): HotkeyAction => ({ id, label, group, keys, run });
+hotkeys.register([
+  act('Playback', 'play', 'Play or pause', ['Space'], () => player.toggle()),
+  act('Playback', 'stepBack', 'One frame back', ['ArrowLeft'], () => actions.step(-1)),
+  act('Playback', 'stepForward', 'One frame forward', ['ArrowRight'], () => actions.step(1)),
+  act('Playback', 'secBack', 'One second back', ['Shift+ArrowLeft'], () => actions.step(-store.project.fps)),
+  act('Playback', 'secForward', 'One second forward', ['Shift+ArrowRight'], () => actions.step(store.project.fps)),
+  act('Playback', 'toStart', 'Go to the start', ['Home'], () => store.seek(0)),
+  act('Playback', 'toEnd', 'Go to the end', ['End'], () => store.seek(projectDuration(store.project))),
+  act('Editing', 'split', 'Split at the playhead', ['S'], () => actions.split()),
+  act('Editing', 'delete', 'Delete the selection', ['Delete', 'Backspace'], () => actions.remove(false)),
+  act('Editing', 'rippleDelete', 'Delete and close the gap', ['Shift+Delete', 'Shift+Backspace'], () => actions.remove(true)),
+  act('Editing', 'trimStart', 'Trim the start to the playhead', ['['], () => actions.trimToPlayhead('start')),
+  act('Editing', 'trimEnd', 'Trim the end to the playhead', [']'], () => actions.trimToPlayhead('end')),
+  act('Editing', 'mute', 'Mute the selected clip', ['M'], () => actions.toggleMute()),
+  act('Editing', 'keyframe', 'Keyframe zoom and position here', ['K'], () => inspector.keyframeAll()),
+  act('Editing', 'undo', 'Undo', ['Ctrl+Z'], () => store.undo()),
+  act('Editing', 'redo', 'Redo', ['Ctrl+Shift+Z', 'Ctrl+Y'], () => store.redo()),
+  act('Timeline', 'snap', 'Turn snapping on or off', ['N'], () => actions.toggleSnapping()),
+  act('Timeline', 'zoomIn', 'Zoom the timeline in', ['+', '='], () => store.setZoom(store.zoom * 1.25)),
+  act('Timeline', 'zoomOut', 'Zoom the timeline out', ['-', '_'], () => store.setZoom(store.zoom / 1.25)),
+  act('File', 'import', 'Import media', ['Ctrl+I'], () => void importFiles()),
+  act('File', 'export', 'Export', ['Ctrl+E'], () => void actions.runExport()),
+  act('App', 'settings', 'Open Settings', ['Ctrl+,'], () => settings()),
+  act('App', 'shortcuts', 'Show the shortcut list', ['?'], () => settings('Keys')),
+]);
 
 // ---------------------------------------------------------------- layout
 const time = h('span', { class: 'time mono' });
 const playBtn = h('button', { class: 'btn btn-accent', 'aria-label': 'Play or pause', onclick: () => player.toggle() }, '▶');
-const zoom = h('input', { type: 'range', class: 'bt-range zoom', min: 0.3, max: 12, step: 0.1, value: store.zoom, 'aria-label': 'Timeline zoom' });
-const setZoom = (z: number) => {
-  store.zoom = Math.min(12, Math.max(0.3, z));
-  zoom.value = String(store.zoom);
-  store.emit('view');
-};
-zoom.addEventListener('input', () => setZoom(Number(zoom.value)));
+const lnMin = Math.log(ZOOM_MIN);
+const lnMax = Math.log(ZOOM_MAX);
+const zoom = h('input', { type: 'range', class: 'bt-range zoom', min: lnMin, max: lnMax, step: 0.01, value: Math.log(store.zoom), 'aria-label': 'Timeline zoom' });
+zoom.addEventListener('input', () => store.setZoom(Math.exp(Number(zoom.value))));
+store.on('view', () => (zoom.value = String(Math.log(store.zoom))));
 const status = h('div', { class: 'status', role: 'status' });
 
 const tabs: Record<string, HTMLElement> = { Clip: inspector.el, Captions: captions.el, Project: projectPanel() };
@@ -165,20 +103,19 @@ function projectPanel(): HTMLElement {
   });
   return h('div', { class: 'stack' },
     h('div', { class: 'bt-panel-title' }, 'Project'), name, aspect,
-    h('div', { class: 'bt-panel-title' }, 'Look'), Object.assign(document.createElement('turbo-themes-picker'), { variant: 'select' }),
-    h('div', { class: 'bt-panel-title' }, 'Help'),
-    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: showHelp }, 'Shortcuts'), h('button', { class: 'btn', onclick: showDeviceCheck }, 'Device check')),
-    h('p', { class: 'hint' }, `TurboCut ${platform === 'android' ? 'for Android' : platform === 'electron' ? 'desktop' : 'web'}. Frame rate is ${store.project.fps} fps.`),
+    h('p', { class: 'hint' }, `Frame rate is ${store.project.fps} fps.`),
+    h('button', { class: 'btn', onclick: () => settings() }, 'Settings…'),
   );
 }
 
 const header = h('header', { class: 'bt-top top' },
   h('strong', { class: 'logo' }, 'TurboCut'),
-  h('button', { class: 'btn', onclick: async () => importMedia(await pickFiles('video/*,audio/*,.mkv,.webm,.mov', true)) }, 'Import'),
+  h('button', { class: 'btn', onclick: () => void importFiles() }, 'Import'),
   h('button', { class: 'btn', 'aria-label': 'Undo', title: 'Undo (Ctrl+Z)', onclick: () => store.undo() }, '↶'),
   h('button', { class: 'btn', 'aria-label': 'Redo', title: 'Redo (Ctrl+Shift+Z)', onclick: () => store.redo() }, '↷'),
   h('span', { class: 'spacer' }),
-  h('button', { class: 'btn btn-accent', onclick: runExport }, 'Export'),
+  h('button', { class: 'btn', 'aria-label': 'Settings', title: 'Settings (Ctrl+,)', onclick: () => settings() }, '⚙'),
+  h('button', { class: 'btn btn-accent', onclick: () => void actions.runExport() }, 'Export'),
 );
 
 const transport = h('div', { class: 'transport' },
@@ -189,15 +126,23 @@ const transport = h('div', { class: 'transport' },
 );
 
 // Edit actions live in one bar right under the timeline, in thumb reach on a phone.
+const snapBtn = h('button', { class: 'btn', 'aria-label': 'Snapping', title: 'Snapping (N)', onclick: () => actions.toggleSnapping() }, '🧲');
+const syncSnap = () => {
+  snapBtn.setAttribute('aria-pressed', String(store.settings.snapping));
+  snapBtn.classList.toggle('on', store.settings.snapping);
+};
+store.on('settings', syncSnap);
+syncSnap();
 const editBar = h('div', { class: 'edit-bar' },
-  h('button', { class: 'btn btn-accent', onclick: split, title: 'Split at the playhead (S)' }, 'Split'),
-  h('button', { class: 'btn', onclick: () => trimToPlayhead('start'), title: 'Cut the start of the selected clip to the playhead ([)' }, 'Trim start'),
-  h('button', { class: 'btn', onclick: () => trimToPlayhead('end'), title: 'Cut the end of the selected clip to the playhead (])' }, 'Trim end'),
-  h('button', { class: 'btn', onclick: () => remove(false), title: 'Delete the selection' }, 'Delete'),
+  h('button', { class: 'btn btn-accent', onclick: () => actions.split(), title: 'Split at the playhead (S)' }, 'Split'),
+  h('button', { class: 'btn', onclick: () => actions.trimToPlayhead('start'), title: 'Cut the start of the selected clip to the playhead ([)' }, 'Trim start'),
+  h('button', { class: 'btn', onclick: () => actions.trimToPlayhead('end'), title: 'Cut the end of the selected clip to the playhead (])' }, 'Trim end'),
+  h('button', { class: 'btn', onclick: () => actions.remove(false), title: 'Delete the selection' }, 'Delete'),
+  snapBtn,
   h('span', { class: 'spacer' }),
-  h('button', { class: 'btn', 'aria-label': 'Zoom out timeline', onclick: () => setZoom(store.zoom / 1.5) }, '−'),
+  h('button', { class: 'btn', 'aria-label': 'Zoom out timeline', onclick: () => store.setZoom(store.zoom / 1.5) }, '−'),
   zoom,
-  h('button', { class: 'btn', 'aria-label': 'Zoom in timeline', onclick: () => setZoom(store.zoom * 1.5) }, '+'),
+  h('button', { class: 'btn', 'aria-label': 'Zoom in timeline', onclick: () => store.setZoom(store.zoom * 1.5) }, '+'),
 );
 
 player.canvas.addEventListener('click', () => player.toggle());
@@ -216,45 +161,35 @@ store.on('status', () => (status.textContent = store.status));
 tick();
 store.say('Import a clip to start. Press ? for shortcuts.');
 
-// ---------------------------------------------------------------- shortcuts and drop
+// ---------------------------------------------------------------- keyboard and drop
 window.addEventListener('keydown', (e) => {
+  if (capturingKey) return; // the shortcut editor is listening
   const t = e.target as HTMLElement;
   if (t.closest('input, textarea, select, [contenteditable]')) return;
-  const mod = e.ctrlKey || e.metaKey;
-  const k = e.key;
-  const handled = (() => {
-    if (mod && k.toLowerCase() === 'z') return e.shiftKey ? (store.redo(), true) : (store.undo(), true);
-    if (mod && k.toLowerCase() === 'y') return (store.redo(), true);
-    if (mod && k.toLowerCase() === 'i') return (pickFiles('video/*,audio/*,.mkv,.webm,.mov', true).then(importMedia), true);
-    if (mod && k.toLowerCase() === 'e') return (void runExport(), true);
-    if (mod || e.altKey) return false;
-    switch (k) {
-      case ' ': return (player.toggle(), true);
-      case 'ArrowLeft': return (store.seek(store.playhead - (e.shiftKey ? store.project.fps : 1)), true);
-      case 'ArrowRight': return (store.seek(store.playhead + (e.shiftKey ? store.project.fps : 1)), true);
-      case 'Home': return (store.seek(0), true);
-      case 'End': return (store.seek(projectDuration(store.project)), true);
-      case 's': case 'S': return (split(), true);
-      case 'Delete': case 'Backspace': return (remove(e.shiftKey), true);
-      case '[': return (trimToPlayhead('start'), true);
-      case ']': return (trimToPlayhead('end'), true);
-      case 'k': case 'K': return (inspector.keyframeAll(), true);
-      case 'm': case 'M': return (store.selected && store.edit((p) => { for (const t of p.tracks) for (const c of t.clips) if (c.id === store.selected) c.muted = !c.muted; }), true);
-      case '+': case '=': return (setZoom(store.zoom * 1.25), true);
-      case '-': case '_': return (setZoom(store.zoom / 1.25), true);
-      case '?': return (showHelp(), true);
-    }
-    return false;
-  })();
-  if (handled) e.preventDefault();
+  if (document.querySelector('.dlg-backdrop') && e.key !== 'Escape' && !(e.ctrlKey || e.metaKey)) return; // a dialog is open
+  if (hotkeys.handle(e)) e.preventDefault();
 });
 
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => {
   e.preventDefault();
   const files = [...(e.dataTransfer?.files ?? [])].filter((f) => /^(video|audio)\//.test(f.type) || /\.(mkv|mov|webm|mp4|m4a|mp3|wav|ogg)$/i.test(f.name));
-  if (files.length) void importMedia(files);
+  if (files.length) void actions.importMedia(files);
 });
+
+// ---------------------------------------------------------------- update check on start (at most every 6 hours, never blocks)
+const CHECKED = 'turbocut.updateChecked';
+setTimeout(async () => {
+  try {
+    if (!store.settings.autoCheckUpdates) return;
+    if (Date.now() - Number(localStorage.getItem(CHECKED) ?? 0) < 6 * 3600_000) return;
+    localStorage.setItem(CHECKED, String(Date.now()));
+    const st = await checkForUpdate();
+    if (st.newer && st.latest) store.say(`TurboCut ${st.latest.version} is available. Open Settings, then Updates.`);
+  } catch {
+    /* offline or rate limited: try again next start */
+  }
+}, 4000);
 
 // Exposed so tests and automation can drive the editor without synthesising pointer input.
 async function exportForTest() {
@@ -295,4 +230,4 @@ async function probeAudio(seconds: number) {
   for (let t = 0; t < seconds; t += 6) await mixWindow(store.project, store.lib, t, t + 6);
 }
 
-(window as any).turbocutApp = { store, player, themes, importMedia, importFont, runExport, split, exportForTest, probeVideo, probeAudio, probeDecode };
+(window as any).turbocutApp = { store, player, themes, actions, hotkeys, settings, importFont, importMedia: (f: File[]) => actions.importMedia(f), runExport: () => actions.runExport(), split: () => actions.split(), exportForTest, probeVideo, probeAudio, probeDecode };
