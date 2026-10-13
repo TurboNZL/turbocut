@@ -1,4 +1,5 @@
 import { loadStoredFonts } from './fonts.ts';
+import { guidesView } from './guides.ts';
 import { layoutManager } from './layoutManager.ts';
 import { openFontManager } from './fontManager.ts';
 import { deviceCheck } from './deviceCheck.ts';
@@ -11,8 +12,8 @@ import { MODELS, type Compute } from '../transcribe/local.ts';
 import { assetFor, checkForUpdate, desktopUpdater, openApk, type UpdateStatus } from './updater.ts';
 import { APP_VERSION } from './version.ts';
 
-export type SettingsTab = 'General' | 'Layout' | 'Fonts' | 'Keys' | 'Captions' | 'Updates' | 'Device' | 'About';
-const TABS: SettingsTab[] = ['General', 'Layout', 'Fonts', 'Keys', 'Captions', 'Updates', 'Device', 'About'];
+export type SettingsTab = 'General' | 'Layout' | 'Fonts' | 'Guides' | 'Keys' | 'Captions' | 'Updates' | 'Device' | 'About';
+const TABS: SettingsTab[] = ['General', 'Layout', 'Fonts', 'Guides', 'Keys', 'Captions', 'Updates', 'Device', 'About'];
 
 /** True while the shortcut editor is waiting for a key, so the editor's own shortcuts stay quiet. */
 export let capturingKey = false;
@@ -53,6 +54,7 @@ export function openSettings(deps: SettingsDeps, tab: SettingsTab = 'General'): 
       case 'General': return general(deps, () => show(current));
       case 'Layout': return layoutManager(store, () => show(current));
       case 'Fonts': return fontsTab(deps);
+      case 'Guides': return guidesView();
       case 'Keys': return keys(deps, () => show(current));
       case 'Captions': return captionsEngine(deps);
       case 'Updates': return updates(deps);
@@ -109,6 +111,7 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
       check('Show audio waveforms', s.waveforms, (v) => store.updateSettings({ waveforms: v }), 'Low detail. Uses a little more battery.'),
       field('Track order', trackOrder)),
     panel('Captions and text', field('Default font', font), fonts, addFont, field('Letter holes (o, e, a, g) in new styles', counters)),
+    panel('Start', check('Show the home screen when TurboCut starts with an empty project', s.showHome, (v) => store.updateSettings({ showHome: v }), 'The Home button at the top brings it back.')),
     panel('Updates', check('Check for a new version when TurboCut starts', s.autoCheckUpdates, (v) => store.updateSettings({ autoCheckUpdates: v }))),
     panel('Settings file', h('div', { class: 'row' }, exportBtn, importBtn)),
   );

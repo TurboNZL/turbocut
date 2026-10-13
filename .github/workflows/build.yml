@@ -73,12 +73,12 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon -PtcVersionCode=${{ needs.version.outputs.code }} -PtcVersionName=${{ needs.version.outputs.version }}
-      - run: cp android/app/build/outputs/apk/debug/app-debug.apk TurboCut-${{ needs.version.outputs.version }}-android.apk
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk turbocut-${{ needs.version.outputs.version }}-android.apk
       # Artifacts are only the hand-over to the release job; people download from the Release.
       - uses: actions/upload-artifact@v4
         with:
           name: build-android
-          path: TurboCut-${{ needs.version.outputs.version }}-android.apk
+          path: turbocut-${{ needs.version.outputs.version }}-android.apk
           if-no-files-found: error
           retention-days: 1
 
@@ -95,14 +95,14 @@ jobs:
             name: Windows
             id: windows
             files: |
-              release/TurboCut-*.exe
+              release/turbocut-*.exe
               release/latest.yml
           - os: ubuntu-latest
             name: Linux
             id: linux
             files: |
-              release/TurboCut-*-linux-*.AppImage
-              release/TurboCut-*-linux-*.deb
+              release/turbocut-*-linux-*.AppImage
+              release/turbocut-*-linux-*.deb
               release/latest-linux.yml
     steps:
       - uses: actions/checkout@v4
@@ -142,15 +142,15 @@ jobs:
       - run: pnpm build
       - name: Bundle the app with its server
         run: |
-          mkdir -p bundle/TurboCut-web
-          cp -r dist bundle/TurboCut-web/app
-          cp scripts/serve.mjs bundle/TurboCut-web/serve.mjs
-          printf 'TurboCut web bundle\n\nInstall Node.js 20 or newer, then in this folder run:\n\n  node serve.mjs --https\n\nOpen the address it prints on any device on your network and accept the certificate warning once.\nWithout --https only the computer running it can export video (browsers require a secure page).\n' > bundle/TurboCut-web/README.txt
-          (cd bundle && zip -qr ../TurboCut-${{ needs.version.outputs.version }}-web.zip TurboCut-web)
+          mkdir -p bundle/turbocut-web
+          cp -r dist bundle/turbocut-web/app
+          cp scripts/serve.mjs bundle/turbocut-web/serve.mjs
+          printf 'TurboCut web bundle\n\nInstall Node.js 20 or newer, then in this folder run:\n\n  node serve.mjs --https\n\nOpen the address it prints on any device on your network and accept the certificate warning once.\nWithout --https only the computer running it can export video (browsers require a secure page).\n' > bundle/turbocut-web/README.txt
+          (cd bundle && zip -qr ../turbocut-${{ needs.version.outputs.version }}-web.zip turbocut-web)
       - uses: actions/upload-artifact@v4
         with:
           name: build-web
-          path: TurboCut-${{ needs.version.outputs.version }}-web.zip
+          path: turbocut-${{ needs.version.outputs.version }}-web.zip
           if-no-files-found: error
           retention-days: 1
 

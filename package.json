@@ -9,16 +9,17 @@
     "build": "vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "e2e": "node e2e/run.mjs && node e2e/app.mjs && node e2e/settings.mjs && node e2e/bin.mjs && node e2e/keys.mjs && node e2e/styles.mjs && node e2e/fonts.mjs && node e2e/layouts.mjs && node e2e/landing.mjs && node e2e/touch.mjs",
+    "e2e": "node e2e/run.mjs && node e2e/app.mjs && node e2e/settings.mjs && node e2e/bin.mjs && node e2e/keys.mjs && node e2e/styles.mjs && node e2e/fonts.mjs && node e2e/layouts.mjs && node e2e/home.mjs && node e2e/guides.mjs && node e2e/touch.mjs",
     "e2e:electron": "node e2e/electron.mjs",
     "e2e:touch": "node e2e/touch.mjs",
     "e2e:settings": "node e2e/settings.mjs",
     "e2e:bin": "node e2e/bin.mjs",
     "e2e:keys": "node e2e/keys.mjs",
     "e2e:styles": "node e2e/styles.mjs",
-    "e2e:landing": "node e2e/landing.mjs",
     "e2e:fonts": "node e2e/fonts.mjs",
     "e2e:layouts": "node e2e/layouts.mjs",
+    "e2e:home": "node e2e/home.mjs",
+    "e2e:guides": "node e2e/guides.mjs",
     "serve": "node scripts/serve.mjs",
     "electron:dev": "TURBOCUT_DEV_URL=http://localhost:5173 electron .",
     "dist:desktop": "pnpm build && electron-builder --publish never",
@@ -79,7 +80,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "TurboCut-${version}-windows-setup.${ext}"
+      "artifactName": "turbocut-${version}-windows-setup.${ext}"
     },
     "linux": {
       "target": [
@@ -88,10 +89,10 @@
       ],
       "category": "AudioVideo",
       "maintainer": "TurboNZL <turbonzl@users.noreply.github.com>",
-      "artifactName": "TurboCut-${version}-linux-${arch}.${ext}"
+      "artifactName": "turbocut-${version}-linux-${arch}.${ext}"
     },
     "portable": {
-      "artifactName": "TurboCut-${version}-windows-portable.${ext}"
+      "artifactName": "turbocut-${version}-windows-portable.${ext}"
     },
     "publish": {
       "provider": "github",

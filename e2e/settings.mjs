@@ -15,7 +15,7 @@ try {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push(e.message));
-  const release = (tag, extra = {}) => ({ tag_name: tag, html_url: `https://github.com/TurboNZL/turbocut/releases/tag/${tag}`, body: `Notes for ${tag}`, published_at: '2026-10-13T00:00:00Z', draft: false, prerelease: true, assets: [{ name: `TurboCut-${tag.slice(1)}-android.apk`, browser_download_url: 'https://example.com/a.apk', size: 1 }], ...extra });
+  const release = (tag, extra = {}) => ({ tag_name: tag, html_url: `https://github.com/TurboNZL/turbocut/releases/tag/${tag}`, body: `Notes for ${tag}`, published_at: '2026-10-13T00:00:00Z', draft: false, prerelease: true, assets: [{ name: `turbocut-${tag.slice(1)}-android.apk`, browser_download_url: 'https://example.com/a.apk', size: 1 }], ...extra });
   let releases = [release('v2026.10.1')];
   await page.route('https://api.github.com/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(releases) }));
   const load = async () => {
@@ -39,7 +39,7 @@ try {
   await page.getByRole('button', { name: 'Settings' }).first().click();
   await page.waitForSelector('.settings');
   const tabs = await page.$$eval('.settings-nav .tab', (els) => els.map((e) => e.textContent));
-  assert.deepEqual(tabs, ['General', 'Layout', 'Fonts', 'Keys', 'Captions', 'Updates', 'Device', 'About']);
+  assert.deepEqual(tabs, ['General', 'Layout', 'Fonts', 'Guides', 'Keys', 'Captions', 'Updates', 'Device', 'About']);
   const track = page.getByRole('combobox', { name: 'Track order' });
   await track.selectOption('audio');
   assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.videoOnTop), false);

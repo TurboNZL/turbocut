@@ -32,6 +32,8 @@ export interface Settings {
   /** The person's own layouts. */
   layouts: Layout[];
   autoCheckUpdates: boolean;
+  /** Show the home screen when the app starts with an empty project. */
+  showHome: boolean;
   transcribe: TranscribeSettings;
   /** Shortcuts the person changed: action id to key combos. Anything not here uses the default. */
   hotkeys: Record<string, string[]>;
@@ -47,6 +49,7 @@ export const DEFAULT_SETTINGS = (touch: boolean): Settings => ({
   layout: AUTO_LAYOUT,
   layouts: [],
   autoCheckUpdates: true,
+  showHome: true,
   transcribe: { mode: 'local', url: '', token: '', lang: 'english', model: MODELS[0].id, compute: 'auto' },
   hotkeys: {},
 });
@@ -58,7 +61,7 @@ export function mergeSettings(stored: unknown, defaults: Settings): Settings {
   const out: Settings = structuredClone(defaults);
   if (!stored || typeof stored !== 'object') return out;
   const s = stored as Record<string, any>;
-  for (const k of ['snapping', 'waveforms', 'videoOnTop', 'autoCheckUpdates'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
+  for (const k of ['snapping', 'waveforms', 'videoOnTop', 'autoCheckUpdates', 'showHome'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
   if (typeof s.defaultFont === 'string' && s.defaultFont.trim()) out.defaultFont = s.defaultFont.trim();
   if (s.counters === 'filled' || s.counters === 'rim' || s.counters === 'clear') out.counters = s.counters === 'rim' && s.settingsVersion !== 2 ? 'filled' : s.counters;
   if (Array.isArray(s.layouts)) out.layouts = s.layouts.map((l: unknown) => cleanLayout(l)).filter((l: Layout | null): l is Layout => !!l).slice(0, 30);

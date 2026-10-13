@@ -5,16 +5,16 @@ One web codebase; Electron wraps it for Windows and Ubuntu, Capacitor wraps it f
 
 ## Get it
 
-The landing page (GitHub Pages, once enabled) offers the right download for your device and a link to the app in the browser. Builds are also on the repository's **Releases** page. Every push to `main` or a `claude/*` branch publishes a release named after the version (Year.Month.Update, for example `v2026.10.3`), and the five newest are kept. Each file is a plain download, not a zip (except the web bundle):
+The app's own **home screen** lists the newest downloads with install help (and the Guides explain the Android APK step by step). Builds are on the repository's **Releases** page. Every push to `main` or a `claude/*` branch publishes a release named after the version (Year.Month.Update, for example `v2026.10.3`), and the five newest are kept. Each file is a plain download, not a zip (except the web bundle):
 
 | File | What it is |
 |---|---|
-| `TurboCut-<version>-android.apk` | Android. Open it on the phone and allow "install from this source" once. Later builds install over the old one. |
-| `TurboCut-<version>-windows-setup.exe` | Windows installer; the app then updates itself. Windows may warn about an unknown publisher (not code-signed). |
-| `TurboCut-<version>-windows-portable.exe` | Windows, runs without installing. |
-| `TurboCut-<version>-linux-x86_64.AppImage` | Linux: `chmod +x` it and run it; it updates itself. |
-| `TurboCut-<version>-linux-amd64.deb` | Linux: `sudo apt install ./TurboCut-….deb`. |
-| `TurboCut-<version>-web.zip` | Your own web server, no desktop app: see below. |
+| `turbocut-<version>-android.apk` | Android. Open it on the phone and allow "install from this source" once. Later builds install over the old one. |
+| `turbocut-<version>-windows-setup.exe` | Windows installer; the app then updates itself. Windows may warn about an unknown publisher (not code-signed). |
+| `turbocut-<version>-windows-portable.exe` | Windows, runs without installing. |
+| `turbocut-<version>-linux-x86_64.AppImage` | Linux: `chmod +x` it and run it; it updates itself. |
+| `turbocut-<version>-linux-amd64.deb` | Linux: `sudo apt install ./turbocut-….deb`. |
+| `turbocut-<version>-web.zip` | Your own web server, no desktop app: see below. |
 
 The app checks for updates itself (Settings, Updates).
 
@@ -24,7 +24,7 @@ The app checks for updates itself (Settings, Updates).
 node scripts/serve.mjs --https     # from a checkout after `pnpm build`; the web bundle has serve.mjs next to its app folder
 ```
 
-It prints an address such as `https://192.168.1.20:8080/`. Open it on any device on the network and accept the certificate warning once. Browsers only allow video export (WebCodecs) on secure pages, so other devices need `--https`; on the computer running it, `http://localhost:8080` is enough. Options: `--port`, `--dir`, `--host`. `--https` needs the `openssl` command. The Pages workflow also hosts the app at `/app` on your GitHub Pages site.
+It prints an address such as `https://192.168.1.20:8080/`. Open it on any device on the network and accept the certificate warning once. Browsers only allow video export (WebCodecs) on secure pages, so other devices need `--https`; on the computer running it, `http://localhost:8080` is enough. Options: `--port`, `--dir`, `--host`. `--https` needs the `openssl` command.
 
 First thing to do on a new device: **Project tab, Device check, Copy report** and send it back. It lists which video and audio codecs the device can encode, whether WebGPU works, and how fast it encodes.
 

@@ -12,6 +12,7 @@ import { CaptionsPanel } from './captionsPanel.ts';
 import { fmtTime, h, panel, popupMenu } from './dom.ts';
 import { importFont, loadStoredFonts } from './fonts.ts';
 import { Hotkeys, type HotkeyAction } from './hotkeys.ts';
+import { openHome } from './home.ts';
 import { Inspector } from './inspector.ts';
 import { applyLayout, findLayout, type TabName } from './layout.ts';
 import { KeysPanel } from './keysPanel.ts';
@@ -141,6 +142,7 @@ function projectPanel(): HTMLElement {
 
 const header = h('header', { class: 'bt-top top' },
   h('strong', { class: 'logo' }, 'TurboCut'),
+  h('button', { class: 'btn', 'aria-label': 'Home', title: 'Home', onclick: () => showHome() }, '⌂'),
   h('button', { class: 'btn', onclick: () => void importFiles() }, 'Import'),
   h('button', { class: 'btn', 'aria-label': 'Undo', title: 'Undo (Ctrl+Z)', onclick: () => store.undo() }, '↶'),
   h('button', { class: 'btn', 'aria-label': 'Redo', title: 'Redo (Ctrl+Shift+Z)', onclick: () => store.redo() }, '↷'),
@@ -189,6 +191,15 @@ const stage = h('section', { class: 'stage' }, h('div', { class: 'preview' }, pl
 const app = document.getElementById('app')!;
 app.append(header, h('main', { class: 'main' }, stage, side), h('section', { class: 'bottom' }, timeline.el), editBar, status);
 drawLayout();
+
+/** The home screen: shown when the app starts with nothing in the project (unless switched off), and from the Home button. */
+let homeOpen = false;
+function showHome(): void {
+  if (homeOpen) return;
+  homeOpen = true;
+  openHome({ store, importFiles, openSettings: (tab) => settings(tab), onClose: () => (homeOpen = false) });
+}
+if (store.settings.showHome && projectDuration(store.project) === 0) showHome();
 
 const tick = () => {
   const p = store.project;
