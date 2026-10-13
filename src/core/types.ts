@@ -57,6 +57,8 @@ export interface Clip {
   audioFadeIn: Frame;
   audioFadeOut: Frame;
   muted: boolean;
+  /** Clips sharing a link id (a video and its own audio) are split, moved-by-delete and removed together. */
+  link?: string;
 }
 
 export type TrackKind = 'video' | 'audio';

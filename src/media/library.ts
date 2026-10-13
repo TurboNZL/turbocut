@@ -53,8 +53,8 @@ export class MediaLibrary implements FrameSource {
    * A frame source for export: each clip gets one pipelined decoder that is pulled strictly in frame order.
    * Measured on a software-only machine: 15 ms/frame this way against 154 ms with `getFrame`.
    */
-  sequential(p: Project): FrameSource {
-    return new SequentialFrames(this, p);
+  sequential(p: Project, startFrame: Frame = 0): FrameSource {
+    return new SequentialFrames(this, p, startFrame);
   }
 
   /** @internal */
@@ -78,7 +78,7 @@ export class MediaLibrary implements FrameSource {
 class SequentialFrames implements FrameSource {
   private feeds = new Map<string, { it: AsyncGenerator<{ canvas: HTMLCanvasElement | OffscreenCanvas } | null>; next: Frame; last: CanvasImageSource | null }>();
 
-  constructor(private lib: MediaLibrary, private p: Project) {}
+  constructor(private lib: MediaLibrary, private p: Project, private startFrame: Frame) {}
 
   async getFrame(clip: Clip, frame: Frame): Promise<CanvasImageSource | null> {
     let feed = this.feeds.get(clip.id);
@@ -86,10 +86,11 @@ class SequentialFrames implements FrameSource {
       const sink = this.lib.canvasSinkFor(clip.assetId);
       if (!sink) return null;
       const p = this.p;
+      const from = Math.max(clip.start, this.startFrame);
       const times = (function* () {
-        for (let f = clip.start; f < clipEnd(clip); f++) yield Math.max(0, sourceSeconds(p, clip, f));
+        for (let f = from; f < clipEnd(clip); f++) yield Math.max(0, sourceSeconds(p, clip, f));
       })();
-      feed = { it: sink.canvasesAtTimestamps(times), next: clip.start, last: null };
+      feed = { it: sink.canvasesAtTimestamps(times), next: from, last: null };
       this.feeds.set(clip.id, feed);
     }
     if (frame !== feed.next) throw new Error('Sequential source must be read in frame order');
@@ -102,5 +103,11 @@ class SequentialFrames implements FrameSource {
       void feed.it.return(undefined);
     }
     return feed.last;
+  }
+
+  /** Close the decoders of clips that were not read to their end, so no decoded frame is left unclosed. */
+  dispose(): void {
+    for (const feed of this.feeds.values()) void feed.it.return(undefined);
+    this.feeds.clear();
   }
 }

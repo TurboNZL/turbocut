@@ -11,6 +11,15 @@ const server = await createServer({ root, server: { port: 5188, strictPort: true
 await server.listen();
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 try {
+  {
+    const page = await browser.newPage();
+    await page.goto('http://localhost:5188/e2e/index.html');
+    await page.waitForFunction(() => typeof window.previewMatchesExport === 'function');
+    const diff = await page.evaluate(() => window.previewMatchesExport());
+    console.log(`preview vs export mean difference: ${diff.toFixed(2)} / 255`);
+    assert.ok(diff < 0.5, `preview must match export, got ${diff}`);
+    await page.close();
+  }
   for (const captions of [false, true]) {
     const page = await browser.newPage();
     page.on('console', (m) => console.log('[page]', m.text()));

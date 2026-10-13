@@ -4,3 +4,9 @@ dist
 .DS_Store
 e2e/.media
 e2e/.out
+
+# Third-party font files are never committed (users add them in the app; see src/app/fonts.ts)
+*.otf
+*.ttf
+*.woff
+*.woff2

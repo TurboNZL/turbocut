@@ -20,9 +20,15 @@ function gainPoints(clip: Clip): number[] {
  * Mix every audio clip overlapping [t0, t1) seconds into one stereo buffer. Windowed so a 20 minute
  * edit never needs a 20 minute buffer in memory.
  */
-export async function mixWindow(p: Project, lib: MediaLibrary, t0: number, t1: number): Promise<AudioBuffer> {
-  const length = Math.max(1, Math.round((t1 - t0) * MIX_RATE));
-  const ctx = new OfflineAudioContext(2, length, MIX_RATE);
+export async function mixWindow(
+  p: Project,
+  lib: MediaLibrary,
+  t0: number,
+  t1: number,
+  fmt: { rate: number; channels: number } = { rate: MIX_RATE, channels: 2 },
+): Promise<AudioBuffer> {
+  const length = Math.max(1, Math.round((t1 - t0) * fmt.rate));
+  const ctx = new OfflineAudioContext(fmt.channels, length, fmt.rate);
 
   for (const track of p.tracks) {
     if (track.kind !== 'audio') continue;

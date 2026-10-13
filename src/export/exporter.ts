@@ -70,12 +70,15 @@ export async function exportProject(p: Project, lib: MediaLibrary, o: ExportOpti
   const frames = lib.sequential(p);
   const frameCount = total;
   const step = 1 / p.fps;
-  for (let f = 0; f < frameCount; f++) {
-    o.signal?.throwIfAborted();
-    await drawVideo(ctx, p, f, frames);
-    if (o.preset) drawCaption(ctx, p, o.preset, f);
-    await video.add(f * step, step);
-    if (f % 15 === 0) o.onProgress?.((f / frameCount) * (audio ? 0.85 : 1));
+  try {
+    for (let f = 0; f < frameCount; f++) {
+      o.signal?.throwIfAborted();
+      await drawVideo(ctx, p, f, frames, o.preset ? () => drawCaption(ctx, p, o.preset!, f) : undefined);
+      await video.add(f * step, step);
+      if (f % 15 === 0) o.onProgress?.((f / frameCount) * (audio ? 0.85 : 1));
+    }
+  } finally {
+    frames.dispose?.();
   }
   video.close();
 

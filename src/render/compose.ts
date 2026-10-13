@@ -10,6 +10,8 @@ export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
  */
 export interface FrameSource {
   getFrame(clip: Clip, frame: Frame, sourceSeconds: number): Promise<CanvasImageSource | null>;
+  /** Release decoders. Must be called when a sequential source is abandoned before every clip was read to its end. */
+  dispose?(): void;
 }
 
 export function sourceSeconds(p: Project, clip: Clip, frame: Frame): number {
@@ -53,12 +55,17 @@ export function drawClip(ctx: Ctx2D, p: Project, clip: Clip, frame: Frame, img: 
     else if (e.kind === 'pixelate') pixelate = Math.max(pixelate, r);
   }
 
+  // Canvas filters work in device pixels and ignore the transform (measured: blur(10px) reaches the same
+  // distance at scale 0.5, 1 and 2). So convert project pixels to device pixels with the caller's base
+  // scale, which is 1 for export and below 1 for a reduced-size preview.
+  const base = Math.hypot(ctx.getTransform().a, ctx.getTransform().b);
+
   ctx.save();
   ctx.globalAlpha = Math.min(1, opacity);
   ctx.translate(p.width / 2 + evalProp(clip, 'x', frame), p.height / 2 + evalProp(clip, 'y', frame));
   ctx.rotate((evalProp(clip, 'rotation', frame) * Math.PI) / 180);
   ctx.scale(scale, scale);
-  if (blur > 0) ctx.filter = `blur(${blur / scale}px)`; // radius is in project pixels, the filter runs in the scaled space
+  if (blur > 0) ctx.filter = `blur(${blur * base}px)`; // blur is the radius in project pixels
   if (pixelate >= 1) {
     // Draw small, then blow up without smoothing. `pixelate` is the block size in project pixels.
     const bw = Math.max(1, Math.round((sw * scale) / pixelate));
@@ -73,15 +80,24 @@ export function drawClip(ctx: Ctx2D, p: Project, clip: Clip, frame: Frame, img: 
   ctx.restore();
 }
 
-/** Paint every visible video track, bottom to top, for one timeline frame. */
-export async function drawVideo(ctx: Ctx2D, p: Project, frame: Frame, src: FrameSource): Promise<void> {
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, p.width, p.height);
+/**
+ * Paint every visible video track, bottom to top, for one timeline frame.
+ *
+ * All frames are fetched first and the canvas is only touched afterwards, in one synchronous run.
+ * Clearing before the awaits would let the browser present a black canvas between frames (flicker).
+ * `overlay` runs in that same synchronous run, for captions.
+ */
+export async function drawVideo(ctx: Ctx2D, p: Project, frame: Frame, src: FrameSource, overlay?: () => void): Promise<void> {
+  const layers: { clip: Clip; img: CanvasImageSource }[] = [];
   for (const track of p.tracks) {
     if (track.kind !== 'video' || track.hidden) continue;
     const clip = clipAt(track, frame);
     if (!clip) continue;
     const img = await src.getFrame(clip, frame, sourceSeconds(p, clip, frame));
-    if (img) drawClip(ctx, p, clip, frame, img);
+    if (img) layers.push({ clip, img });
   }
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, p.width, p.height);
+  for (const { clip, img } of layers) drawClip(ctx, p, clip, frame, img);
+  overlay?.();
 }

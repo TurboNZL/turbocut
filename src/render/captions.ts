@@ -5,6 +5,23 @@ import type { Ctx2D } from './compose.ts';
 
 const css = (c: { r: number; g: number; b: number; a: number }) => `rgba(${c.r},${c.g},${c.b},${(c.a / 255).toFixed(3)})`;
 
+/** Greedy word wrap. `width` measures a string; a single word longer than `max` stays on its own line. */
+export function wrapText(text: string, max: number, width: (s: string) => number): string[] {
+  const out: string[] = [];
+  for (const para of text.split('\n')) {
+    let line = '';
+    for (const word of para.split(/\s+/).filter(Boolean)) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && width(next) > max) {
+        out.push(line);
+        line = word;
+      } else line = next;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
 /** The caption cue showing at `frame`, plus how many frames it has been on screen. */
 export function activeCue(p: Project, frame: Frame) {
   for (const cue of p.captions) if (frame >= cue.start && frame < cue.end) return { cue, age: frame - cue.start };
@@ -26,13 +43,16 @@ export function drawCaption(ctx: Ctx2D, p: Project, preset: CaptionPreset, frame
   const s = entranceScale(preset.animation, hit.age);
   if (s <= 0) return;
   const a = anchor(style, p.width, p.height);
-  const lines = hit.cue.text.split('\n');
   const lh = style.fontsize * 1.2;
 
   ctx.save();
-  ctx.translate(a.x, a.y - (a.base === 'bottom' ? (lines.length - 1) * lh : 0));
-  ctx.scale(s, s);
   ctx.font = `${style.italic ? 'italic ' : ''}${style.bold ? '700 ' : ''}${style.fontsize}px "${style.fontname}", sans-serif`;
+  // Wrap to the safe width, like ASS does (WrapStyle 0), so a long caption never runs off the frame.
+  const maxWidth = Math.max(40, p.width - style.marginL - style.marginR);
+  const lines = wrapText(hit.cue.text, maxWidth, (t) => ctx.measureText(t).width);
+  const block = (lines.length - 1) * lh;
+  ctx.translate(a.x, a.y - (a.base === 'bottom' ? block : a.base === 'middle' ? block / 2 : 0));
+  ctx.scale(s, s);
   ctx.textAlign = a.align;
   ctx.textBaseline = a.base === 'bottom' ? 'alphabetic' : a.base === 'top' ? 'top' : 'middle';
   ctx.lineJoin = 'round';

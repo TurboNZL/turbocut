@@ -39,10 +39,10 @@ export function createClip(assetId: string, start: Frame, duration: Frame, sourc
 
 export const clipEnd = (c: Clip): Frame => c.start + c.duration;
 
+/** End of the last media clip. Captions never extend a project: one that runs past the media would export as black video. */
 export function projectDuration(p: Project): Frame {
   let end = 0;
   for (const t of p.tracks) for (const c of t.clips) end = Math.max(end, clipEnd(c));
-  for (const cue of p.captions) end = Math.max(end, cue.end);
   return end;
 }
 
@@ -155,4 +155,51 @@ export function rippleDelete(p: Project, clipId: string): void {
 export function deleteClip(p: Project, clipId: string): void {
   const hit = findClip(p, clipId);
   if (hit) hit.track.clips = hit.track.clips.filter((c) => c !== hit.clip);
+}
+
+/** Every clip that shares a link id with `clip` (including itself). */
+export function linkedClips(p: Project, clip: Clip): { track: Track; clip: Clip }[] {
+  const out: { track: Track; clip: Clip }[] = [];
+  for (const track of p.tracks)
+    for (const c of track.clips) if (c === clip || (clip.link && c.link === clip.link)) out.push({ track, clip: c });
+  return out;
+}
+
+/** Split a clip and its linked partners at `frame`. The new right halves share a fresh link id. */
+export function splitLinked(p: Project, clipId: string, frame: Frame): Clip[] {
+  const hit = findClip(p, clipId);
+  if (!hit) return [];
+  const rights: Clip[] = [];
+  for (const { clip } of linkedClips(p, hit.clip)) {
+    const r = splitAt(p, clip.id, frame);
+    if (r) rights.push(r);
+  }
+  if (hit.clip.link && rights.length > 1) {
+    const link = newId('l');
+    for (const r of rights) r.link = link;
+  }
+  return rights;
+}
+
+/** Remove a clip and its linked partners, optionally closing the gaps. */
+export function removeLinked(p: Project, clipId: string, ripple: boolean): void {
+  const hit = findClip(p, clipId);
+  if (!hit) return;
+  for (const { clip } of linkedClips(p, hit.clip)) (ripple ? rippleDelete : deleteClip)(p, clip.id);
+}
+
+/** Move a clip and its linked partners by the same offset. Refuses (changes nothing) if any would collide. */
+export function moveLinked(p: Project, clipId: string, start: Frame, toTrackId?: string): boolean {
+  const hit = findClip(p, clipId);
+  if (!hit) return false;
+  const delta = start - hit.clip.start;
+  const group = linkedClips(p, hit.clip);
+  const before = group.map(({ clip }) => clip.start);
+  const trackBefore = group.map(({ track }) => track.id);
+  const ok = group.every(({ clip }, i) => moveClip(p, clip.id, before[i]! + delta, clip === hit.clip ? toTrackId : undefined));
+  if (!ok) {
+    // roll back what moved
+    group.forEach(({ clip }, i) => moveClip(p, clip.id, before[i]!, trackBefore[i]));
+  }
+  return ok;
 }
