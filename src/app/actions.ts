@@ -1,5 +1,6 @@
 import { addClip, addTrack, clipEnd, createClip, findClip, findFreeStart, newId, projectDuration, removeLinked, removeTrack, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
 import type { Track } from '../core/types.ts';
+import { overlaps } from '../core/timeline.ts';
 import { exportProject } from '../export/exporter.ts';
 import { dialog, h } from './dom.ts';
 import { keepAwake, saveFile } from './platform.ts';
@@ -56,6 +57,31 @@ export class Actions {
       for (const t of targets) addClip(p, t.id, { ...createClip(assetId, start, asset.duration), link });
     });
     return true;
+  }
+
+  /** Add a text layer at the playhead on the top video track (a new track above if that spot is taken). */
+  addText(content = 'Your text'): void {
+    const { store } = this;
+    const p = store.project;
+    const dur = p.fps * 3;
+    const start = store.playhead;
+    const videos = p.tracks.filter((t) => t.kind === 'video');
+    const top = videos[videos.length - 1]!;
+    const s = store.settings;
+    const clip = createClip('', start, dur);
+    clip.text = {
+      content,
+      style: {
+        name: 'Text', fontname: s.defaultFont, fontsize: 110, primary: { r: 255, g: 255, b: 255, a: 255 }, outlineColour: { r: 0, g: 0, b: 0, a: 255 },
+        backColour: { r: 0, g: 0, b: 0, a: 0 }, bold: true, italic: false, outline: 8, shadow: 0, alignment: 5, marginL: 60, marginR: 60, marginV: 0, counters: s.counters,
+      },
+      animation: { type: 'bounce', frames: 6, overshoot: 1.15 },
+    };
+    store.edit((pr) => {
+      const target = top.locked || overlaps(top, start, dur) ? addTrack(pr, 'video') : pr.tracks.find((t) => t.id === top.id)!;
+      addClip(pr, target.id, clip);
+    });
+    store.select(clip.id);
   }
 
   addTrack(kind: Track['kind']): void {

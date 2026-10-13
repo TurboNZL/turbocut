@@ -155,3 +155,23 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; padding: 0 0.35rem;
 .bin-actions { display: flex; gap: 0.35rem; margin-top: 0.3rem; flex-wrap: wrap; }
 .drag-ghost { position: fixed; z-index: 80; pointer-events: none; padding: 4px 10px; border-radius: 8px; background: hsl(var(--accent)); color: hsl(var(--accent-fg)); font-size: 12px; box-shadow: 0 2px 8px rgb(0 0 0 / 0.35); }
 .tl-track.drop-target { outline: 2px dashed hsl(var(--accent)); outline-offset: -2px; }
+
+/* ---------------------------------------------------------------- text layers, style controls, keyframe editor */
+.tl-text { background: hsl(var(--warn) / 0.55); border-color: hsl(var(--warn)); }
+.style-controls { display: grid; gap: 0.15rem; }
+.style-row { grid-template-columns: 6.5rem minmax(0, 1fr); }
+.colour { width: 100%; height: 2.2rem; padding: 0; border: 1px solid hsl(var(--line)); border-radius: var(--radius, 6px); background: none; cursor: pointer; }
+textarea.input { width: 100%; resize: vertical; font: inherit; }
+
+.keys { display: grid; gap: 0.5rem; }
+.ks-grid { position: relative; user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+.ks-ruler { position: relative; height: 22px; margin-left: 0; border-bottom: 1px solid hsl(var(--line)); cursor: col-resize; }
+.ks-tick { position: absolute; top: 4px; font-size: 10px; color: hsl(var(--muted)); border-left: 1px solid hsl(var(--line)); padding-left: 2px; }
+.ks-row { display: grid; grid-template-columns: 78px minmax(0, 1fr); align-items: center; height: 34px; border-bottom: 1px solid hsl(var(--line) / 0.5); }
+.ks-label { min-height: 0; height: 100%; justify-content: flex-start; text-align: left; font-size: 12px; padding: 0 0.3rem; }
+.ks-track { position: relative; height: 100%; margin-right: 12px; cursor: col-resize; }
+.ks-track::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: hsl(var(--line)); }
+.ks-key { position: absolute; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; padding: 0; border: 0; background: none; color: hsl(var(--accent)); font-size: 18px; line-height: 28px; text-align: center; cursor: grab; touch-action: none; z-index: 2; }
+.ks-key.sel { color: hsl(var(--fg)); text-shadow: 0 0 0 2px hsl(var(--accent)); transform: scale(1.3); }
+.ks-ph { position: absolute; top: 0; bottom: 0; width: 2px; background: hsl(var(--bad)); pointer-events: none; z-index: 3; }
+.ks-details { display: grid; gap: 0.3rem; }

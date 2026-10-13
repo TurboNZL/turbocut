@@ -1,6 +1,7 @@
 import { evalProp, sample } from '../core/keyframes.ts';
 import { clipEnd } from '../core/timeline.ts';
 import type { BlurEffect, Clip, Frame, Project } from '../core/types.ts';
+import { textPicture } from './textLayer.ts';
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -56,7 +57,8 @@ export function drawClip(ctx: Ctx2D, p: Project, clip: Clip, frame: Frame, pic: 
   const sw = pic.width;
   const sh = pic.height;
   if (!sw || !sh) return;
-  const fit = Math.max(p.width / sw, p.height / sh);
+  // Pictures and video cover the frame; a text layer keeps its natural size (the layer's Zoom scales it from there).
+  const fit = clip.text ? 1 : Math.max(p.width / sw, p.height / sh);
   const scale = fit * evalProp(clip, 'scale', frame);
   const opacity = evalProp(clip, 'opacity', frame);
   if (opacity <= 0) return;
@@ -107,7 +109,7 @@ export async function drawVideo(ctx: Ctx2D, p: Project, frame: Frame, src: Frame
     if (track.kind !== 'video' || track.hidden) continue;
     const clip = clipAt(track, frame);
     if (!clip) continue;
-    const pic = await src.getFrame(clip, frame, sourceSeconds(p, clip, frame));
+    const pic = clip.text ? textPicture(p, clip, frame) : await src.getFrame(clip, frame, sourceSeconds(p, clip, frame));
     if (pic) layers.push({ clip, pic });
   }
   ctx.fillStyle = '#000';

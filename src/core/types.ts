@@ -38,10 +38,22 @@ export interface BlurEffect {
 
 export type Effect = BlurEffect;
 
+/**
+ * A text layer: a clip with no media that draws styled text. The style has the same shape as a caption style
+ * (font, size, colours, outline, alignment, margins) so the same editor and renderer serve both.
+ */
+export interface TextSpec {
+  content: string;
+  style: import('../captions/ass.ts').AssStyle;
+  animation: import('../captions/presets.ts').EntranceAnimation;
+}
+
 export interface Clip {
   id: string;
-  /** Asset id for media clips. Caption clips use `captionTrackId` instead. */
+  /** Asset id for media clips; empty for a text layer. */
   assetId: string;
+  /** Set on text layers, which draw text instead of a video frame. */
+  text?: TextSpec;
   /** Position on the timeline. */
   start: Frame;
   /** Length on the timeline. */

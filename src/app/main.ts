@@ -13,6 +13,7 @@ import { fmtTime, h, popupMenu } from './dom.ts';
 import { importFont, loadStoredFonts } from './fonts.ts';
 import { Hotkeys, type HotkeyAction } from './hotkeys.ts';
 import { Inspector } from './inspector.ts';
+import { KeysPanel } from './keysPanel.ts';
 import { pickFiles, platform } from './platform.ts';
 import { Player } from './player.ts';
 import { openSettings, capturingKey, type SettingsTab } from './settingsDialog.ts';
@@ -33,6 +34,7 @@ const timeline = new TimelineView(store, {
 });
 const inspector = new Inspector(store);
 const captions = new CaptionsPanel(store);
+const keys = new KeysPanel(store, (dir) => inspector.jumpKey(dir));
 const hotkeys = new Hotkeys(() => store.settings.hotkeys, (o) => store.updateSettings({ hotkeys: o }));
 const touch = timeline.touch;
 const settings = (tab?: SettingsTab) => openSettings({ store, hotkeys, touch }, tab);
@@ -58,6 +60,9 @@ hotkeys.register([
   act('Editing', 'trimEnd', 'Trim the end to the playhead', [']'], () => actions.trimToPlayhead('end')),
   act('Editing', 'mute', 'Mute the selected clip', ['M'], () => actions.toggleMute()),
   act('Editing', 'keyframe', 'Keyframe zoom and position here', ['K'], () => inspector.keyframeAll()),
+  act('Editing', 'prevKey', 'Jump to the previous keyframe', [','], () => inspector.jumpKey(-1)),
+  act('Editing', 'nextKey', 'Jump to the next keyframe', ['.'], () => inspector.jumpKey(1)),
+  act('Editing', 'addText', 'Add a text layer', ['T'], () => actions.addText()),
   act('Editing', 'undo', 'Undo', ['Ctrl+Z'], () => store.undo()),
   act('Editing', 'redo', 'Redo', ['Ctrl+Shift+Z', 'Ctrl+Y'], () => store.redo()),
   act('Timeline', 'snap', 'Turn snapping on or off', ['N'], () => actions.toggleSnapping()),
@@ -79,7 +84,7 @@ zoom.addEventListener('input', () => store.setZoom(Math.exp(Number(zoom.value)))
 store.on('view', () => (zoom.value = String(Math.log(store.zoom))));
 const status = h('div', { class: 'status', role: 'status' });
 
-const tabs: Record<string, HTMLElement> = { Clip: inspector.el, Media: bin.el, Captions: captions.el, Project: projectPanel() };
+const tabs: Record<string, HTMLElement> = { Clip: inspector.el, Keys: keys.el, Media: bin.el, Captions: captions.el, Project: projectPanel() };
 const tabBar = h('div', { class: 'tabs bt-tabbar' });
 const tabBody = h('div', { class: 'tab-body' });
 let activeTab = 'Clip';
@@ -94,8 +99,17 @@ function showTab(name: string, userTap = false): void {
 }
 for (const name of Object.keys(tabs)) tabBar.append(h('button', { class: 'bt-tab', onclick: () => showTab(name, true) }, name));
 showTab('Clip');
-store.on('selection', () => store.selected && showTab('Clip'));
-store.on('selection', () => store.selectedCue && showTab('Captions'));
+// Switch panels only when a DIFFERENT clip or caption gets selected. Undo, redo and picking a track also announce a
+// selection change; they must not pull the person out of the panel they are working in. The Keys panel stays put so
+// keyframes can be edited clip after clip.
+let lastSelected: string | null = null;
+let lastCue: string | null = null;
+store.on('selection', () => {
+  if (store.selected && store.selected !== lastSelected && activeTab !== 'Keys') showTab('Clip');
+  if (store.selectedCue && store.selectedCue !== lastCue) showTab('Captions');
+  lastSelected = store.selected;
+  lastCue = store.selectedCue;
+});
 
 function projectPanel(): HTMLElement {
   const name = h('input', { class: 'input', value: store.project.name, 'aria-label': 'Project name' });
@@ -143,6 +157,7 @@ const editBar = h('div', { class: 'edit-bar' },
   h('button', { class: 'btn', onclick: () => actions.trimToPlayhead('start'), title: 'Cut the start of the selected clip to the playhead ([)' }, 'Trim start'),
   h('button', { class: 'btn', onclick: () => actions.trimToPlayhead('end'), title: 'Cut the end of the selected clip to the playhead (])' }, 'Trim end'),
   h('button', { class: 'btn', onclick: () => actions.remove(false), title: 'Delete the selection' }, 'Delete'),
+  h('button', { class: 'btn', onclick: () => actions.addText(), title: 'Add a text layer (T)' }, 'Text'),
   snapBtn,
   h('button', {
     class: 'btn',

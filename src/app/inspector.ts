@@ -1,32 +1,17 @@
-import { evalProp, removeKeyframe, setKeyframe } from '../core/keyframes.ts';
+import { keyTimes, neighbourKey, paramsFor, valueAt, type Param } from '../core/animation.ts';
+import { removeKeyframe, setKeyframe } from '../core/keyframes.ts';
 import { findClip } from '../core/timeline.ts';
-import type { AnimProp, Clip } from '../core/types.ts';
+import type { Clip } from '../core/types.ts';
 import { h, rangeFill } from './dom.ts';
+import { styleControls } from './styleControls.ts';
 import type { Store } from './store.ts';
 
-interface Row {
-  label: string;
-  prop: AnimProp;
-  min: number;
-  max: number;
-  step: number;
-  /** Convert between the stored value and what the person sees (for example opacity 0..1 as percent). */
-  show?: (v: number) => number;
-  store?: (v: number) => number;
-}
-
-const ROWS: Row[] = [
-  { label: 'Zoom', prop: 'scale', min: 0.2, max: 4, step: 0.01 },
-  { label: 'X', prop: 'x', min: -1500, max: 1500, step: 1 },
-  { label: 'Y', prop: 'y', min: -1500, max: 1500, step: 1 },
-  { label: 'Rotate', prop: 'rotation', min: -180, max: 180, step: 0.5 },
-  { label: 'Opacity %', prop: 'opacity', min: 0, max: 100, step: 1, show: (v) => v * 100, store: (v) => v / 100 },
-];
-
+/** Settings of the selected clip. Every animatable setting gets a slider, a number and a keyframe button. */
 export class Inspector {
   readonly el = h('div', { class: 'insp' });
   private refreshers: (() => void)[] = [];
   private builtFor: string | null | undefined = undefined;
+  private dirty = false;
 
   constructor(private store: Store) {
     store.on('selection', () => this.build());
@@ -39,6 +24,10 @@ export class Inspector {
     return this.store.selected ? (findClip(this.store.project, this.store.selected)?.clip ?? null) : null;
   }
 
+  private kind(): 'video' | 'audio' {
+    return findClip(this.store.project, this.store.selected ?? '')?.track.kind ?? 'video';
+  }
+
   private build(): void {
     const clip = this.clip();
     if ((clip?.id ?? null) === this.builtFor) return this.refresh();
@@ -49,15 +38,13 @@ export class Inspector {
       this.el.append(h('p', { class: 'hint' }, 'Select a clip on the timeline to edit it.'));
       return;
     }
+    const kind = this.kind();
     const asset = this.store.project.assets[clip.assetId];
-    this.el.append(h('div', { class: 'bt-panel-title' }, asset?.name ?? 'Clip'));
-    const isVideo = findClip(this.store.project, clip.id)?.track.kind === 'video';
-    if (isVideo) {
-      for (const row of ROWS) this.el.append(this.propRow(row));
-      this.el.append(this.effects(), this.speed());
-    } else {
-      this.el.append(this.propRow({ label: 'Volume %', prop: 'volume', min: 0, max: 200, step: 1, show: (v) => v * 100, store: (v) => v / 100 }), this.fades());
-    }
+    this.el.append(h('div', { class: 'bt-panel-title' }, clip.text ? 'Text layer' : (asset?.name ?? 'Clip')));
+    if (clip.text) this.el.append(this.textSection(clip));
+    for (const param of paramsFor(kind)) this.el.append(this.paramRow(param));
+    if (kind === 'video' && !clip.text) this.el.append(this.speed());
+    if (kind === 'audio') this.el.append(this.fades());
     this.refresh();
   }
 
@@ -65,30 +52,31 @@ export class Inspector {
     this.refreshers.forEach((r) => r());
   }
 
+  /** One undo step for a whole drag of a slider. */
   private edit(): void {
     if (!this.dirty) {
       this.store.begin();
       this.dirty = true;
     }
   }
-  private dirty = false;
 
-  private propRow(r: Row): HTMLElement {
+  private relNow(): number {
+    return this.store.playhead - (this.clip()?.start ?? 0);
+  }
+
+  private paramRow(param: Param): HTMLElement {
     const store = this.store;
-    const num = h('input', { type: 'number', class: 'input num', min: r.min, max: r.max, step: r.step });
-    const range = h('input', { type: 'range', class: 'bt-range', min: r.min, max: r.max, step: r.step });
-    const key = h('button', { class: 'btn btn-ghost kf', title: 'Keyframe at playhead (K)', 'aria-label': `Keyframe ${r.label}` }, '◇');
-    const show = r.show ?? ((v: number) => v);
-    const to = r.store ?? ((v: number) => v);
+    const num = h('input', { type: 'number', class: 'input num', min: param.min * param.scale, max: param.max * param.scale, step: param.step * param.scale, 'aria-label': param.label });
+    const range = h('input', { type: 'range', class: 'bt-range', min: param.min * param.scale, max: param.max * param.scale, step: param.step * param.scale, 'aria-label': `${param.label} slider` });
+    const key = h('button', { class: 'btn btn-ghost kf', title: 'Keyframe at the playhead', 'aria-label': `Keyframe ${param.label}` }, '◇');
 
-    const relNow = () => store.playhead - (this.clip()?.start ?? 0);
     const apply = (shown: number) => {
       const clip = this.clip();
       if (!clip) return;
       this.edit();
-      const v = to(Math.min(r.max, Math.max(r.min, shown)));
-      if (clip.keys[r.prop]?.length) clip.keys[r.prop] = setKeyframe(clip.keys[r.prop], { t: relNow(), v, ease: 'inOut' });
-      else clip.base[r.prop] = v;
+      const v = Math.min(param.max, Math.max(param.min, shown / param.scale));
+      if (param.keys(clip)?.length) param.setKeys(clip, setKeyframe(param.keys(clip), { t: this.relNow(), v, ease: 'inOut' }));
+      else param.setBase(clip, v);
       store.emit('project');
     };
     for (const el of [num, range]) {
@@ -99,57 +87,46 @@ export class Inspector {
       const clip = this.clip();
       if (!clip) return;
       store.begin();
-      const keys = clip.keys[r.prop];
-      const t = relNow();
+      const keys = param.keys(clip);
+      const t = this.relNow();
       if (keys?.some((k) => k.t === t)) {
         const left = removeKeyframe(keys, t);
-        if (left.length) clip.keys[r.prop] = left;
+        if (left.length) param.setKeys(clip, left);
         else {
-          clip.base[r.prop] = evalProp(clip, r.prop, store.playhead);
-          delete clip.keys[r.prop];
+          param.setBase(clip, valueAt(param, clip, t)); // keep the value it had when the last key goes
+          param.setKeys(clip, undefined);
         }
-      } else clip.keys[r.prop] = setKeyframe(keys, { t, v: evalProp(clip, r.prop, store.playhead), ease: 'inOut' });
+      } else param.setKeys(clip, setKeyframe(keys, { t, v: valueAt(param, clip, t), ease: 'inOut' }));
       store.emit('project');
     });
 
     this.refreshers.push(() => {
       const clip = this.clip();
       if (!clip) return;
-      const v = show(evalProp(clip, r.prop, store.playhead));
-      const text = String(+v.toFixed(2));
-      if (document.activeElement !== num) num.value = text;
+      const v = valueAt(param, clip, this.relNow()) * param.scale;
+      if (document.activeElement !== num) num.value = String(+v.toFixed(2));
       range.value = String(v);
       rangeFill(range);
-      const keys = clip.keys[r.prop];
-      key.textContent = keys?.some((k) => k.t === store.playhead - clip.start) ? '◆' : keys?.length ? '◈' : '◇';
+      const keys = param.keys(clip);
+      key.textContent = keys?.some((k) => k.t === this.relNow()) ? '◆' : keys?.length ? '◈' : '◇';
       key.classList.toggle('on', !!keys?.length);
     });
-    return h('label', { class: 'prop' }, h('span', { class: 'prop-l' }, r.label), range, num, r.prop === 'volume' ? null : key);
+    return h('label', { class: 'prop' }, h('span', { class: 'prop-l' }, param.label), range, num, key);
   }
 
-  private effects(): HTMLElement {
+  /** What the text says and how it looks. */
+  private textSection(clip: Clip): HTMLElement {
     const store = this.store;
-    const blur = h('input', { type: 'range', class: 'bt-range', min: 0, max: 80, step: 1 });
-    const pix = h('input', { type: 'range', class: 'bt-range', min: 0, max: 120, step: 1 });
-    const get = (kind: 'gaussian' | 'pixelate') => this.clip()?.effects.find((e) => e.kind === kind)?.radius ?? 0;
-    const set = (kind: 'gaussian' | 'pixelate', v: number) => {
-      const clip = this.clip();
-      if (!clip) return;
+    const text = h('textarea', { class: 'input', rows: 2, 'aria-label': 'Text', value: clip.text!.content });
+    text.addEventListener('input', () => {
       this.edit();
-      clip.effects = clip.effects.filter((e) => e.kind !== kind);
-      if (v > 0) clip.effects.push({ type: 'blur', kind, radius: v });
+      clip.text!.content = text.value;
       store.emit('project');
-    };
-    blur.addEventListener('input', () => set('gaussian', Number(blur.value)));
-    pix.addEventListener('input', () => set('pixelate', Number(pix.value)));
-    for (const el of [blur, pix]) el.addEventListener('change', () => (this.dirty = false));
-    this.refreshers.push(() => {
-      blur.value = String(get('gaussian'));
-      pix.value = String(get('pixelate'));
-      rangeFill(blur);
-      rangeFill(pix);
     });
-    return h('div', { class: 'fx-box' }, h('label', { class: 'prop' }, h('span', { class: 'prop-l' }, 'Blur'), blur), h('label', { class: 'prop' }, h('span', { class: 'prop-l' }, 'Pixelate'), pix));
+    text.addEventListener('change', () => (this.dirty = false));
+    const controls = styleControls(clip.text!.style, { onBegin: () => this.edit(), onChange: () => store.emit('project'), fonts: undefined });
+    controls.addEventListener('change', () => (this.dirty = false));
+    return h('div', { class: 'stack' }, text, controls);
   }
 
   private speed(): HTMLElement {
@@ -195,15 +172,25 @@ export class Inspector {
     return h('div', { class: 'fx-box' }, mk('Fade in', 'audioFadeIn'), mk('Fade out', 'audioFadeOut'), mute);
   }
 
-  /** K: toggle a keyframe on the main properties at the playhead. */
+  /** K: toggle keyframes on zoom, X and Y at the playhead. */
   keyframeAll(): void {
     const clip = this.clip();
-    if (!clip) return;
-    const t = this.store.playhead - clip.start;
+    if (!clip || this.kind() !== 'video') return;
+    const t = this.relNow();
     if (t < 0 || t >= clip.duration) return;
     this.store.edit((p) => {
       const c = findClip(p, clip.id)!.clip;
-      for (const prop of ['scale', 'x', 'y'] as AnimProp[]) c.keys[prop] = setKeyframe(c.keys[prop], { t, v: evalProp(c, prop, this.store.playhead), ease: 'inOut' });
+      for (const param of paramsFor('video').filter((x) => ['scale', 'x', 'y'].includes(x.id))) param.setKeys(c, setKeyframe(param.keys(c), { t, v: valueAt(param, c, t), ease: 'inOut' }));
     });
+  }
+
+  /** Jump the playhead to the next or previous keyframe of the selected clip. */
+  jumpKey(dir: 1 | -1): void {
+    const clip = this.clip();
+    if (!clip) return this.store.say('Select a clip first.');
+    const times = keyTimes(clip, paramsFor(this.kind()));
+    const t = neighbourKey(times, this.relNow(), dir);
+    if (t === undefined) return this.store.say(times.length ? `No ${dir > 0 ? 'later' : 'earlier'} keyframe.` : 'This clip has no keyframes yet.');
+    this.store.seek(clip.start + t);
   }
 }

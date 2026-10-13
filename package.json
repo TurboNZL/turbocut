@@ -9,11 +9,12 @@
     "build": "vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "e2e": "node e2e/run.mjs && node e2e/app.mjs && node e2e/settings.mjs && node e2e/bin.mjs && node e2e/touch.mjs",
+    "e2e": "node e2e/run.mjs && node e2e/app.mjs && node e2e/settings.mjs && node e2e/bin.mjs && node e2e/keys.mjs && node e2e/touch.mjs",
     "e2e:electron": "node e2e/electron.mjs",
     "e2e:touch": "node e2e/touch.mjs",
     "e2e:settings": "node e2e/settings.mjs",
     "e2e:bin": "node e2e/bin.mjs",
+    "e2e:keys": "node e2e/keys.mjs",
     "electron:dev": "TURBOCUT_DEV_URL=http://localhost:5173 electron .",
     "dist:desktop": "pnpm build && electron-builder --publish never",
     "android:sync": "pnpm build && cap sync android"

@@ -155,8 +155,8 @@ export class TimelineView {
       if (isSel) selectedClip = clip;
       const el = h(
         'div',
-        { class: `tl-clip${isSel ? ' sel' : ''}${clip.muted ? ' muted' : ''}`, 'data-start': clip.start, 'data-dur': clip.duration, style: { left: `${this.pad + this.px(clip.start)}px`, width: `${Math.max(2, this.px(clip.duration))}px` }, title: asset?.name },
-        h('span', { class: 'tl-name' }, asset?.name ?? ''),
+        { class: `tl-clip${isSel ? ' sel' : ''}${clip.muted ? ' muted' : ''}${clip.text ? ' tl-text' : ''}`, 'data-start': clip.start, 'data-dur': clip.duration, style: { left: `${this.pad + this.px(clip.start)}px`, width: `${Math.max(2, this.px(clip.duration))}px` }, title: asset?.name },
+        h('span', { class: 'tl-name' }, clip.text ? `T  ${clip.text.content}` : (asset?.name ?? '')),
         clip.effects.length ? h('span', { class: 'tl-fx' }, 'fx') : null,
         Object.values(clip.keys).some((k) => k?.length) ? h('span', { class: 'tl-fx' }, '◆') : null,
       );

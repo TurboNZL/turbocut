@@ -80,7 +80,7 @@ try {
 
   // ---- 3. Hotkey editor: add X to Split through the UI, steal Space for Snap, persist across a reload
   await page.getByRole('button', { name: 'Settings' }).first().click();
-  await page.getByRole('button', { name: 'Keys', exact: true }).click();
+  await page.locator('.settings-nav').getByRole('button', { name: 'Keys', exact: true }).click();
   const rowFor = (label) => page.locator('.key-row', { hasText: label }).first();
   await rowFor('Split at the playhead').getByRole('button', { name: 'Add' }).click();
   await page.keyboard.press('x');
@@ -138,7 +138,7 @@ try {
   // ---- 5. Updates tab with mocked GitHub answers
   const openUpdates = async () => {
     await page.getByRole('button', { name: 'Settings' }).first().click();
-    await page.getByRole('button', { name: 'Updates', exact: true }).click();
+    await page.locator('.settings-nav').getByRole('button', { name: 'Updates', exact: true }).click();
     await page.getByRole('button', { name: 'Check for updates' }).click();
     await page.waitForFunction(() => /newest version|is available|No releases|Could not/.test(document.querySelector('.settings-body').textContent));
     return page.locator('.settings-body').textContent();
