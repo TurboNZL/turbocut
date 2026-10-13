@@ -42,8 +42,11 @@ try {
   await page.getByRole('button', { name: 'Use Turbo Test Font as the default font' }).click();
   await page.waitForFunction(() => window.turbocutApp.store.settings.defaultFont === 'Turbo Test Font');
   assert.equal((await state()).builtin, 'Turbo Test Font');
-  assert.match(await page.locator('.font-row', { hasText: 'Turbo Test Font' }).textContent(), /default/);
-  assert.match(await page.locator('.font-row', { hasText: 'Turbo Test Font' }).textContent(), /Used by TurboCut Bounce/, 'says where it is used');
+  // the list redraws after reading the stored fonts, so wait for it instead of reading it at once
+  await page.waitForFunction(() => {
+    const t = [...document.querySelectorAll('.font-row')].find((r) => r.textContent.includes('Turbo Test Font'))?.textContent ?? '';
+    return /default/.test(t) && /Used by TurboCut Bounce/.test(t);
+  }, null, { timeout: 10000 });
   await page.screenshot({ path: `${out}font-manager.png` });
 
   // survives a reload (stored on the device)
