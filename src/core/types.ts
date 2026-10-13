@@ -69,7 +69,10 @@ export interface Track {
   name: string;
   clips: Clip[];
   locked: boolean;
+  /** Video tracks: not drawn. */
   hidden: boolean;
+  /** Audio tracks: not heard. */
+  muted?: boolean;
 }
 
 export interface Asset {

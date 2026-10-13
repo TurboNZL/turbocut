@@ -10,3 +10,5 @@ ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=1920x1080:rate=30:duration=
 ffmpeg -loglevel error -y -f lavfi -i "color=c=black:s=320x240:r=30:d=75" \
   -f lavfi -i "aevalsrc='0.5*sin(2*PI*(200*t + (2800/(2*75))*t*t))|0.5*sin(2*PI*(200*t + (2800/(2*75))*t*t))':s=48000:d=75" \
   -c:v libvpx-vp9 -b:v 200k -deadline realtime -cpu-used 8 -c:a libopus -b:a 128k "$dir/chirp.webm"
+# vonly.webm: 4 s of video with no audio track at all (for multi-track picture tests)
+ffmpeg -loglevel error -y -f lavfi -i "testsrc=size=640x360:rate=30:duration=4" -c:v libvpx-vp9 -b:v 500k -deadline realtime -cpu-used 8 -an "$dir/vonly.webm"

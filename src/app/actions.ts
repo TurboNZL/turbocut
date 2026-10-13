@@ -1,4 +1,5 @@
-import { addClip, clipEnd, createClip, newId, projectDuration, removeLinked, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
+import { addClip, addTrack, clipEnd, createClip, findClip, findFreeStart, newId, projectDuration, removeLinked, removeTrack, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
+import type { Track } from '../core/types.ts';
 import { exportProject } from '../export/exporter.ts';
 import { dialog, h } from './dom.ts';
 import { keepAwake, saveFile } from './platform.ts';
@@ -9,27 +10,71 @@ import type { Store } from './store.ts';
 export class Actions {
   constructor(private store: Store, private player: Player) {}
 
-  async importMedia(files: File[]): Promise<void> {
+  /**
+   * Open files into the media bin. The very first import into an empty timeline is also placed on it, so a
+   * single clip is one step; after that, files wait in the bin until they are added.
+   */
+  async importMedia(files: File[], place?: boolean): Promise<void> {
     const { store } = this;
     for (const file of files) {
       try {
         store.say(`Importing ${file.name}…`);
         const asset = await store.lib.importFile(file, file.name, store.project.fps);
-        store.edit((p) => {
-          p.assets[asset.id] = asset;
-          const v = p.tracks.find((t) => t.kind === 'video')!;
-          const a = p.tracks.find((t) => t.kind === 'audio')!;
-          const startOf = (t: typeof v) => t.clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
-          const at = asset.hasVideo ? startOf(v) : startOf(a);
-          const link = asset.hasVideo && asset.hasAudio ? newId('l') : undefined;
-          if (asset.hasVideo) addClip(p, v.id, { ...createClip(asset.id, at, asset.duration), link });
-          if (asset.hasAudio) addClip(p, a.id, { ...createClip(asset.id, at, asset.duration), link });
-        });
-        store.say(`Imported ${file.name}.`);
+        const empty = store.project.tracks.every((t) => t.clips.length === 0);
+        store.edit((p) => (p.assets[asset.id] = asset));
+        if (place ?? empty) this.addAsset(asset.id);
+        store.say(place ?? empty ? `Imported ${file.name}.` : `${file.name} is in the media bin. Open Media and tap Add.`);
       } catch (e) {
         store.say(`Could not open ${file.name}: ${e instanceof Error ? e.message : e}. This device may not support its format.`);
       }
     }
+  }
+
+  /**
+   * Put a bin item on the timeline. Video goes to the active video track and its sound to the active audio track
+   * (linked, so they split and delete together). It starts at `at` (default the playhead), moved later if that spot
+   * is taken on either track. Dropping onto a specific track sends the matching part there.
+   */
+  addAsset(assetId: string, opts: { at?: number; trackId?: string } = {}): boolean {
+    const { store } = this;
+    const asset = store.project.assets[assetId];
+    if (!asset) return false;
+    const dropped = opts.trackId ? store.project.tracks.find((t) => t.id === opts.trackId) : undefined;
+    const pick = (kind: Track['kind']): Track => (dropped && dropped.kind === kind ? dropped : store.targetTrack(kind));
+    const v = asset.hasVideo ? pick('video') : undefined;
+    const a = asset.hasAudio ? pick('audio') : undefined;
+    if ((v && v.locked) || (a && a.locked)) {
+      store.say('That track is locked.');
+      return false;
+    }
+    const targets = [v, a].filter((t): t is Track => !!t);
+    const start = findFreeStart(targets, opts.at ?? store.playhead, asset.duration);
+    const link = v && a ? newId('l') : undefined;
+    // Not selected afterwards: selecting a clip switches the side panel to the Clip tab, and someone adding several
+    // clips from the bin should stay in the bin.
+    store.edit((p) => {
+      for (const t of targets) addClip(p, t.id, { ...createClip(assetId, start, asset.duration), link });
+    });
+    return true;
+  }
+
+  addTrack(kind: Track['kind']): void {
+    let id = '';
+    this.store.edit((p) => (id = addTrack(p, kind).id));
+    this.store.setActiveTrack(id);
+  }
+
+  removeTrack(trackId: string): void {
+    let ok = false;
+    this.store.edit((p) => (ok = removeTrack(p, trackId)));
+    if (!ok) this.store.say('Only an empty track can be deleted, and the last video and audio tracks stay.');
+  }
+
+  toggleTrack(trackId: string, what: 'hidden' | 'muted' | 'locked'): void {
+    this.store.edit((p) => {
+      const t = p.tracks.find((x) => x.id === trackId);
+      if (t) t[what] = !t[what];
+    });
   }
 
   split(): void {
@@ -37,8 +82,9 @@ export class Actions {
     const p = store.project;
     const f = store.playhead;
     store.edit(() => {
-      if (store.selected) splitLinked(p, store.selected, f);
-      else for (const t of p.tracks) if (!t.locked) for (const c of [...t.clips]) if (f > c.start && f < clipEnd(c)) splitLinked(p, c.id, f);
+      if (store.selected) {
+        if (!findClip(p, store.selected)?.track.locked) splitLinked(p, store.selected, f);
+      } else for (const t of p.tracks) if (!t.locked) for (const c of [...t.clips]) if (f > c.start && f < clipEnd(c)) splitLinked(p, c.id, f);
     });
   }
 
@@ -52,6 +98,7 @@ export class Actions {
     }
     if (!store.selected) return;
     const id = store.selected;
+    if (findClip(store.project, id)?.track.locked) return store.say('That track is locked.');
     store.select(null);
     store.edit((p) => removeLinked(p, id, ripple));
   }

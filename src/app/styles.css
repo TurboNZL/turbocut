@@ -22,7 +22,7 @@ button, select, input { font: inherit; }
 .transport .time { padding: 0 0.4rem; white-space: nowrap; }
 .zoom { width: 110px; }
 .edit-bar { display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.5rem; overflow-x: auto; border-top: 1px solid hsl(var(--line)); }
-.edit-bar .btn { white-space: nowrap; }
+.edit-bar .btn { white-space: nowrap; flex: none; }
 
 .side { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; border-left: 1px solid hsl(var(--line)); }
 .tabs { display: flex; }
@@ -53,7 +53,14 @@ button, select, input { font: inherit; }
 .tl-track { position: relative; height: 46px; border-bottom: 1px solid hsl(var(--line) / 0.6); }
 .tl-audio { height: 38px; }
 .tl-caption { height: 30px; }
-.tl-head { position: sticky; left: 0; z-index: 2; width: 56px; height: 100%; display: grid; place-items: center; background: hsl(var(--surface)); color: hsl(var(--muted)); font-size: 12px; border-right: 1px solid hsl(var(--line)); }
+.tl-head { position: sticky; left: 0; z-index: 2; width: 56px; height: 100%; display: grid; place-items: center; align-content: center; border: 0; border-right: 1px solid hsl(var(--line)); border-radius: 0; background: hsl(var(--surface)); color: hsl(var(--muted)); font-size: 12px; padding: 0; cursor: pointer; line-height: 1.1; }
+.tl-head small { font-size: 10px; }
+.tl-track.active .tl-head { color: hsl(var(--fg)); box-shadow: inset 3px 0 0 hsl(var(--accent)); }
+.tl-track.off .tl-clip { opacity: 0.4; }
+.tl-track.locked .tl-clip { background-image: repeating-linear-gradient(135deg, transparent 0 6px, hsl(var(--bg) / 0.25) 6px 12px); cursor: not-allowed; }
+.tl-wave { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.popup-menu { position: fixed; z-index: 60; display: flex; flex-direction: column; min-width: 180px; padding: 4px; }
+.popup-menu .btn { justify-content: flex-start; text-align: left; }
 .tl-clip { position: absolute; top: 3px; bottom: 3px; border-radius: calc(var(--radius, 6px) * 0.6); background: hsl(var(--accent) / 0.55); border: 1px solid hsl(var(--accent)); overflow: hidden; display: flex; align-items: center; gap: 4px; padding: 0 9px; cursor: grab; touch-action: none; user-select: none; }
 .tl-audio .tl-clip { background: hsl(var(--good) / 0.45); border-color: hsl(var(--good)); }
 .tl-cue { background: hsl(var(--raised)); border-color: hsl(var(--line)); }
@@ -79,7 +86,8 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; padding: 0 0.35rem;
 .tl-tip { position: absolute; display: none; z-index: 10; padding: 4px 9px; border-radius: 8px; background: hsl(var(--surface)); border: 1px solid hsl(var(--line)); box-shadow: 0 2px 8px rgb(0 0 0 / 0.25); font-size: 12px; pointer-events: none; white-space: nowrap; }
 .tl.touch .tl-scroll { scrollbar-width: none; touch-action: pan-x pan-y; }
 .tl.touch .tl-scroll::-webkit-scrollbar { display: none; }
-.tl.touch .tl-head { display: none; }
+.tl.touch .tl-head { width: 34px; font-size: 11px; background: hsl(var(--surface) / 0.85); }
+.tl.touch .tl-head small { display: none; }
 .tl.touch .tl-ruler { height: 28px; }
 .tl.touch .tl-tick { top: 7px; font-size: 12px; }
 .tl.touch .tl-track { height: 66px; touch-action: pan-x pan-y; }
@@ -100,7 +108,9 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; padding: 0 0.35rem;
   .main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
   .side { border-left: 0; border-top: 1px solid hsl(var(--line)); max-height: 46vh; }
   .side.collapsed .tab-body { display: none; }
-  .side:not(.collapsed) { min-height: 38vh; }
+  /* An open sheet takes a third of the screen and the timeline shrinks to its minimum, so the preview keeps a usable size. */
+  .side:not(.collapsed) { height: 34vh; min-height: 0; max-height: 34vh; }
+  #app:has(.side:not(.collapsed)) { grid-template-rows: auto minmax(0, 1fr) 150px auto auto; }
   .stage { padding: 0.3rem; }
   .btn { min-height: 44px; min-width: 44px; }
   .bt-tab { min-height: 44px; }
@@ -134,3 +144,14 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; padding: 0 0.35rem;
   .key-row { grid-template-columns: 1fr auto; }
   .key-label { grid-column: 1 / -1; font-weight: 600; }
 }
+
+/* ---------------------------------------------------------------- media bin */
+.bin { display: grid; gap: 0.5rem; }
+.bin-item { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 0.6rem; padding: 0.4rem; border: 1px solid hsl(var(--line)); border-radius: var(--radius, 6px); align-items: center; }
+.bin-thumb { position: relative; width: 96px; aspect-ratio: 16 / 9; background: #000; border-radius: calc(var(--radius, 6px) * 0.6); overflow: hidden; display: grid; place-items: center; touch-action: pan-y; cursor: grab; }
+.bin-thumb canvas { max-width: 100%; max-height: 100%; }
+.bin-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.bin-meta { color: hsl(var(--muted)); font-size: 0.8em; }
+.bin-actions { display: flex; gap: 0.35rem; margin-top: 0.3rem; flex-wrap: wrap; }
+.drag-ghost { position: fixed; z-index: 80; pointer-events: none; padding: 4px 10px; border-radius: 8px; background: hsl(var(--accent)); color: hsl(var(--accent-fg)); font-size: 12px; box-shadow: 0 2px 8px rgb(0 0 0 / 0.35); }
+.tl-track.drop-target { outline: 2px dashed hsl(var(--accent)); outline-offset: -2px; }

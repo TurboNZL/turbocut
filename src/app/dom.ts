@@ -50,3 +50,41 @@ export function rangeFill(input: HTMLInputElement): void {
   const max = Number(input.max || 100);
   input.style.setProperty('--p', `${((Number(input.value) - min) / (max - min)) * 100}%`);
 }
+
+export interface MenuItem {
+  label: string;
+  run: () => void;
+  disabled?: boolean;
+}
+
+/** A small themed pop-up menu next to `anchor`. Closes on a choice, an outside press or Escape. */
+export function popupMenu(anchor: HTMLElement, items: MenuItem[]): { close: () => void } {
+  document.querySelector('.popup-menu')?.remove();
+  const menu = h('div', { class: 'bt-menu popup-menu', role: 'menu' });
+  const close = () => {
+    menu.remove();
+    window.removeEventListener('pointerdown', away, true);
+    window.removeEventListener('keydown', esc, true);
+  };
+  const away = (e: Event) => {
+    if (!menu.contains(e.target as Node)) close();
+  };
+  const esc = (e: KeyboardEvent) => e.key === 'Escape' && close();
+  for (const it of items) {
+    const b = h('button', { class: 'btn btn-ghost', role: 'menuitem', disabled: !!it.disabled }, it.label);
+    b.addEventListener('click', () => {
+      close();
+      it.run();
+    });
+    menu.append(b);
+  }
+  const r = anchor.getBoundingClientRect();
+  document.body.append(menu);
+  const w = menu.offsetWidth || 200;
+  const hgt = menu.offsetHeight || 160;
+  menu.style.left = `${Math.max(4, Math.min(r.right + 4, window.innerWidth - w - 4))}px`;
+  menu.style.top = `${Math.max(4, Math.min(r.top, window.innerHeight - hgt - 4))}px`;
+  setTimeout(() => window.addEventListener('pointerdown', away, true), 0);
+  window.addEventListener('keydown', esc, true);
+  return { close };
+}

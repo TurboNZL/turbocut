@@ -203,3 +203,34 @@ export function moveLinked(p: Project, clipId: string, start: Frame, toTrackId?:
   }
   return ok;
 }
+
+const PREFIX = { video: 'V', audio: 'A' } as const;
+
+/** Add a track of `kind` above the existing ones of that kind and return it. Named V1, V2... or A1, A2... */
+export function addTrack(p: Project, kind: Track['kind']): Track {
+  const n = p.tracks.filter((t) => t.kind === kind).length + 1;
+  const track: Track = { id: newId('t'), kind, name: `${PREFIX[kind]}${n}`, clips: [], locked: false, hidden: false };
+  p.tracks.push(track);
+  return track;
+}
+
+/** Remove an empty track. Refuses (returns false) when it holds clips or it is the last track of its kind. */
+export function removeTrack(p: Project, trackId: string): boolean {
+  const t = p.tracks.find((x) => x.id === trackId);
+  if (!t || t.clips.length > 0 || p.tracks.filter((x) => x.kind === t.kind).length <= 1) return false;
+  p.tracks = p.tracks.filter((x) => x !== t);
+  // keep the names tidy: V1, V2... in order
+  for (const kind of ['video', 'audio'] as const) p.tracks.filter((x) => x.kind === kind).forEach((x, i) => (x.name = `${PREFIX[kind]}${i + 1}`));
+  return true;
+}
+
+/** The earliest start at or after `from` where a clip of `duration` frames fits on every one of `tracks`. */
+export function findFreeStart(tracks: Track[], from: Frame, duration: number): Frame {
+  let s = Math.max(0, from);
+  for (let guard = 0; guard < 10000; guard++) {
+    const blocker = tracks.flatMap((t) => t.clips).find((c) => s < clipEnd(c) && s + duration > c.start);
+    if (!blocker) return s;
+    s = clipEnd(blocker);
+  }
+  return s;
+}

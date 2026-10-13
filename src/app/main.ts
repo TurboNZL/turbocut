@@ -7,8 +7,9 @@ import { mixWindow } from '../export/audio.ts';
 import { drawVideo } from '../render/compose.ts';
 import { VideoSampleSink } from 'mediabunny';
 import { Actions } from './actions.ts';
+import { BinPanel } from './binPanel.ts';
 import { CaptionsPanel } from './captionsPanel.ts';
-import { fmtTime, h } from './dom.ts';
+import { fmtTime, h, popupMenu } from './dom.ts';
 import { importFont, loadStoredFonts } from './fonts.ts';
 import { Hotkeys, type HotkeyAction } from './hotkeys.ts';
 import { Inspector } from './inspector.ts';
@@ -26,7 +27,10 @@ void loadStoredFonts();
 const store = new Store();
 const player = new Player(store);
 const actions = new Actions(store, player);
-const timeline = new TimelineView(store, { onUserTouch: () => store.playing && player.pause() });
+const timeline = new TimelineView(store, {
+  onUserTouch: () => store.playing && player.pause(),
+  trackActions: { toggle: (id, what) => actions.toggleTrack(id, what), remove: (id) => actions.removeTrack(id) },
+});
 const inspector = new Inspector(store);
 const captions = new CaptionsPanel(store);
 const hotkeys = new Hotkeys(() => store.settings.hotkeys, (o) => store.updateSettings({ hotkeys: o }));
@@ -35,6 +39,7 @@ const settings = (tab?: SettingsTab) => openSettings({ store, hotkeys, touch }, 
 captions.openEngineSettings = () => settings('Captions');
 
 const importFiles = async () => actions.importMedia(await pickFiles('video/*,audio/*,.mkv,.webm,.mov', true));
+const bin = new BinPanel(store, actions, timeline, () => void importFiles());
 
 // ---------------------------------------------------------------- shortcuts (the person can change all of these in Settings)
 const act = (group: string, id: string, label: string, keys: string[], run: HotkeyAction['run']): HotkeyAction => ({ id, label, group, keys, run });
@@ -74,7 +79,7 @@ zoom.addEventListener('input', () => store.setZoom(Math.exp(Number(zoom.value)))
 store.on('view', () => (zoom.value = String(Math.log(store.zoom))));
 const status = h('div', { class: 'status', role: 'status' });
 
-const tabs: Record<string, HTMLElement> = { Clip: inspector.el, Captions: captions.el, Project: projectPanel() };
+const tabs: Record<string, HTMLElement> = { Clip: inspector.el, Media: bin.el, Captions: captions.el, Project: projectPanel() };
 const tabBar = h('div', { class: 'tabs bt-tabbar' });
 const tabBody = h('div', { class: 'tab-body' });
 let activeTab = 'Clip';
@@ -139,6 +144,11 @@ const editBar = h('div', { class: 'edit-bar' },
   h('button', { class: 'btn', onclick: () => actions.trimToPlayhead('end'), title: 'Cut the end of the selected clip to the playhead (])' }, 'Trim end'),
   h('button', { class: 'btn', onclick: () => actions.remove(false), title: 'Delete the selection' }, 'Delete'),
   snapBtn,
+  h('button', {
+    class: 'btn',
+    title: 'Add a track',
+    onclick: (e: Event) => popupMenu(e.currentTarget as HTMLElement, [{ label: 'Add a video track', run: () => actions.addTrack('video') }, { label: 'Add an audio track', run: () => actions.addTrack('audio') }]),
+  }, '+ Track'),
   h('span', { class: 'spacer' }),
   h('button', { class: 'btn', 'aria-label': 'Zoom out timeline', onclick: () => store.setZoom(store.zoom / 1.5) }, '−'),
   zoom,

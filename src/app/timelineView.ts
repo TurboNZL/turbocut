@@ -1,12 +1,18 @@
 import { clipEnd, moveLinked, trimEnd, trimStart } from '../core/timeline.ts';
+import { drawWave } from '../media/waveform.ts';
 import type { Clip, Track } from '../core/types.ts';
-import { fmtTime, h } from './dom.ts';
+import { fmtTime, h, popupMenu } from './dom.ts';
 import type { Store } from './store.ts';
 
 const HEAD_W = 56; // track label column on desktop
 const EDGE = 9; // grab zone on each end of a clip with a mouse
 
 export interface TimelineOptions {
+  /** Track menu choices: the app wires these to its actions. */
+  trackActions?: {
+    toggle(trackId: string, what: 'hidden' | 'muted' | 'locked'): void;
+    remove(trackId: string): void;
+  };
   /** Called when a finger touches the timeline, so playback can stop before the user scrubs. */
   onUserTouch?: () => void;
 }
@@ -133,7 +139,15 @@ export class TimelineView {
 
   private trackRow(track: Track): HTMLElement {
     const { selected } = this.store;
-    const row = h('div', { class: `tl-track tl-${track.kind}`, 'data-track': track.id }, h('div', { class: 'tl-head' }, track.name));
+    const badges = `${track.hidden ? ' ⊘' : ''}${track.muted ? ' 🔇' : ''}${track.locked ? ' 🔒' : ''}`;
+    const head = h('button', { class: 'tl-head', 'aria-label': `Track ${track.name} options`, title: 'Track options' }, track.name, badges ? h('small', {}, badges) : null);
+    head.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.store.setActiveTrack(track.id);
+      this.trackMenu(track, head);
+    });
+    const state = [track.id === this.store.activeTrack ? 'active' : '', track.locked ? 'locked' : '', track.hidden ? 'off' : '', track.muted ? 'off' : ''].filter(Boolean).join(' ');
+    const row = h('div', { class: `tl-track tl-${track.kind} ${state}`.trim(), 'data-track': track.id }, head);
     let selectedClip: Clip | null = null;
     for (const clip of track.clips) {
       const asset = this.store.project.assets[clip.assetId];
@@ -146,6 +160,7 @@ export class TimelineView {
         clip.effects.length ? h('span', { class: 'tl-fx' }, 'fx') : null,
         Object.values(clip.keys).some((k) => k?.length) ? h('span', { class: 'tl-fx' }, '◆') : null,
       );
+      if (track.kind === 'audio' && asset?.hasAudio && this.store.settings.waveforms) this.addWaveform(el, clip, asset.duration);
       if (this.touch) {
         // Unselected clips only react to a tap, so a finger dragged across them pans the timeline natively.
         el.addEventListener('click', () => this.store.select(clip.id));
@@ -153,7 +168,7 @@ export class TimelineView {
       } else el.addEventListener('pointerdown', (e) => this.clipDrag(e, clip, track));
       row.append(el);
     }
-    if (this.touch && selectedClip) {
+    if (this.touch && selectedClip && !track.locked) {
       for (const side of ['left', 'right'] as const) {
         const x = this.pad + this.px(side === 'left' ? selectedClip.start : clipEnd(selectedClip));
         const handle = h('div', { class: `tl-handle ${side}`, 'data-edge': side === 'left' ? selectedClip.start : clipEnd(selectedClip), style: { left: `${x - 16}px` }, 'aria-label': side === 'left' ? 'Trim start' : 'Trim end' }, h('i'));
@@ -162,15 +177,50 @@ export class TimelineView {
         row.append(handle);
       }
     }
-    row.addEventListener('click', (e) => e.target === row && this.store.select(null));
+    row.addEventListener('click', (e) => {
+      if (e.target !== row) return;
+      this.store.select(null);
+      this.store.setActiveTrack(track.id);
+    });
     if (!this.touch) {
       row.addEventListener('pointerdown', (e) => {
-        if (e.target !== row && !(e.target as HTMLElement).classList.contains('tl-head')) return;
+        if (e.target !== row) return;
         this.store.select(null);
         this.scrub(e);
       });
     }
     return row;
+  }
+
+  /** A low-detail waveform inside an audio clip, drawn from peaks that are computed once in the background. */
+  private addWaveform(el: HTMLElement, clip: Clip, assetFrames: number): void {
+    const { project: p, lib } = this.store;
+    const canvas = h('canvas', { class: 'tl-wave', width: Math.min(2048, Math.max(32, Math.round(this.px(clip.duration)))), height: 40 });
+    el.prepend(canvas);
+    const fg = getComputedStyle(document.documentElement).getPropertyValue('--fg').trim() || '0 0% 20%';
+    void lib.peaks(clip.assetId, assetFrames / p.fps).then((peaks) => {
+      const from = clip.sourceIn / p.fps;
+      drawWave(canvas, peaks, from, from + (clip.duration * clip.speed) / p.fps, `hsl(${fg} / 0.55)`);
+    });
+  }
+
+  /** Small pop-up with what can be done to a track. */
+  private trackMenu(track: Track, anchor: HTMLElement): void {
+    const acts = this.opts.trackActions;
+    if (!acts) return;
+    const last = this.store.project.tracks.filter((t) => t.kind === track.kind).length <= 1;
+    popupMenu(anchor, [
+      track.kind === 'video'
+        ? { label: track.hidden ? 'Show this track' : 'Hide this track', run: () => acts.toggle(track.id, 'hidden') }
+        : { label: track.muted ? 'Unmute this track' : 'Mute this track', run: () => acts.toggle(track.id, 'muted') },
+      { label: track.locked ? 'Unlock this track' : 'Lock this track', run: () => acts.toggle(track.id, 'locked') },
+      { label: 'Delete this track', run: () => acts.remove(track.id), disabled: track.clips.length > 0 || last },
+    ]);
+  }
+
+  /** The timeline frame under a screen x position (for dropping from the media bin). */
+  frameAtClientX(clientX: number): number {
+    return Math.max(0, Math.round((clientX - this.content.getBoundingClientRect().left - this.pad) / this.store.zoom));
   }
 
   private captionRow(): HTMLElement {
@@ -204,6 +254,7 @@ export class TimelineView {
     e.stopPropagation();
     e.preventDefault();
     const store = this.store;
+    if (track.locked) return store.select(clip.id); // a locked track can be selected but not changed
     // Measure BEFORE selecting: selecting re-renders the timeline and detaches this element, and a detached element
     // measures as zero, which made every grab look like the end handle.
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();

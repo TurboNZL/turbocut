@@ -3,6 +3,7 @@ import { newId } from '../core/timeline.ts';
 import type { Asset, Clip, Frame, Project } from '../core/types.ts';
 import { clipEnd } from '../core/timeline.ts';
 import { sourceSeconds, type FrameSource, type Picture } from '../render/compose.ts';
+import { computePeaks } from './waveform.ts';
 
 interface Opened {
   input: Input;
@@ -15,6 +16,8 @@ interface Opened {
 /** Opens media files and hands out decoded frames and audio. Same code on every platform: it only needs a Blob. */
 export class MediaLibrary implements FrameSource {
   private opened = new Map<string, Opened>();
+  private peakCache = new Map<string, Promise<Float32Array>>();
+  private thumbCache = new Map<string, Promise<HTMLCanvasElement | null>>();
 
   async importFile(file: Blob, name: string, fps: number): Promise<Asset> {
     const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
@@ -54,6 +57,36 @@ export class MediaLibrary implements FrameSource {
    */
   sequential(p: Project, startFrame: Frame = 0): FrameSource {
     return new SequentialFrames(this, p, startFrame);
+  }
+
+  /** Waveform peaks for an asset, computed once in the background. */
+  peaks(assetId: string, durationSec: number): Promise<Float32Array> {
+    let p = this.peakCache.get(assetId);
+    if (!p) this.peakCache.set(assetId, (p = computePeaks(this, assetId, durationSec)));
+    return p;
+  }
+
+  /** A small preview picture for the media bin: one frame a little way into the video. */
+  thumbnail(assetId: string, width = 160): Promise<HTMLCanvasElement | null> {
+    let t = this.thumbCache.get(assetId);
+    if (!t) {
+      t = (async () => {
+        const o = this.opened.get(assetId);
+        if (!o?.videoSink || !o.video) return null;
+        const first = await o.video.getFirstTimestamp();
+        const dur = await o.input.computeDuration();
+        const sample = await o.videoSink.getSample(Math.max(first, Math.min(dur * 0.1, dur - 0.1)));
+        if (!sample) return null;
+        const c = document.createElement('canvas');
+        c.width = width;
+        c.height = Math.max(1, Math.round((width * sample.displayHeight) / sample.displayWidth));
+        sample.draw(c.getContext('2d')!, 0, 0, c.width, c.height);
+        sample.close();
+        return c;
+      })().catch(() => null);
+      this.thumbCache.set(assetId, t);
+    }
+    return t;
   }
 
   /** @internal */

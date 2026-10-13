@@ -31,7 +31,7 @@ export async function mixWindow(
   const ctx = new OfflineAudioContext(fmt.channels, length, fmt.rate);
 
   for (const track of p.tracks) {
-    if (track.kind !== 'audio') continue;
+    if (track.kind !== 'audio' || track.muted) continue;
     for (const clip of track.clips) {
       const cs = clip.start / p.fps;
       const ce = clipEnd(clip) / p.fps;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { audioGain, evalProp, gainAtRel, setKeyframe } from '../src/core/keyframes.ts';
-import { addClip, createClip, createProject, moveClip, moveLinked, projectDuration, removeLinked, rippleDelete, splitAt, splitLinked, trimEnd, trimStart } from '../src/core/timeline.ts';
+import { addClip, addTrack, createClip, createProject, findFreeStart, moveClip, removeTrack, moveLinked, projectDuration, removeLinked, rippleDelete, splitAt, splitLinked, trimEnd, trimStart } from '../src/core/timeline.ts';
 import { groupWords, SHORTS_GROUPING } from '../src/transcribe/provider.ts';
 import { parseClipSlug } from '../src/twitch/clip.ts';
 
@@ -152,5 +152,30 @@ describe('linked clips', () => {
     addClip(p, p.tracks[1]!.id, createClip('c', 400, 50)); // blocks the audio side only
     expect(moveLinked(p, v.id, 200)).toBe(false);
     expect([v.start, a.start]).toEqual([50, 50]);
+  });
+});
+
+describe('tracks', () => {
+  it('adds tracks named in order and removes only empty spare ones', () => {
+    const p = createProject();
+    const v2 = addTrack(p, 'video');
+    const a2 = addTrack(p, 'audio');
+    expect([v2.name, a2.name]).toEqual(['V2', 'A2']);
+    addClip(p, v2.id, createClip('a', 0, 10));
+    expect(removeTrack(p, v2.id)).toBe(false); // has a clip
+    expect(removeTrack(p, p.tracks[0]!.id)).toBe(true); // V1 is empty and V2 remains
+    expect(p.tracks.filter((t) => t.kind === 'video').map((t) => t.name)).toEqual(['V1']); // renamed to stay tidy
+    expect(removeTrack(p, p.tracks.find((t) => t.kind === 'audio')!.id)).toBe(true);
+    expect(removeTrack(p, p.tracks.find((t) => t.kind === 'audio')!.id)).toBe(false); // the last audio track stays
+  });
+
+  it('finds the earliest free start across several tracks', () => {
+    const p = createProject();
+    addClip(p, p.tracks[0]!.id, createClip('a', 0, 100));
+    addClip(p, p.tracks[1]!.id, createClip('a', 90, 60)); // audio runs to 150
+    expect(findFreeStart([p.tracks[0]!, p.tracks[1]!], 10, 20)).toBe(150);
+    expect(findFreeStart([p.tracks[0]!], 10, 20)).toBe(100);
+    expect(findFreeStart([p.tracks[0]!, p.tracks[1]!], 200, 20)).toBe(200);
+    expect(findFreeStart([p.tracks[0]!], 0, 100)).toBe(100);
   });
 });

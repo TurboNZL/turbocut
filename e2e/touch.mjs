@@ -143,6 +143,24 @@ try {
   assert.ok(Math.abs(st2.playhead - f0) <= 2, 'playhead still where it was');
   assert.deepEqual((await state()).clips, st.clips ?? (await state()).clips, 'zooming does not touch the clips');
 
+  // 8. Media bin and track chips by touch
+  await page.evaluate(async () => {
+    const blob = await (await fetch('/e2e/.media/vonly.webm')).blob();
+    await window.turbocutApp.importMedia([new File([blob], 'extra.webm', { type: 'video/webm' })]);
+  });
+  await page.getByRole('button', { name: 'Media', exact: true }).tap();
+  await page.waitForSelector('.bin-item');
+  const clipsBefore = (await state()).clips.length;
+  await page.locator('.bin-item', { hasText: 'extra.webm' }).getByRole('button', { name: 'Add' }).tap();
+  const afterAdd = await page.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((t) => t.clips.map((c) => [t.name, c.start, c.duration])).filter((x) => x[2] === 120));
+  console.log('after tapping Add:', JSON.stringify(afterAdd));
+  assert.ok(afterAdd.length === 1, 'tapping Add puts the clip on the timeline');
+  await page.screenshot({ path: `${out}touch-bin.png` });
+  await page.getByRole('button', { name: 'Media', exact: true }).tap(); // tap the open tab again: the sheet closes
+  await page.locator('.tl-head').first().tap();
+  assert.ok(await page.getByRole('menuitem', { name: /this track/ }).first().isVisible(), 'tapping a track chip opens its menu');
+  await page.keyboard.press('Escape');
+
   await page.screenshot({ path: `${out}touch-final.png` });
   assert.deepEqual(errors, [], 'no page errors');
   console.log('touch e2e passed');

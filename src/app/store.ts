@@ -29,6 +29,8 @@ export class Store {
   lib = new MediaLibrary();
   selected: string | null = null;
   selectedCue: string | null = null;
+  /** Where "Add to timeline" puts new clips: the track last clicked or last selected from. */
+  activeTrack: string | null = null;
   playhead: Frame = 0;
   playing = false;
   /** Timeline zoom in CSS pixels per frame. */
@@ -108,7 +110,24 @@ export class Store {
 
   select(id: string | null): void {
     this.selected = id;
+    if (id) {
+      const t = this.project.tracks.find((x) => x.clips.some((c) => c.id === id));
+      if (t) this.activeTrack = t.id;
+    }
     this.emit('selection');
+  }
+
+  setActiveTrack(id: string): void {
+    this.activeTrack = id;
+    this.emit('selection');
+  }
+
+  /** The track new clips of `kind` go to: the active one if it matches, else the highest of that kind. */
+  targetTrack(kind: 'video' | 'audio') {
+    const active = this.project.tracks.find((t) => t.id === this.activeTrack);
+    if (active && active.kind === kind) return active;
+    const all = this.project.tracks.filter((t) => t.kind === kind);
+    return all[all.length - 1]!;
   }
 
   say(message: string): void {
