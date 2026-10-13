@@ -1,6 +1,21 @@
 import type { Pcm16k, TimedWord, Transcriber, TranscribeOptions } from './provider.ts';
 
-export const DEFAULT_MODEL = 'onnx-community/whisper-base_timestamped';
+export const MODELS = [
+  { id: 'onnx-community/whisper-base_timestamped', label: 'Balanced (base, about 80 MB)' },
+  { id: 'onnx-community/whisper-tiny.en_timestamped', label: 'Fast, English only (tiny)' },
+  { id: 'onnx-community/whisper-small_timestamped', label: 'Accurate (small, about 250 MB)' },
+] as const;
+export const DEFAULT_MODEL = MODELS[0].id;
+
+export type Compute = 'auto' | 'webgpu' | 'wasm';
+
+export interface RunInfo {
+  model: string;
+  device: string;
+  dtype: string;
+  language: string;
+  rawText: string;
+}
 
 export async function hasWebGpu(): Promise<boolean> {
   try {
@@ -23,10 +38,13 @@ export class LocalTranscriber implements Transcriber {
   /** Reported while the model downloads (0..1) or runs. */
   onStatus?: (s: { phase: 'download' | 'transcribing'; progress?: number }) => void;
 
-  constructor(private model = DEFAULT_MODEL) {}
+  /** What the last run actually used and heard, for the copyable report. */
+  lastInfo?: RunInfo;
+
+  constructor(private model: string = DEFAULT_MODEL, private compute: Compute = 'auto') {}
 
   async transcribe(audio: Pcm16k, opts: TranscribeOptions = {}): Promise<TimedWord[]> {
-    const device = (await hasWebGpu()) ? 'webgpu' : 'wasm';
+    const device = this.compute === 'auto' ? ((await hasWebGpu()) ? 'webgpu' : 'wasm') : this.compute;
     this.worker ??= new Worker(new URL('./whisper.worker.ts', import.meta.url), { type: 'module' });
     const worker = this.worker;
     return new Promise((resolve, reject) => {
@@ -46,7 +64,7 @@ export class LocalTranscriber implements Transcriber {
         const m = e.data;
         if (m.type === 'download') this.onStatus?.({ phase: 'download', progress: m.progress });
         else if (m.type === 'transcribing') this.onStatus?.({ phase: 'transcribing' });
-        else if (m.type === 'done') (cleanup(), resolve(m.words));
+        else if (m.type === 'done') (cleanup(), (this.lastInfo = m.info), resolve(m.words));
         else if (m.type === 'error') (cleanup(), reject(new Error(m.message)));
       };
       worker.onerror = (e) => (cleanup(), reject(new Error(e.message || 'Transcription worker failed')));

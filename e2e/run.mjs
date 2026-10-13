@@ -32,6 +32,47 @@ try {
     assert.ok(h.outlinePixels > 2000 && h.fillPixels > 2000, 'outline and fill are both still drawn');
     await page.close();
   }
+  {
+    const page = await browser.newPage();
+    await page.goto('http://localhost:5188/e2e/index.html');
+    await page.waitForFunction(() => typeof window.speechAudio === 'function');
+    const r = await page.evaluate(() => window.speechAudio());
+    const got = new Float32Array(Buffer.from(r.b64, 'base64').buffer.slice(0));
+    writeFileSync(`${root}e2e/.out/speech-16k.f32`, Buffer.from(r.b64, 'base64'));
+    // Reference: the same edit made by ffmpeg (50 s from 3 s, 2 s of silence, 20 s from 50 s), resampled to 16 kHz mono.
+    const ref = execFileSync('ffmpeg', ['-loglevel', 'error', '-i', `${root}e2e/.media/chirp.webm`, '-filter_complex',
+      '[0:a]atrim=start=3:end=53,asetpts=PTS-STARTPTS[a];aevalsrc=0:s=48000:d=2[s];[0:a]atrim=start=50:end=70,asetpts=PTS-STARTPTS[b];[a][s][b]concat=n=3:v=0:a=1,aresample=16000,aformat=channel_layouts=mono[o]',
+      '-map', '[o]', '-f', 'f32le', '-'], { maxBuffer: 1 << 28 });
+    const want = new Float32Array(ref.buffer.slice(ref.byteOffset, ref.byteOffset + ref.byteLength));
+    console.log(`speech audio: ${got.length} samples (${(got.length / 16000).toFixed(2)} s) vs reference ${want.length} (${(want.length / 16000).toFixed(2)} s)`);
+    assert.ok(Math.abs(got.length - want.length) < 16000 * 0.05, 'length matches the timeline');
+    // Per second: best normalised correlation over a +-8 ms search, the lag it was found at, and the level ratio.
+    // A shifted, gapped or repeated stretch of audio shows up as a low correlation or a lag far from the constant
+    // ~6 ms the Opus decoder's start delay causes. (The reference is louder by about 3 dB because ffmpeg sums channels
+    // when it downmixes where the browser averages them; the ratio must simply stay constant.)
+    let worst = 1, worstAt = 0, lagMin = 1e9, lagMax = -1e9, gains = [];
+    for (let sec = 1; sec + 1 <= Math.min(got.length, want.length) / 16000 - 1; sec++) {
+      let gg = 0, ww = 0;
+      for (let i = sec * 16000; i < (sec + 1) * 16000; i++) { gg += got[i] * got[i]; ww += want[i] * want[i]; }
+      if (ww < 1) { assert.ok(gg < 1, `second ${sec} must be silent like the reference`); continue; } // the 2 s gap
+      let bestC = -2, bestLag = 0;
+      for (let lag = -128; lag <= 128; lag++) {
+        let gw = 0, w2 = 0;
+        for (let i = sec * 16000; i < (sec + 1) * 16000; i++) { const x = want[i + lag]; gw += got[i] * x; w2 += x * x; }
+        const c = gw / Math.sqrt(gg * w2 || 1);
+        if (c > bestC) ((bestC = c), (bestLag = lag));
+      }
+      if (bestC < worst) ((worst = bestC), (worstAt = sec));
+      lagMin = Math.min(lagMin, bestLag); lagMax = Math.max(lagMax, bestLag);
+      gains.push(Math.sqrt(gg / ww));
+    }
+    const gMin = Math.min(...gains), gMax = Math.max(...gains);
+    console.log(`  worst correlation ${worst.toFixed(4)} at ${worstAt}s; lag ${lagMin}..${lagMax} samples; level ratio ${gMin.toFixed(3)}..${gMax.toFixed(3)}`);
+    assert.ok(worst > 0.99, `audio fed to Whisper must match the reference (correlation ${worst} at ${worstAt}s)`);
+    assert.ok(lagMin >= 80 && lagMax <= 112, `no timing drift: lag must stay near the constant 96 samples, got ${lagMin}..${lagMax}`);
+    assert.ok(gMax - gMin < 0.03, 'level must not change from one second to the next');
+    await page.close();
+  }
   for (const captions of [false, true]) {
     const page = await browser.newPage();
     page.on('console', (m) => console.log('[page]', m.text()));

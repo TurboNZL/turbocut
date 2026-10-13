@@ -5,16 +5,23 @@ One web codebase; Electron wraps it for Windows and Ubuntu, Capacitor wraps it f
 
 ## Get a build to try
 
-Every push to `main` or a `claude/*` branch builds installable files. Open the repository's **Actions** tab, pick the latest run of the workflow you want, and download from **Artifacts**:
+Every push to `main` or a `claude/*` branch builds the apps and publishes them as a **GitHub Release** (a pre-release named `build-<number>`). Open the repository's **Releases** page and download only the file you want, each one is a plain file, not a zip:
 
-| Workflow | Artifact | How to use it |
-|---|---|---|
-| **Android APK** | `TurboCut-android-apk` | Unzip, copy the `.apk` to the phone, open it, allow "install from this source" once. Later builds install over the old one. |
-| **Desktop (Windows and Linux)** | `TurboCut-windows` | `…-windows-x64.exe` is the installer; the other `.exe` is portable. Windows may warn about an unknown publisher (the build is not code-signed). |
-| | `TurboCut-linux` | `.AppImage`: `chmod +x` it and run. `.deb`: `sudo apt install ./TurboCut-….deb`. |
-| **CI** | `e2e-output`, `electron-output` | Screenshots and exported test videos from the automated browser and Electron runs. |
+| File | What it is |
+|---|---|
+| `TurboCut-android-<n>.apk` | Android. Open it on the phone and allow "install from this source" once. Later builds install over the old one. |
+| `TurboCut-<version>-windows-setup.exe` | Windows installer. Windows may warn about an unknown publisher (the build is not code-signed). |
+| `TurboCut-<version>-windows-portable.exe` | Windows, runs without installing. |
+| `TurboCut-<version>-linux-x86_64.AppImage` | Linux: `chmod +x` it and run it. |
+| `TurboCut-<version>-linux-amd64.deb` | Linux: `sudo apt install ./TurboCut-….deb`. |
 
-First thing to do on a new device: **Project tab → Device check → Copy report** and send it back. It lists which video and audio codecs the device can encode, whether WebGPU works, and how fast it encodes, which decides how exports behave there.
+Only the five newest build releases are kept. The **CI** workflow's artifacts (`e2e-output`, `electron-output`) hold screenshots and exported test videos from the automated runs.
+
+First thing to do on a new device: **Project tab, Device check, Copy report** and send it back. It lists which video and audio codecs the device can encode, whether WebGPU works, and how fast it encodes.
+
+## Using it on a phone
+
+The playhead stays in the middle of the screen and the timeline scrolls under it, so dragging anywhere on the timeline scrubs, with momentum. Tap a clip to select it: it gets large handles on both ends to trim, and you can then drag the clip itself to move it. The bar under the timeline has **Split**, **Trim start** and **Trim end** (both cut to the playhead), **Delete** and zoom. Tap the preview to play or pause. The Clip, Captions and Project panel is a sheet: tap a tab to open it, tap the open tab to close it.
 
 ## Develop
 
@@ -24,6 +31,7 @@ pnpm dev                           # http://localhost:5173
 pnpm test                          # unit tests
 pnpm typecheck
 sh e2e/make-media.sh && pnpm e2e   # real exports in headless Chromium (needs ffmpeg)
+pnpm e2e:touch                     # phone layout driven with real touch events (part of pnpm e2e)
 pnpm e2e:electron                  # the built app inside Electron (needs xvfb on Linux)
 pnpm build && pnpm exec cap sync android   # then open `android/` in Android Studio
 ```

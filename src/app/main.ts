@@ -19,7 +19,7 @@ void loadStoredFonts();
 
 const store = new Store();
 const player = new Player(store);
-const timeline = new TimelineView(store);
+const timeline = new TimelineView(store, { onUserTouch: () => store.playing && player.pause() });
 const inspector = new Inspector(store);
 const captions = new CaptionsPanel(store);
 
@@ -125,17 +125,28 @@ function showHelp(): void {
 const time = h('span', { class: 'time mono' });
 const playBtn = h('button', { class: 'btn btn-accent', 'aria-label': 'Play or pause', onclick: () => player.toggle() }, '▶');
 const zoom = h('input', { type: 'range', class: 'bt-range zoom', min: 0.3, max: 12, step: 0.1, value: store.zoom, 'aria-label': 'Timeline zoom' });
-zoom.addEventListener('input', () => ((store.zoom = Number(zoom.value)), store.emit('view')));
+const setZoom = (z: number) => {
+  store.zoom = Math.min(12, Math.max(0.3, z));
+  zoom.value = String(store.zoom);
+  store.emit('view');
+};
+zoom.addEventListener('input', () => setZoom(Number(zoom.value)));
 const status = h('div', { class: 'status', role: 'status' });
 
 const tabs: Record<string, HTMLElement> = { Clip: inspector.el, Captions: captions.el, Project: projectPanel() };
 const tabBar = h('div', { class: 'tabs bt-tabbar' });
 const tabBody = h('div', { class: 'tab-body' });
-function showTab(name: string): void {
+let activeTab = 'Clip';
+const side = h('aside', { class: 'bt-side side collapsed' }, tabBar, tabBody);
+function showTab(name: string, userTap = false): void {
+  // On a narrow screen the panel is a sheet: tap a tab to open it, tap the open tab again to close it.
+  if (userTap && name === activeTab) side.classList.toggle('collapsed');
+  else if (userTap) side.classList.remove('collapsed');
+  activeTab = name;
   for (const b of tabBar.children) (b as HTMLElement).setAttribute('aria-current', b.textContent === name ? 'page' : 'false');
   tabBody.replaceChildren(tabs[name]!);
 }
-for (const name of Object.keys(tabs)) tabBar.append(h('button', { class: 'bt-tab', onclick: () => showTab(name) }, name));
+for (const name of Object.keys(tabs)) tabBar.append(h('button', { class: 'bt-tab', onclick: () => showTab(name, true) }, name));
 showTab('Clip');
 store.on('selection', () => store.selected && showTab('Clip'));
 store.on('selection', () => store.selectedCue && showTab('Captions'));
@@ -172,15 +183,24 @@ const transport = h('div', { class: 'transport' },
   playBtn,
   h('button', { class: 'btn', 'aria-label': 'End', onclick: () => store.seek(projectDuration(store.project)) }, '⏭'),
   time,
-  h('span', { class: 'spacer' }),
-  h('button', { class: 'btn', onclick: split, title: 'Split (S)' }, 'Split'),
-  h('button', { class: 'btn', onclick: () => remove(false), title: 'Delete' }, 'Delete'),
-  zoom,
 );
 
+// Edit actions live in one bar right under the timeline, in thumb reach on a phone.
+const editBar = h('div', { class: 'edit-bar' },
+  h('button', { class: 'btn btn-accent', onclick: split, title: 'Split at the playhead (S)' }, 'Split'),
+  h('button', { class: 'btn', onclick: () => trimToPlayhead('start'), title: 'Cut the start of the selected clip to the playhead ([)' }, 'Trim start'),
+  h('button', { class: 'btn', onclick: () => trimToPlayhead('end'), title: 'Cut the end of the selected clip to the playhead (])' }, 'Trim end'),
+  h('button', { class: 'btn', onclick: () => remove(false), title: 'Delete the selection' }, 'Delete'),
+  h('span', { class: 'spacer' }),
+  h('button', { class: 'btn', 'aria-label': 'Zoom out timeline', onclick: () => setZoom(store.zoom / 1.5) }, '−'),
+  zoom,
+  h('button', { class: 'btn', 'aria-label': 'Zoom in timeline', onclick: () => setZoom(store.zoom * 1.5) }, '+'),
+);
+
+player.canvas.addEventListener('click', () => player.toggle());
 const stage = h('section', { class: 'stage' }, h('div', { class: 'preview' }, player.canvas), transport);
 const app = document.getElementById('app')!;
-app.append(header, h('main', { class: 'main' }, stage, h('aside', { class: 'bt-side side' }, tabBar, tabBody)), h('section', { class: 'bottom' }, timeline.el), status);
+app.append(header, h('main', { class: 'main' }, stage, side), h('section', { class: 'bottom' }, timeline.el), editBar, status);
 
 const tick = () => {
   const p = store.project;
@@ -217,8 +237,8 @@ window.addEventListener('keydown', (e) => {
       case ']': return (trimToPlayhead('end'), true);
       case 'k': case 'K': return (inspector.keyframeAll(), true);
       case 'm': case 'M': return (store.selected && store.edit((p) => { for (const t of p.tracks) for (const c of t.clips) if (c.id === store.selected) c.muted = !c.muted; }), true);
-      case '+': case '=': return ((store.zoom = Math.min(12, store.zoom * 1.25)), store.emit('view'), (zoom.value = String(store.zoom)), true);
-      case '-': case '_': return ((store.zoom = Math.max(0.3, store.zoom / 1.25)), store.emit('view'), (zoom.value = String(store.zoom)), true);
+      case '+': case '=': return (setZoom(store.zoom * 1.25), true);
+      case '-': case '_': return (setZoom(store.zoom / 1.25), true);
       case '?': return (showHelp(), true);
     }
     return false;

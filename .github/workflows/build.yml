@@ -1,0 +1,130 @@
+name: Build
+
+# Builds the Android APK and the Windows and Linux apps, then publishes them as a GitHub Release
+# (a pre-release named build-<number>) with every file attached on its own, no zip. Open the
+# repository's "Releases" page and download just the file you want.
+
+on:
+  push:
+    branches: [main, 'claude/**']
+    paths-ignore: ['docs/**', '*.md']
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build the web app and copy it into the Android project
+        run: |
+          pnpm build
+          pnpm exec cap sync android
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon -PtcVersionCode=${{ github.run_number }} -PtcVersionName=0.0.${{ github.run_number }}
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk TurboCut-android-${{ github.run_number }}.apk
+      # Artifacts are only the hand-over to the release job; people download from the Release.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-android
+          path: TurboCut-android-${{ github.run_number }}.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  desktop:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            id: windows
+            files: |
+              release/TurboCut-*.exe
+          - os: ubuntu-latest
+            name: Linux
+            id: linux
+            files: |
+              release/TurboCut-*-linux-*.AppImage
+              release/TurboCut-*-linux-*.deb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      # No --ignore-scripts here: Electron downloads its binary in a post-install step (allowed in package.json).
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec electron-builder --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.id }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Publish release
+    needs: [android, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
+          merge-multiple: true
+          path: files
+      - name: List what will be published
+        run: ls -lh files
+      - name: Create the release
+        run: |
+          TAG="build-${{ github.run_number }}"
+          SHORT="${GITHUB_SHA::7}"
+          gh release create "$TAG" files/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "TurboCut build ${{ github.run_number }} ($SHORT, ${GITHUB_REF_NAME})" \
+            --notes "Test build of commit $SHORT on \`${GITHUB_REF_NAME}\`.
+
+          - **Android:** the \`.apk\`. Open it on the phone and allow installing from that source once. Later builds install over earlier ones.
+          - **Windows:** \`-windows-setup.exe\` installs it; \`-windows-portable.exe\` runs without installing. Windows warns about an unknown publisher because the build is not code-signed.
+          - **Linux:** \`.AppImage\` (\`chmod +x\` it, then run it) or the \`.deb\` (\`sudo apt install ./file.deb\`)."
+      - name: Keep only the five newest build releases
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
+            --jq 'map(select(.tagName | startswith("build-"))) | sort_by(.createdAt) | reverse | .[5:] | .[].tagName' \
+            | xargs -r -I{} gh release delete {} --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes

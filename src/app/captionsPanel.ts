@@ -1,7 +1,9 @@
 import { dialogueToCues, parseAss, writeAss } from '../captions/ass.ts';
 import { PresetError, entranceTags, exportPreset, importPreset, presetFromAss, styleByName } from '../captions/presets.ts';
 import { groupWords, RemoteTranscriber, SHORTS_GROUPING, type Transcriber } from '../transcribe/provider.ts';
-import { LocalTranscriber } from '../transcribe/local.ts';
+import { LocalTranscriber, MODELS, type Compute } from '../transcribe/local.ts';
+import { cleanWords } from '../transcribe/post.ts';
+import { projectDuration } from '../core/timeline.ts';
 import { renderPcm16k } from '../transcribe/pcm.ts';
 import { h } from './dom.ts';
 import { importFont } from './fonts.ts';
@@ -9,11 +11,20 @@ import { pickFiles, saveFile } from './platform.ts';
 import type { Store } from './store.ts';
 
 const SETTINGS = 'turbocut.transcribe';
-const load = (): { mode: string; url: string; token: string; lang: string } => {
+interface Settings {
+  mode: string;
+  url: string;
+  token: string;
+  lang: string;
+  model: string;
+  compute: Compute;
+}
+const DEFAULTS: Settings = { mode: 'local', url: '', token: '', lang: 'english', model: MODELS[0].id, compute: 'auto' };
+const load = (): Settings => {
   try {
-    return { mode: 'local', url: '', token: '', lang: '', ...JSON.parse(localStorage.getItem(SETTINGS) ?? '{}') };
+    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS) ?? '{}') };
   } catch {
-    return { mode: 'local', url: '', token: '', lang: '' };
+    return { ...DEFAULTS };
   }
 };
 
@@ -21,6 +32,8 @@ export class CaptionsPanel {
   readonly el = h('div', { class: 'caps' });
   private list = h('div', { class: 'cue-list' });
   private abort: AbortController | null = null;
+  private report = '';
+  private reportBtn = h('button', { class: 'btn', style: { display: 'none' }, onclick: () => navigator.clipboard?.writeText(this.report).then(() => this.store.say('Captions report copied.')) }, 'Copy captions report');
 
   constructor(private store: Store) {
     store.on('preset', () => this.build());
@@ -47,13 +60,22 @@ export class CaptionsPanel {
     const mode = h('select', { class: 'input' }, h('option', { value: 'local', selected: s.mode === 'local' }, 'On this device'), h('option', { value: 'remote', selected: s.mode === 'remote' }, 'Server on my network'));
     const url = h('input', { class: 'input', placeholder: 'http://192.168.1.20:8787', value: s.url, 'aria-label': 'Server address' });
     const token = h('input', { class: 'input', type: 'password', placeholder: 'Access token (optional)', value: s.token, 'aria-label': 'Server token' });
-    const lang = h('input', { class: 'input', placeholder: 'Language (blank = detect)', value: s.lang, 'aria-label': 'Language' });
+    // English is the default: with a multilingual model, auto-detect can pick the wrong language on game or
+    // stream audio and then produce text that makes no sense.
+    const lang = h('input', { class: 'input', placeholder: 'Language, e.g. english (blank = detect)', value: s.lang, 'aria-label': 'Language' });
+    const model = h('select', { class: 'input', 'aria-label': 'Speech model' }, ...MODELS.map((m) => h('option', { value: m.id, selected: m.id === s.model }, m.label)));
+    const compute = h('select', { class: 'input', 'aria-label': 'Processor' },
+      h('option', { value: 'auto', selected: s.compute === 'auto' }, 'Processor: automatic'),
+      h('option', { value: 'webgpu', selected: s.compute === 'webgpu' }, 'Processor: graphics chip (WebGPU)'),
+      h('option', { value: 'wasm', selected: s.compute === 'wasm' }, 'Processor: CPU (slower, most compatible)'));
+    const localBox = h('div', { class: 'stack' }, model, compute);
     const remoteBox = h('div', { class: 'stack' }, url, token);
     const sync = () => {
       remoteBox.style.display = mode.value === 'remote' ? '' : 'none';
-      localStorage.setItem(SETTINGS, JSON.stringify({ mode: mode.value, url: url.value, token: token.value, lang: lang.value }));
+      localBox.style.display = mode.value === 'remote' ? 'none' : '';
+      localStorage.setItem(SETTINGS, JSON.stringify({ mode: mode.value, url: url.value, token: token.value, lang: lang.value, model: model.value, compute: compute.value }));
     };
-    for (const el of [mode, url, token, lang]) el.addEventListener('change', sync);
+    for (const el of [mode, url, token, lang, model, compute]) el.addEventListener('change', sync);
     sync();
     const progress = h('progress', { class: 'prog', max: 1, value: 0, style: { display: 'none' } });
     const go = h('button', { class: 'btn btn-accent' }, 'Generate captions');
@@ -67,7 +89,7 @@ export class CaptionsPanel {
       progress.removeAttribute('value');
       this.abort = new AbortController();
       try {
-        await this.generate(mode.value, url.value.trim(), token.value.trim() || undefined, lang.value.trim() || undefined, (label, f) => {
+        await this.generate(mode.value, url.value.trim(), token.value.trim() || undefined, lang.value.trim() || undefined, { model: model.value, compute: compute.value as Compute }, (label, f) => {
           store.say(label);
           if (f != null) progress.value = f;
           else progress.removeAttribute('value');
@@ -94,10 +116,12 @@ export class CaptionsPanel {
       fontNote,
       h('div', { class: 'bt-panel-title' }, 'Auto captions'),
       mode,
+      localBox,
       remoteBox,
       lang,
       h('div', { class: 'row' }, go, cancel),
       progress,
+      this.reportBtn,
       h('p', { class: 'hint' }, 'On this device downloads a speech model (about 80 MB) the first time, then works offline.'),
       h('div', { class: 'bt-panel-title' }, 'Captions'),
       h('div', { class: 'row' }, addCue, assIn, assOut, clear),
@@ -180,25 +204,55 @@ export class CaptionsPanel {
     if (p.captions.length === 0) this.list.append(h('p', { class: 'hint' }, 'No captions yet. Generate them above, import an .ass file, or add one by hand.'));
   }
 
-  private async generate(mode: string, url: string, token: string | undefined, language: string | undefined, say: (label: string, f?: number) => void): Promise<void> {
+  private async generate(
+    mode: string,
+    url: string,
+    token: string | undefined,
+    language: string | undefined,
+    local: { model: string; compute: Compute },
+    say: (label: string, f?: number) => void,
+  ): Promise<void> {
     const { project: p, lib } = this.store;
     if (!p.tracks.some((t) => t.kind === 'audio' && t.clips.length)) throw new Error('Add a clip with audio first');
     let provider: Transcriber;
+    let localProvider: LocalTranscriber | undefined;
     if (mode === 'remote') {
       if (!url) throw new Error('Enter the server address');
       provider = new RemoteTranscriber(url, token);
     } else {
-      const local = new LocalTranscriber();
-      local.onStatus = (s) => say(s.phase === 'download' ? `Downloading speech model… ${Math.round((s.progress ?? 0) * 100)}%` : 'Listening…', s.phase === 'download' ? s.progress : undefined);
-      provider = local;
+      localProvider = new LocalTranscriber(local.model, local.compute);
+      localProvider.onStatus = (s) => say(s.phase === 'download' ? `Downloading speech model… ${Math.round((s.progress ?? 0) * 100)}%` : 'Listening…', s.phase === 'download' ? s.progress : undefined);
+      provider = localProvider;
     }
     say('Preparing audio…');
     const pcm = await renderPcm16k(p, lib, (f) => say('Preparing audio…', f));
+    const seconds = projectDuration(p) / p.fps;
     say(mode === 'remote' ? 'Sending to server…' : 'Loading model…');
-    const words = await provider.transcribe(pcm, { language, signal: this.abort?.signal });
-    if (words.length === 0) throw new Error('No speech found');
-    const cues = groupWords(words, { fps: p.fps, ...SHORTS_GROUPING });
+    const raw = await provider.transcribe(pcm, { language, signal: this.abort?.signal });
+    const { words, report } = cleanWords(raw, { durationSec: seconds, pcm: pcm.samples });
+
+    let peak = 0;
+    for (let i = 0; i < pcm.samples.length; i += 16) peak = Math.max(peak, Math.abs(pcm.samples[i]!));
+    const fmt = (ws: typeof raw) => ws.slice(0, 40).map((w) => `${w.start.toFixed(2)}-${w.end.toFixed(2)} ${w.text}`).join('\n  ');
+    const info = localProvider?.lastInfo;
+    this.report = [
+      'TurboCut captions report',
+      `Engine: ${mode === 'remote' ? `server ${url}` : 'this device'}`,
+      info ? `Model: ${info.model}\nProcessor: ${info.device} (${info.dtype})\nLanguage: ${info.language}` : '',
+      `Audio: ${seconds.toFixed(2)} s, peak level ${peak.toFixed(3)}`,
+      `Words from the model: ${raw.length}; kept ${report.kept}; dropped: ${report.droppedPastEnd} after the end, ${report.droppedSilent} on silence, ${report.droppedRepeated} repeated, ${report.droppedEmpty} empty`,
+      info ? `Model text: ${info.rawText}` : '',
+      `First words as the model gave them:\n  ${fmt(raw)}`,
+    ].filter(Boolean).join('\n');
+    this.reportBtn.style.display = '';
+
+    if (words.length === 0) throw new Error(raw.length ? 'Only invented text was found (nothing over real speech). Try another model or processor, then copy the captions report.' : 'No speech found');
+    const totalFrames = projectDuration(p);
+    const cues = groupWords(words, { fps: p.fps, ...SHORTS_GROUPING })
+      .filter((c) => c.start < totalFrames)
+      .map((c) => ({ ...c, end: Math.min(c.end, totalFrames) })); // never past the last frame
     this.store.edit((pr) => (pr.captions = cues));
-    this.store.say(`Added ${cues.length} captions from ${words.length} words.`);
+    const dropped = raw.length - words.length;
+    this.store.say(`Added ${cues.length} captions from ${words.length} words${dropped ? ` (${dropped} removed as invented)` : ''}.`);
   }
 }

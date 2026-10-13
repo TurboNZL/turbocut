@@ -10,6 +10,8 @@ interface RunMessage {
   language?: string;
 }
 
+const dtypeFor = (device: 'webgpu' | 'wasm') => (device === 'webgpu' ? { encoder_model: 'fp32', decoder_model_merged: 'q4' } : 'q8');
+
 let loaded: { key: string; asr: any } | null = null;
 
 self.onmessage = async (e: MessageEvent<RunMessage>) => {
@@ -21,7 +23,7 @@ self.onmessage = async (e: MessageEvent<RunMessage>) => {
       const asr = await pipeline('automatic-speech-recognition', m.model, {
         device: m.device,
         // fp32 encoder + 4 bit decoder is the combination Transformers.js documents for WebGPU; q8 for the CPU path.
-        dtype: m.device === 'webgpu' ? { encoder_model: 'fp32', decoder_model_merged: 'q4' } : 'q8',
+        dtype: dtypeFor(m.device),
         progress_callback: (p: any) => {
           if (p?.status === 'progress' && typeof p.progress === 'number') (self as any).postMessage({ type: 'download', progress: p.progress / 100, file: p.file });
         },
@@ -42,7 +44,7 @@ self.onmessage = async (e: MessageEvent<RunMessage>) => {
       const end = c.timestamp?.[1] ?? all[i + 1]?.timestamp?.[0] ?? start + 0.3;
       return { text: String(c.text).trim(), start, end };
     });
-    (self as any).postMessage({ type: 'done', words });
+    (self as any).postMessage({ type: 'done', words, info: { model: m.model, device: m.device, dtype: JSON.stringify(dtypeFor(m.device)), language: m.language ?? 'auto-detect', rawText: String(out.text ?? '').slice(0, 600) } });
   } catch (err) {
     (self as any).postMessage({ type: 'error', message: err instanceof Error ? err.message : String(err) });
   }

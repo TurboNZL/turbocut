@@ -5,8 +5,9 @@ import { exportProject } from '../src/export/exporter.ts';
 import { MediaLibrary } from '../src/media/library.ts';
 import { drawVideo } from '../src/render/compose.ts';
 import { outsideMask, rasterizeText } from '../src/render/outlinedText.ts';
+import { renderPcm16k } from '../src/transcribe/pcm.ts';
 
-declare global { interface Window { run: (opts: { captions: boolean }) => Promise<any>; previewMatchesExport: () => Promise<number>; captionHoles: () => Promise<any> } }
+declare global { interface Window { run: (opts: { captions: boolean }) => Promise<any>; previewMatchesExport: () => Promise<number>; captionHoles: () => Promise<any>; speechAudio: () => Promise<{ b64: string; samples: number }> } }
 
 window.run = async ({ captions }) => {
   const lib = new MediaLibrary();
@@ -106,4 +107,22 @@ window.captionHoles = async () => {
   let black = 0, yellow = 0;
   for (let i = 0; i < f.length; i += 4) { if (f[i + 3]! > 200 && f[i]! < 40 && f[i + 1]! < 40) black++; if (f[i + 3]! > 200 && f[i]! > 240 && f[i + 1]! > 180) yellow++; }
   return { trueCounters: enclosed(plain.canvas), oldMethod: enclosed(old), newMethod: enclosed(fresh.canvas), outlinePixels: black, fillPixels: yellow };
+};
+
+/**
+ * The audio handed to Whisper: a 75 s chirp (pitch changes continuously, so any offset or gap is obvious) cut into two
+ * clips with a 2 s gap, crossing the 30 s mixing-window seam. Returns the 16 kHz mono samples as base64 float32.
+ */
+window.speechAudio = async () => {
+  const lib = new MediaLibrary();
+  const blob = await (await fetch('/e2e/.media/chirp.webm')).blob();
+  const p = createProject({ fps: 30, width: 320, height: 240 });
+  const asset = await lib.importFile(blob, 'chirp.webm', p.fps);
+  addClip(p, p.tracks[1]!.id, createClip(asset.id, 0, 1500, 90)); // 50 s starting 3 s into the source
+  addClip(p, p.tracks[1]!.id, createClip(asset.id, 1560, 600, 1500)); // 20 s starting 50 s into the source, after a 2 s gap
+  const pcm = await renderPcm16k(p, lib);
+  const bytes = new Uint8Array(pcm.samples.buffer, pcm.samples.byteOffset, pcm.samples.byteLength);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return { b64: btoa(bin), samples: pcm.samples.length };
 };
