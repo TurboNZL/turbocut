@@ -28,7 +28,7 @@
     "electron-builder": "^26.15.3",
     "mediabunny": "^1.61.3",
     "playwright-core": "^1.64.0",
-    "turbothemes": "github:TurboNZL/turbothemes",
+    "turbothemes": "git+https://github.com/TurboNZL/turbothemes.git",
     "typescript": "^5.7.2",
     "vite": "^8.3.4",
     "vitest": "^3.0.0"
