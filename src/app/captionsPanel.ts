@@ -6,7 +6,7 @@ import { cleanWords } from '../transcribe/post.ts';
 import { projectDuration } from '../core/timeline.ts';
 import { renderPcm16k } from '../transcribe/pcm.ts';
 import { h } from './dom.ts';
-import { importFont } from './fonts.ts';
+import { openFontManager } from './fontManager.ts';
 import { pickFiles, saveFile } from './platform.ts';
 import { exportPresetDialog, pickAndImportPreset } from './presetIO.ts';
 import { openStyleEditor } from './styleEditor.ts';
@@ -40,8 +40,8 @@ export class CaptionsPanel {
     const importPresetBtn = h('button', { class: 'btn', onclick: () => void pickAndImportPreset(store) }, 'Import style');
     const exportPresetBtn = h('button', { class: 'btn', onclick: () => void exportPresetDialog(store) }, 'Export style');
     const editBtn = h('button', { class: 'btn btn-accent', onclick: () => openStyleEditor(store) }, 'Edit styles…');
-    const fontBtn = h('button', { class: 'btn', onclick: () => this.importFont() }, 'Add font');
-    const fontNote = h('p', { class: 'hint' }, `Style uses: ${[...new Set(store.preset.styles.map((s) => s.fontname))].join(', ')}. If a font is missing, add its file here and it is remembered on this device.`);
+    const fontBtn = h('button', { class: 'btn', onclick: () => openFontManager(store, () => this.build()) }, 'Fonts…');
+    const fontNote = h('p', { class: 'hint' }, `Style uses: ${[...new Set(store.preset.styles.map((s) => s.fontname))].join(', ')}. Use Fonts… to add a font file, see what is installed, or choose the default.`);
 
     // Auto captions: the engine (device or server, model, processor, language) is chosen in Settings.
     const summary = h('p', { class: 'hint' });
@@ -99,19 +99,6 @@ export class CaptionsPanel {
       this.list,
     );
     this.renderCues();
-  }
-
-  private async importFont(): Promise<void> {
-    const files = await pickFiles('.otf,.ttf,.woff,.woff2,font/*', true);
-    for (const f of files) {
-      try {
-        const fams = await importFont(f);
-        this.store.say(`Font added: ${fams.join(' / ')}`);
-      } catch (e) {
-        this.store.say(`Could not load ${f.name}: ${e}`);
-      }
-    }
-    this.store.emit('preset'); // redraw captions with the new font
   }
 
   private async importAssCues(): Promise<void> {

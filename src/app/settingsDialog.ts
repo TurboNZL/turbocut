@@ -1,4 +1,5 @@
-import { loadStoredFonts, importFont } from './fonts.ts';
+import { loadStoredFonts } from './fonts.ts';
+import { openFontManager } from './fontManager.ts';
 import { deviceCheck } from './deviceCheck.ts';
 import { dialog, h } from './dom.ts';
 import { comboFromEvent, prettyCombo, type Hotkeys } from './hotkeys.ts';
@@ -78,17 +79,7 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
   const font = h('input', { class: 'input', list: 'font-list', value: s.defaultFont, 'aria-label': 'Default font', placeholder: 'Font name' });
   font.addEventListener('change', () => store.updateSettings({ defaultFont: font.value.trim() || 'Arial Black' }));
   void loadStoredFonts().then((fam) => fam.forEach((f) => fonts.append(h('option', { value: f }))));
-  const addFont = h('button', {
-    class: 'btn',
-    onclick: async () => {
-      for (const f of await pickFiles('.otf,.ttf,.woff,.woff2', true)) {
-        const fam = await importFont(f);
-        font.value = fam[0] ?? font.value;
-        store.updateSettings({ defaultFont: font.value });
-        store.say(`Font added and set as default: ${fam.join(' / ')}`);
-      }
-    },
-  }, 'Add a font file…');
+  const addFont = h('button', { class: 'btn', onclick: () => openFontManager(store, redraw) }, 'Manage fonts…');
 
   const exportBtn = h('button', { class: 'btn', onclick: () => saveFile(exportSettings(store.settings), 'turbocut-settings.json', 'application/json') }, 'Export settings');
   const importBtn = h('button', {

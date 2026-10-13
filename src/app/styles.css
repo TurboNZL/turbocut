@@ -186,3 +186,11 @@ textarea.input { width: 100%; resize: vertical; font: inherit; }
   .style-stage { flex: none; border-left: 0; border-top: 1px solid var(--bt-border, #8885); order: -1; }
   .style-preview { max-height: 14rem; }
 }
+
+/* Font manager */
+.font-manager { min-width: 0; }
+.font-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.35rem; padding: 0.6rem 0; border-top: 1px solid hsl(var(--line)); }
+.font-sample { font-size: 1.6rem; line-height: 1.25; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.font-meta { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.font-meta .chip { margin-left: 0.5rem; }
+.font-missing { margin: 0.4rem 0; }

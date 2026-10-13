@@ -70,12 +70,79 @@ async function register(f: StoredFont): Promise<void> {
   }
 }
 
+const unquote = (family: string) => family.replace(/^["']|["']$/g, '');
+
+function unregister(families: string[]): void {
+  const gone = new Set(families.map((f) => f.toLowerCase()));
+  for (const face of [...document.fonts]) if (gone.has(unquote(face.family).toLowerCase())) document.fonts.delete(face);
+}
+
+export interface FontEntry {
+  key: IDBValidKey;
+  families: string[];
+  /** File size in bytes. */
+  size: number;
+}
+
+/** The fonts the person added, with the key to remove each one. */
+export async function listFonts(): Promise<FontEntry[]> {
+  try {
+    const db = await open();
+    return await new Promise((resolve, reject) => {
+      const out: FontEntry[] = [];
+      const req = db.transaction(STORE, 'readonly').objectStore(STORE).openCursor();
+      req.onsuccess = () => {
+        const c = req.result;
+        if (!c) return resolve(out);
+        const f = c.value as StoredFont;
+        out.push({ key: c.key, families: f.families, size: f.bytes.byteLength });
+        c.continue();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Forget a font: it disappears from this device and from the page right away. */
+export async function removeFont(entry: FontEntry): Promise<void> {
+  unregister(entry.families);
+  try {
+    const db = await open();
+    await new Promise<void>((resolve, reject) => {
+      const req = db.transaction(STORE, 'readwrite').objectStore(STORE).delete(entry.key);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    /* nothing stored */
+  }
+}
+
+let probe: CanvasRenderingContext2D | null = null;
+/** Is a font with this name available to the page (a system font or one that was added)? Compares text widths against the fallbacks. */
+export function fontAvailable(name: string): boolean {
+  probe ??= document.createElement('canvas').getContext('2d');
+  if (!probe) return true;
+  const sample = 'mmmmmmmmmmlliWWW0123';
+  for (const base of ['monospace', 'serif', 'sans-serif']) {
+    probe.font = `72px ${base}`;
+    const plain = probe.measureText(sample).width;
+    probe.font = `72px "${name.replace(/"/g, '')}", ${base}`;
+    if (probe.measureText(sample).width !== plain) return true;
+  }
+  return false;
+}
+
 /** Import a font file. Returns the family names it is now available under. */
 export async function importFont(file: File): Promise<string[]> {
   const bytes = await file.arrayBuffer();
   let families = fontFamilies(bytes);
   if (families.length === 0) families = [file.name.replace(/\.(otf|ttf|woff2?)$/i, '').replace(/[-_]+/g, ' ').trim()];
   const rec: StoredFont = { families, bytes };
+  const same = new Set(families.map((f) => f.toLowerCase()));
+  for (const old of await listFonts()) if (old.families.some((f) => same.has(f.toLowerCase()))) await removeFont(old); // adding it again replaces it
   await register(rec);
   try {
     await tx(await open(), 'readwrite', (s) => s.put(rec));
