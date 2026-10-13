@@ -4,7 +4,7 @@ export type PlatformName = 'android' | 'electron' | 'web';
 
 export const platform: PlatformName = Capacitor.isNativePlatform()
   ? 'android'
-  : (window as any).turbocut?.platform === 'electron'
+  : (globalThis as any).turbocut?.platform === 'electron'
     ? 'electron'
     : 'web';
 

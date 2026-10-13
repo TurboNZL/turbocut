@@ -59,7 +59,7 @@ export function drawCaption(ctx: Ctx2D, p: Project, preset: CaptionPreset, frame
 
   // The text is rasterised at its animated size (crisp at every step of the bounce) and cached.
   const q = Math.round(s * 100) / 100;
-  const key = JSON.stringify([lines, fontFor(style.fontsize), q, style.outline, style.primary, style.outlineColour, a.align, a.base, document.fonts?.size ?? 0]);
+  const key = JSON.stringify([lines, fontFor(style.fontsize), q, style.outline, style.primary, style.outlineColour, style.counters, a.align, a.base, document.fonts?.size ?? 0]);
   let raster = cache.get(key);
   if (!raster) {
     raster = rasterizeText({
@@ -72,6 +72,7 @@ export function drawCaption(ctx: Ctx2D, p: Project, preset: CaptionPreset, frame
       fill: style.primary,
       outline: style.outlineColour,
       outlineWidth: style.outline * q,
+      counters: style.counters,
     });
     if (cache.size > 80) cache.delete(cache.keys().next().value!);
     cache.set(key, raster);

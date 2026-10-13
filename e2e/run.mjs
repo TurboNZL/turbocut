@@ -27,8 +27,10 @@ try {
     const h = await page.evaluate(() => window.captionHoles());
     console.log('caption counters (enclosed clear pixels):', JSON.stringify(h));
     assert.ok(h.trueCounters > 500, 'the test text has counters to measure');
-    assert.ok(h.oldMethod < h.trueCounters * 0.6, `the old centred stroke should be filling counters (${h.oldMethod} of ${h.trueCounters})`);
-    assert.ok(h.newMethod > h.trueCounters * 0.9, `counters must stay clear: ${h.newMethod} of ${h.trueCounters}`);
+    assert.ok(h.oldMethod < h.trueCounters * 0.6, `the classic centred stroke fills most counters (${h.oldMethod} of ${h.trueCounters} left clear)`);
+    assert.ok(h.filled < h.trueCounters * 0.6, `"filled" must behave like the classic stroke: ${h.filled} of ${h.trueCounters} clear`);
+    assert.ok(h.rim > h.trueCounters * 0.1 && h.rim < h.trueCounters * 0.9, `"rim" keeps a rim but leaves the middle open: ${h.rim} of ${h.trueCounters} clear`);
+    assert.ok(h.clear > h.trueCounters * 0.9, `"clear" must leave counters fully open: ${h.clear} of ${h.trueCounters}`);
     assert.ok(h.outlinePixels > 2000 && h.fillPixels > 2000, 'outline and fill are both still drawn');
     await page.close();
   }

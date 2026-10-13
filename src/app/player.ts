@@ -87,8 +87,14 @@ export class Player {
     await ac.resume();
     const startFrame = store.playhead;
     const startSec = startFrame / p.fps;
-    const clockStart = ac.currentTime;
-    const now = () => startSec + (ac.currentTime - clockStart);
+    // The timer is the system clock, not the audio clock: with no sound device (or a sleeping one) the audio clock can
+    // stand still or race, and the video would follow it. Audio starts a little in the future and the video clock is
+    // held back by that delay plus the device's output latency, so picture and sound line up.
+    const lead = 0.04;
+    const latency = lead + ((ac as any).outputLatency || ac.baseLatency || 0);
+    const clockStart = ac.currentTime + lead;
+    const wall0 = performance.now();
+    const now = () => startSec + (performance.now() - wall0) / 1000 - latency;
     void this.scheduleAudio(ac, token, startSec, clockStart);
 
     let feed = store.lib.sequential(p, startFrame);

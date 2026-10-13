@@ -1,14 +1,14 @@
-import { ALL_FORMATS, AudioBufferSink, BlobSource, CanvasSink, Input, type InputAudioTrack, type InputVideoTrack } from 'mediabunny';
+import { ALL_FORMATS, AudioBufferSink, BlobSource, Input, VideoSampleSink, type InputAudioTrack, type InputVideoTrack, type VideoSample } from 'mediabunny';
 import { newId } from '../core/timeline.ts';
 import type { Asset, Clip, Frame, Project } from '../core/types.ts';
 import { clipEnd } from '../core/timeline.ts';
-import { sourceSeconds, type FrameSource } from '../render/compose.ts';
+import { sourceSeconds, type FrameSource, type Picture } from '../render/compose.ts';
 
 interface Opened {
   input: Input;
   video?: InputVideoTrack;
   audio?: InputAudioTrack;
-  canvasSink?: CanvasSink;
+  videoSink?: VideoSampleSink;
   audioSink?: AudioBufferSink;
 }
 
@@ -24,8 +24,7 @@ export class MediaLibrary implements FrameSource {
     const id = newId('a');
     const seconds = await input.computeDuration();
     const o: Opened = { input, video, audio };
-    // Decode straight to a bounded size: a 4K source never needs more than the project canvas.
-    if (video) o.canvasSink = new CanvasSink(video, { poolSize: 2 });
+    if (video) o.videoSink = new VideoSampleSink(video);
     if (audio) o.audioSink = new AudioBufferSink(audio);
     this.opened.set(id, o);
     return {
@@ -41,12 +40,12 @@ export class MediaLibrary implements FrameSource {
   }
 
   /** Random access: right for scrubbing and single frames, but about 10x slower per frame than `sequential` for playback and export. */
-  async getFrame(clip: Clip, _frame: Frame, seconds: number): Promise<CanvasImageSource | null> {
+  async getFrame(clip: Clip, _frame: Frame, seconds: number): Promise<Picture | null> {
     const o = this.opened.get(clip.assetId);
-    if (!o?.canvasSink) return null;
+    if (!o?.videoSink) return null;
     const first = await o.video!.getFirstTimestamp();
-    const wrapped = await o.canvasSink.getCanvas(Math.max(seconds, first));
-    return wrapped?.canvas ?? null;
+    const sample = await o.videoSink.getSample(Math.max(seconds, first));
+    return sample ? samplePicture(sample, true) : null;
   }
 
   /**
@@ -58,8 +57,8 @@ export class MediaLibrary implements FrameSource {
   }
 
   /** @internal */
-  canvasSinkFor(assetId: string): CanvasSink | undefined {
-    return this.opened.get(assetId)?.canvasSink;
+  videoSinkFor(assetId: string): VideoSampleSink | undefined {
+    return this.opened.get(assetId)?.videoSink;
   }
 
   /** Decoded audio overlapping [from, to) seconds of the source, as AudioBuffers with their start times. */
@@ -75,39 +74,62 @@ export class MediaLibrary implements FrameSource {
   }
 }
 
+/** A decoded frame as a Picture. `owned` pictures close the frame when the compositor is done with it. */
+function samplePicture(sample: VideoSample, owned: boolean): Picture {
+  return {
+    width: sample.displayWidth,
+    height: sample.displayHeight,
+    draw: (ctx, dx, dy, dw, dh) => sample.draw(ctx, dx, dy, dw, dh),
+    close: owned ? () => sample.close() : undefined,
+  };
+}
+
 class SequentialFrames implements FrameSource {
-  private feeds = new Map<string, { it: AsyncGenerator<{ canvas: HTMLCanvasElement | OffscreenCanvas } | null>; next: Frame; last: CanvasImageSource | null }>();
+  private feeds = new Map<string, { it: AsyncGenerator<VideoSample | null>; next: Frame; last: VideoSample | null }>();
 
   constructor(private lib: MediaLibrary, private p: Project, private startFrame: Frame) {}
 
-  async getFrame(clip: Clip, frame: Frame): Promise<CanvasImageSource | null> {
+  async getFrame(clip: Clip, frame: Frame): Promise<Picture | null> {
     let feed = this.feeds.get(clip.id);
     if (!feed) {
-      const sink = this.lib.canvasSinkFor(clip.assetId);
+      const sink = this.lib.videoSinkFor(clip.assetId);
       if (!sink) return null;
       const p = this.p;
       const from = Math.max(clip.start, this.startFrame);
       const times = (function* () {
         for (let f = from; f < clipEnd(clip); f++) yield Math.max(0, sourceSeconds(p, clip, f));
       })();
-      feed = { it: sink.canvasesAtTimestamps(times), next: from, last: null };
+      feed = { it: sink.samplesAtTimestamps(times), next: from, last: null };
       this.feeds.set(clip.id, feed);
     }
     if (frame !== feed.next) throw new Error('Sequential source must be read in frame order');
     feed.next++;
     const r = await feed.it.next();
-    // Past the end of the source media the decoder yields nothing: hold the last picture.
-    if (!r.done && r.value) feed.last = r.value.canvas;
+    // Past the end of the source media the decoder yields nothing: hold the last picture. Only one frame is ever held.
+    if (!r.done && r.value) {
+      feed.last?.close();
+      feed.last = r.value;
+    }
+    const last = feed.last;
     if (frame === clipEnd(clip) - 1) {
       this.feeds.delete(clip.id);
       void feed.it.return(undefined);
+      // The compositor draws this picture after we return, so it is closed by the next call or by dispose.
+      if (last) this.finished.push(last);
     }
-    return feed.last;
+    return last ? samplePicture(last, false) : null;
   }
 
-  /** Close the decoders of clips that were not read to their end, so no decoded frame is left unclosed. */
+  private finished: VideoSample[] = [];
+
+  /** Close the decoders and every frame still held, so no decoded frame is left unclosed. */
   dispose(): void {
-    for (const feed of this.feeds.values()) void feed.it.return(undefined);
+    for (const feed of this.feeds.values()) {
+      void feed.it.return(undefined);
+      feed.last?.close();
+    }
     this.feeds.clear();
+    for (const s of this.finished) s.close();
+    this.finished = [];
   }
 }

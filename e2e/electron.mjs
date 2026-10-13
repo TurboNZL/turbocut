@@ -22,6 +22,12 @@ try {
   assert.equal(env.secure, true, 'app:// is a secure context');
   assert.equal(env.platform, 'electron', 'preload told the app it is in Electron');
 
+  // The desktop shell exposes the self-updater. An unpackaged run cannot update, and must say so instead of throwing.
+  const upd = await win.evaluate(() => window.turbocut.updater.check());
+  console.log('updater in an unpackaged run:', JSON.stringify(upd));
+  assert.equal(upd.supported, false);
+  assert.match(upd.reason, /development run/i);
+
   // Import through the app and export through the app. In Electron the download goes through the shell.
   const media = readFileSync(`${root}e2e/.media/src.webm`).toString('base64');
   await win.evaluate(async (b64) => {

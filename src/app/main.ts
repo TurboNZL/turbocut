@@ -3,6 +3,9 @@ import './styles.css';
 import { start } from 'turbothemes';
 import { addClip, clipEnd, createClip, newId, projectDuration, removeLinked, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
 import { exportProject } from '../export/exporter.ts';
+import { mixWindow } from '../export/audio.ts';
+import { drawVideo } from '../render/compose.ts';
+import { VideoSampleSink } from 'mediabunny';
 import { CaptionsPanel } from './captionsPanel.ts';
 import { deviceCheck } from './deviceCheck.ts';
 import { dialog, fmtTime, h } from './dom.ts';
@@ -262,4 +265,34 @@ async function exportForTest() {
   return { container: r.container, videoCodec: r.videoCodec, audioCodec: r.audioCodec, bytes: bytes.length, frames: r.frames, seconds: r.seconds, b64: btoa(bin) };
 }
 
-(window as any).turbocutApp = { store, player, themes, importMedia, importFont, runExport, split, exportForTest };
+/** Test hooks for memory profiling: run only the video path, or only the audio path. */
+async function probeVideo(frames: number) {
+  const p = store.project;
+  const feed = store.lib.sequential(p, 0);
+  const ctx = new OffscreenCanvas(p.width, p.height).getContext('2d')!;
+  for (let f = 0; f < frames; f++) await drawVideo(ctx, p, f, feed);
+  feed.dispose?.();
+}
+async function probeDecode(kind: 'samples' | 'draw' | 'bitmap960' | 'bitmap1920', frames: number) {
+  const o = (store.lib as any).opened.values().next().value;
+  const sink = new VideoSampleSink(o.video);
+  const ctx = new OffscreenCanvas(1080, 1920).getContext('2d')!;
+  let n = 0;
+  for await (const sample of sink.samples(0, frames / 30)) {
+    if (kind === 'draw') sample.draw(ctx, 0, 0, 1080, 1920);
+    else if (kind === 'bitmap960' || kind === 'bitmap1920') {
+      const frame = sample.toVideoFrame();
+      const bmp = await createImageBitmap(frame, { resizeWidth: kind === 'bitmap960' ? 960 : 1920, resizeQuality: 'medium' });
+      frame.close();
+      ctx.drawImage(bmp, 0, 0, 1080, 1920);
+      bmp.close();
+    }
+    sample.close();
+    if (++n >= frames) break;
+  }
+}
+async function probeAudio(seconds: number) {
+  for (let t = 0; t < seconds; t += 6) await mixWindow(store.project, store.lib, t, t + 6);
+}
+
+(window as any).turbocutApp = { store, player, themes, importMedia, importFont, runExport, split, exportForTest, probeVideo, probeAudio, probeDecode };

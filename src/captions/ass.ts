@@ -24,6 +24,8 @@ export interface AssStyle {
   marginL: number;
   marginR: number;
   marginV: number;
+  /** TurboCut extension (not part of ASS): what the holes of letters look like. Default 'rim'. */
+  counters?: 'filled' | 'rim' | 'clear';
 }
 
 export interface AssDialogue {

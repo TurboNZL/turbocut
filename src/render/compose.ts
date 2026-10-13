@@ -5,11 +5,29 @@ import type { BlurEffect, Clip, Frame, Project } from '../core/types.ts';
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
 /**
+ * One picture to composite: a decoded video frame (drawn with its rotation and flip metadata applied) or a bitmap.
+ * Holding a decoded frame costs real memory, so whoever gets a picture with `close` must call it right after drawing.
+ */
+export interface Picture {
+  /** Size after rotation, in pixels. */
+  width: number;
+  height: number;
+  draw(ctx: Ctx2D, dx: number, dy: number, dw: number, dh: number): void;
+  close?(): void;
+}
+
+export const bitmapPicture = (c: OffscreenCanvas | HTMLCanvasElement): Picture => ({
+  width: c.width,
+  height: c.height,
+  draw: (ctx, dx, dy, dw, dh) => ctx.drawImage(c, dx, dy, dw, dh),
+});
+
+/**
  * Gives the compositor the decoded picture for a clip at a timeline frame. Two implementations:
- * random access for scrubbing (`MediaLibrary`) and a pipelined sequential one for export.
+ * random access for scrubbing (`MediaLibrary`) and a pipelined sequential one for playback and export.
  */
 export interface FrameSource {
-  getFrame(clip: Clip, frame: Frame, sourceSeconds: number): Promise<CanvasImageSource | null>;
+  getFrame(clip: Clip, frame: Frame, sourceSeconds: number): Promise<Picture | null>;
   /** Release decoders. Must be called when a sequential source is abandoned before every clip was read to its end. */
   dispose?(): void;
 }
@@ -26,11 +44,6 @@ export function clipAt(track: { clips: Clip[] }, frame: Frame): Clip | undefined
   }
 }
 
-const dims = (img: CanvasImageSource): [number, number] => {
-  const a = img as { displayWidth?: number; displayHeight?: number; videoWidth?: number; videoHeight?: number; width?: number; height?: number };
-  return [a.displayWidth ?? a.videoWidth ?? (a.width as number), a.displayHeight ?? a.videoHeight ?? (a.height as number)];
-};
-
 function blurRadius(e: BlurEffect, clip: Clip, frame: Frame): number {
   return Math.max(0, e.radiusKeys?.length ? sample(e.radiusKeys, frame - clip.start, e.radius) : e.radius);
 }
@@ -39,8 +52,9 @@ function blurRadius(e: BlurEffect, clip: Clip, frame: Frame): number {
  * Draw one video clip: "cover" fit into the project frame, then the clip's own transform
  * (x, y in pixels from centre, scale, rotation in degrees, opacity) and its effects.
  */
-export function drawClip(ctx: Ctx2D, p: Project, clip: Clip, frame: Frame, img: CanvasImageSource): void {
-  const [sw, sh] = dims(img);
+export function drawClip(ctx: Ctx2D, p: Project, clip: Clip, frame: Frame, pic: Picture): void {
+  const sw = pic.width;
+  const sh = pic.height;
   if (!sw || !sh) return;
   const fit = Math.max(p.width / sw, p.height / sh);
   const scale = fit * evalProp(clip, 'scale', frame);
@@ -71,11 +85,11 @@ export function drawClip(ctx: Ctx2D, p: Project, clip: Clip, frame: Frame, img: 
     const bw = Math.max(1, Math.round((sw * scale) / pixelate));
     const bh = Math.max(1, Math.round((sh * scale) / pixelate));
     const tmp = new OffscreenCanvas(bw, bh);
-    tmp.getContext('2d')!.drawImage(img, 0, 0, bw, bh);
+    pic.draw(tmp.getContext('2d')!, 0, 0, bw, bh);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(tmp, -sw / 2, -sh / 2, sw, sh);
   } else {
-    ctx.drawImage(img, -sw / 2, -sh / 2, sw, sh);
+    pic.draw(ctx, -sw / 2, -sh / 2, sw, sh);
   }
   ctx.restore();
 }
@@ -88,16 +102,17 @@ export function drawClip(ctx: Ctx2D, p: Project, clip: Clip, frame: Frame, img: 
  * `overlay` runs in that same synchronous run, for captions.
  */
 export async function drawVideo(ctx: Ctx2D, p: Project, frame: Frame, src: FrameSource, overlay?: () => void): Promise<void> {
-  const layers: { clip: Clip; img: CanvasImageSource }[] = [];
+  const layers: { clip: Clip; pic: Picture }[] = [];
   for (const track of p.tracks) {
     if (track.kind !== 'video' || track.hidden) continue;
     const clip = clipAt(track, frame);
     if (!clip) continue;
-    const img = await src.getFrame(clip, frame, sourceSeconds(p, clip, frame));
-    if (img) layers.push({ clip, img });
+    const pic = await src.getFrame(clip, frame, sourceSeconds(p, clip, frame));
+    if (pic) layers.push({ clip, pic });
   }
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, p.width, p.height);
-  for (const { clip, img } of layers) drawClip(ctx, p, clip, frame, img);
+  for (const { clip, pic } of layers) drawClip(ctx, p, clip, frame, pic);
   overlay?.();
+  for (const { pic } of layers) pic.close?.(); // a decoded frame is released the moment it has been drawn
 }

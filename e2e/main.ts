@@ -96,7 +96,9 @@ window.captionHoles = async () => {
     return n;
   };
   const plain = rasterizeText({ ...spec, outlineWidth: 0 });
-  const fresh = rasterizeText(spec);
+  const fresh = rasterizeText({ ...spec, counters: 'clear' });
+  const rim = rasterizeText({ ...spec, counters: 'rim' });
+  const filled = rasterizeText({ ...spec, counters: 'filled' });
   // The old method: centred stroke, then fill on top.
   const old = new OffscreenCanvas(fresh.canvas.width, fresh.canvas.height);
   const o = old.getContext('2d')!;
@@ -106,7 +108,7 @@ window.captionHoles = async () => {
   const f = fresh.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, fresh.canvas.width, fresh.canvas.height).data;
   let black = 0, yellow = 0;
   for (let i = 0; i < f.length; i += 4) { if (f[i + 3]! > 200 && f[i]! < 40 && f[i + 1]! < 40) black++; if (f[i + 3]! > 200 && f[i]! > 240 && f[i + 1]! > 180) yellow++; }
-  return { trueCounters: enclosed(plain.canvas), oldMethod: enclosed(old), newMethod: enclosed(fresh.canvas), outlinePixels: black, fillPixels: yellow };
+  return { trueCounters: enclosed(plain.canvas), oldMethod: enclosed(old), filled: enclosed(filled.canvas), rim: enclosed(rim.canvas), clear: enclosed(fresh.canvas), outlinePixels: black, fillPixels: yellow };
 };
 
 /**
