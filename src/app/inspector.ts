@@ -8,7 +8,7 @@ import type { Store } from './store.ts';
 
 /** Settings of the selected clip. Every animatable setting gets a slider, a number and a keyframe button. */
 export class Inspector {
-  readonly el = h('div', { class: 'insp' });
+  readonly el = h('div', { class: 'insp card bt-panel' });
   private refreshers: (() => void)[] = [];
   private builtFor: string | null | undefined = undefined;
   private dirty = false;
@@ -40,7 +40,7 @@ export class Inspector {
     }
     const kind = this.kind();
     const asset = this.store.project.assets[clip.assetId];
-    this.el.append(h('div', { class: 'bt-panel-title' }, clip.text ? 'Text layer' : (asset?.name ?? 'Clip')));
+    this.el.append(h('h2', { class: 'bt-panel-title' }, clip.text ? 'Text layer' : (asset?.name ?? 'Clip')));
     if (clip.text) this.el.append(this.textSection(clip));
     for (const param of paramsFor(kind)) this.el.append(this.paramRow(param));
     if (kind === 'video' && !clip.text) this.el.append(this.speed());

@@ -5,7 +5,7 @@ import { LocalTranscriber, MODELS, type Compute } from '../transcribe/local.ts';
 import { cleanWords } from '../transcribe/post.ts';
 import { projectDuration } from '../core/timeline.ts';
 import { renderPcm16k } from '../transcribe/pcm.ts';
-import { h } from './dom.ts';
+import { h, panel } from './dom.ts';
 import { openFontManager } from './fontManager.ts';
 import { pickFiles, saveFile } from './platform.ts';
 import { exportPresetDialog, pickAndImportPreset } from './presetIO.ts';
@@ -85,18 +85,9 @@ export class CaptionsPanel {
     const clear = h('button', { class: 'btn btn-ghost', onclick: () => store.edit((p) => (p.captions = [])) }, 'Clear');
 
     this.el.replaceChildren(
-      h('div', { class: 'bt-panel-title' }, 'Style'),
-      presetSel,
-      h('div', { class: 'row' }, editBtn, importPresetBtn, exportPresetBtn, fontBtn),
-      fontNote,
-      h('div', { class: 'bt-panel-title' }, 'Auto captions'),
-      summary,
-      h('div', { class: 'row' }, go, cancel, change),
-      progress,
-      this.reportBtn,
-      h('div', { class: 'bt-panel-title' }, 'Captions'),
-      h('div', { class: 'row' }, addCue, assIn, assOut, clear),
-      this.list,
+      panel('Style', presetSel, h('div', { class: 'row' }, editBtn, importPresetBtn, exportPresetBtn, fontBtn), fontNote),
+      panel('Auto captions', summary, h('div', { class: 'row' }, go, cancel, change), progress, this.reportBtn),
+      panel('Captions', h('div', { class: 'row' }, addCue, assIn, assOut, clear), this.list),
     );
     this.renderCues();
   }

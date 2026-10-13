@@ -60,7 +60,7 @@ try {
   await page.screenshot({ path: `${out}text-layer.png` });
 
   // ---- keyframe editor: X moves the text across the frame
-  await page.getByRole('button', { name: 'Keys', exact: true }).click();
+  await page.getByRole('tab', { name: 'Keys', exact: true }).click();
   assert.equal(await page.locator('.ks-row').count(), 7, 'a video layer shows its 7 animatable settings');
   const xRow = page.locator('.ks-row[data-param="x"]');
   await page.evaluate(() => window.turbocutApp.store.seek(0));
@@ -130,7 +130,7 @@ try {
   });
   const clipIds = await page.evaluate(() => window.turbocutApp.store.project.tracks.map((t) => t.clips[0].id));
   await page.evaluate((id) => window.turbocutApp.store.select(id), clipIds[0]);
-  await page.getByRole('button', { name: 'Keys', exact: true }).click();
+  await page.getByRole('tab', { name: 'Keys', exact: true }).click();
   const blurRow = page.locator('.ks-row[data-param="blur"]');
   await page.evaluate(() => window.turbocutApp.store.seek(0));
   await blurRow.getByRole('button').first().click();

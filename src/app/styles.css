@@ -28,7 +28,7 @@ button, select, input { font: inherit; }
 
 .side { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; border-left: 1px solid hsl(var(--line)); }
 .tabs { display: flex; }
-.tabs .bt-tab { flex: 1; }
+.tabs .tab { flex: 1; min-width: 0; padding-inline: 0.25rem; font-size: 0.9rem; }
 .tab-body { flex: 1; overflow: auto; padding: 0.6rem; min-height: 0; }
 
 .prop { display: grid; grid-template-columns: 5.2rem minmax(0, 1fr) 4.6rem auto; gap: 0.4rem; align-items: center; margin: 0.3rem 0; }
@@ -116,7 +116,7 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; padding: 0 0.35rem;
 
 /* Control size: large for fingers, compact for a lot on screen. */
 #app[data-density='large'] .btn { min-height: 44px; min-width: 44px; }
-#app[data-density='large'] .bt-tab { min-height: 44px; }
+#app[data-density='large'] .tab { min-height: 44px; }
 #app[data-density='large'] .edit-bar { padding: 0.5rem; gap: 0.5rem; }
 #app[data-density='large'] .edit-bar .zoom { display: none; }
 #app[data-density='large'] .transport .btn { min-width: 48px; }
@@ -133,7 +133,7 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; padding: 0 0.35rem;
 .dlg-wide .bt-body { flex: 1; min-height: 0; padding: 0; display: flex; }
 .settings { display: grid; grid-template-columns: 150px minmax(0, 1fr); flex: 1; min-height: 0; width: 100%; }
 .settings-nav { display: flex; flex-direction: column; border-right: 1px solid hsl(var(--line)); overflow-y: auto; }
-.settings-nav .bt-tab { text-align: left; justify-content: flex-start; padding: 0.7rem 0.9rem; }
+.settings-nav .tab { text-align: left; }
 .settings-body { overflow-y: auto; padding: 0.9rem; min-width: 0; }
 .setting { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.3rem 0; }
 .setting.col { flex-direction: column; gap: 0.25rem; }
@@ -147,7 +147,7 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; padding: 0 0.35rem;
 @media (max-width: 640px) {
   .settings { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .settings-nav { flex-direction: row; border-right: 0; border-bottom: 1px solid hsl(var(--line)); overflow-x: auto; overflow-y: hidden; }
-  .settings-nav .bt-tab { flex: none; }
+  .settings-nav .tab { flex: none; }
   .key-row { grid-template-columns: 1fr auto; }
   .key-label { grid-column: 1 / -1; font-weight: 600; }
 }
@@ -186,11 +186,11 @@ textarea.input { width: 100%; resize: vertical; font: inherit; }
 /* Style editor */
 .style-editor { display: flex; width: 100%; min-height: 0; }
 .style-side { flex: 1 1 22rem; min-width: 0; overflow: auto; padding: 0.7rem; }
-.style-stage { flex: 0 0 13rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 0.7rem; border-left: 1px solid var(--bt-border, #8885); }
+.style-stage { flex: 0 0 13rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 0.7rem; border-left: 1px solid hsl(var(--line)); }
 .style-preview { width: 100%; height: auto; max-height: 24rem; aspect-ratio: 9 / 16; border-radius: 6px; background: #222; }
 @media (max-width: 640px) {
   .style-editor { flex-direction: column; overflow: auto; }
-  .style-stage { flex: none; border-left: 0; border-top: 1px solid var(--bt-border, #8885); order: -1; }
+  .style-stage { flex: none; border-left: 0; border-top: 1px solid hsl(var(--line)); order: -1; }
   .style-preview { max-height: 14rem; }
 }
 
@@ -201,3 +201,19 @@ textarea.input { width: 100%; resize: vertical; font: inherit; }
 .font-meta { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
 .font-meta .chip { margin-left: 0.5rem; }
 .font-missing { margin: 0.4rem 0; }
+
+/* In-page tabs: the app's own pattern (turbothemes has no hook for them). Colours from tokens only, so every look works. */
+.tab { appearance: none; background: none; border: 0; border-radius: 0; margin: 0 0 -1px; padding: 0.6rem 0.8rem; font: inherit; font-weight: 500; color: hsl(var(--muted)); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; transition: color var(--dur, 120ms) var(--ease, ease); }
+.tab:hover { color: hsl(var(--fg)); }
+.tab[aria-selected='true'] { color: hsl(var(--fg)); border-bottom-color: hsl(var(--accent)); }
+.tab:focus-visible { outline: 2px solid hsl(var(--accent)); outline-offset: -2px; }
+.tabs { border-bottom: 1px solid hsl(var(--line)); }
+.settings-nav .tab { border-bottom: 0; margin-bottom: 0; border-left: 2px solid transparent; margin-left: -1px; }
+.settings-nav .tab[aria-selected='true'] { border-left-color: hsl(var(--accent)); background: hsl(var(--hover) / 0.5); }
+@media (max-width: 720px) { .settings-nav .tab { border-left: 0; border-bottom: 2px solid transparent; margin-left: 0; } .settings-nav .tab[aria-selected='true'] { border-bottom-color: hsl(var(--accent)); } }
+.flex-titlebar { display: flex; align-items: center; }
+.dlg { overflow: hidden; }
+.card.bt-panel { padding: 0.7rem 0.8rem; }
+.card.bt-panel > .bt-panel-title { margin: 0 0 0.5rem; font-size: 1rem; }
+.stack > .card.bt-panel, .tab-body > .card.bt-panel { margin: 0 0 0.6rem; }
+.insp.card, .keys .card { margin-bottom: 0.6rem; }

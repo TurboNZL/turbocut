@@ -39,7 +39,7 @@ try {
   }, readFileSync(FONT).toString('base64'));
 
   // ---- 1. the built-in style is read-only; duplicating makes an editable copy
-  await page.getByRole('button', { name: 'Captions', exact: true }).click();
+  await page.getByRole('tab', { name: 'Captions', exact: true }).click();
   await page.getByRole('button', { name: 'Edit styles…' }).click();
   await page.waitForSelector('.style-editor');
   assert.ok(await page.getByRole('button', { name: 'Duplicate to edit' }).isVisible(), 'built-in offers Duplicate to edit');
@@ -115,7 +115,7 @@ try {
   const hasFont = (p) => p.evaluate(() => [...document.fonts].some((f) => f.family.replace(/"/g, '') === 'Turbo Test Font'));
   const other = await fresh();
   assert.equal(await hasFont(other), false, 'fresh device starts without the font');
-  await other.getByRole('button', { name: 'Captions', exact: true }).click();
+  await other.getByRole('tab', { name: 'Captions', exact: true }).click();
   await pick(other, () => other.getByRole('button', { name: 'Import style' }).click(), withFont);
   await other.waitForFunction(() => window.turbocutApp.store.preset.name.startsWith('TurboCut Bounce copy'));
   assert.equal(await hasFont(other), true, 'font installed from the preset');
@@ -123,7 +123,7 @@ try {
   await other.waitForFunction(() => window.turbocutApp);
   await other.waitForFunction(() => [...document.fonts].some((f) => f.family.replace(/"/g, '') === 'Turbo Test Font'), null, { timeout: 5000 });
   const third = await fresh();
-  await third.getByRole('button', { name: 'Captions', exact: true }).click();
+  await third.getByRole('tab', { name: 'Captions', exact: true }).click();
   await pick(third, () => third.getByRole('button', { name: 'Import style' }).click(), without);
   await third.waitForFunction(() => window.turbocutApp.store.preset.name.startsWith('TurboCut Bounce copy'));
   assert.equal(await hasFont(third), false, 'no font without the bundle');

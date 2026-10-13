@@ -2,7 +2,7 @@ import { loadStoredFonts } from './fonts.ts';
 import { layoutManager } from './layoutManager.ts';
 import { openFontManager } from './fontManager.ts';
 import { deviceCheck } from './deviceCheck.ts';
-import { dialog, h } from './dom.ts';
+import { dialog, h, panel } from './dom.ts';
 import { comboFromEvent, prettyCombo, type Hotkeys } from './hotkeys.ts';
 import { pickFiles, platform, saveFile } from './platform.ts';
 import { DEFAULT_SETTINGS, exportSettings, importSettings, type CounterMode } from './settings.ts';
@@ -37,16 +37,16 @@ const field = (label: string, control: HTMLElement) => h('label', { class: 'sett
 export function openSettings(deps: SettingsDeps, tab: SettingsTab = 'General'): void {
   const { store } = deps;
   const body = h('div', { class: 'settings-body' });
-  const nav = h('div', { class: 'settings-nav' });
+  const nav = h('div', { class: 'settings-nav', role: 'tablist', 'aria-orientation': 'vertical' });
   let current: SettingsTab = tab;
 
   const show = (t: SettingsTab) => {
     current = t;
-    for (const b of nav.children) (b as HTMLElement).setAttribute('aria-current', b.textContent === t ? 'page' : 'false');
+    for (const b of nav.children) (b as HTMLElement).setAttribute('aria-selected', String(b.textContent === t));
     body.replaceChildren(build(t));
     body.scrollTop = 0;
   };
-  for (const t of TABS) nav.append(h('button', { class: 'bt-tab', onclick: () => show(t) }, t));
+  for (const t of TABS) nav.append(h('button', { class: 'tab', role: 'tab', onclick: () => show(t) }, t));
 
   const build = (t: SettingsTab): HTMLElement => {
     switch (t) {
@@ -103,23 +103,19 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
   }, 'Import settings');
 
   return h('div', { class: 'stack' },
-    h('div', { class: 'bt-panel-title' }, 'Look'), picker,
-    h('div', { class: 'bt-panel-title' }, 'Timeline'),
-    check('Snap clips and edges to the playhead and to each other', s.snapping, (v) => store.updateSettings({ snapping: v }), 'Hotkey N toggles it.'),
-    check('Show audio waveforms', s.waveforms, (v) => store.updateSettings({ waveforms: v }), 'Low detail. Uses a little more battery.'),
-    field('Track order', trackOrder),
-    h('div', { class: 'bt-panel-title' }, 'Captions and text'),
-    field('Default font', font), fonts, addFont,
-    field('Letter holes (o, e, a, g) in new styles', counters),
-    h('div', { class: 'bt-panel-title' }, 'Updates'),
-    check('Check for a new version when TurboCut starts', s.autoCheckUpdates, (v) => store.updateSettings({ autoCheckUpdates: v })),
-    h('div', { class: 'bt-panel-title' }, 'Settings file'),
-    h('div', { class: 'row' }, exportBtn, importBtn),
+    panel('Look', picker),
+    panel('Timeline',
+      check('Snap clips and edges to the playhead and to each other', s.snapping, (v) => store.updateSettings({ snapping: v }), 'Hotkey N toggles it.'),
+      check('Show audio waveforms', s.waveforms, (v) => store.updateSettings({ waveforms: v }), 'Low detail. Uses a little more battery.'),
+      field('Track order', trackOrder)),
+    panel('Captions and text', field('Default font', font), fonts, addFont, field('Letter holes (o, e, a, g) in new styles', counters)),
+    panel('Updates', check('Check for a new version when TurboCut starts', s.autoCheckUpdates, (v) => store.updateSettings({ autoCheckUpdates: v }))),
+    panel('Settings file', h('div', { class: 'row' }, exportBtn, importBtn)),
   );
 }
 
 function fontsTab({ store }: SettingsDeps): HTMLElement {
-  return h('div', { class: 'stack' },
+  return panel('Fonts',
     h('p', { class: 'hint' }, `The default font is "${store.settings.defaultFont}". Add font files, see each one drawn, change the default or remove fonts in the font manager.`),
     h('button', { class: 'btn btn-accent', onclick: () => openFontManager(store) }, 'Open the font manager…'));
 }
@@ -153,10 +149,11 @@ function keys({ hotkeys }: SettingsDeps, redraw: () => void): HTMLElement {
   const groups = new Map<string, ReturnType<Hotkeys['list']>>();
   for (const a of hotkeys.list()) groups.set(a.group, [...(groups.get(a.group) ?? []), a]);
   for (const [group, list] of groups) {
-    box.append(h('div', { class: 'bt-panel-title' }, group));
+    const section = panel(group);
+    box.append(section);
     for (const a of list) {
       const chips = hotkeys.keysFor(a.id).map((k) => h('button', { class: 'btn kbd-chip', title: 'Remove this shortcut', onclick: () => (hotkeys.removeKey(a.id, k), redraw()) }, prettyCombo(k)));
-      box.append(h('div', { class: 'key-row' },
+      section.append(h('div', { class: 'key-row' },
         h('span', { class: 'key-label' }, a.label),
         h('span', { class: 'key-chips' }, chips.length ? chips : h('em', { class: 'hint' }, 'none')),
         h('button', { class: 'btn', onclick: () => capture(a.id) }, 'Add'),

@@ -2,7 +2,7 @@ import type { AssStyle } from '../captions/ass.ts';
 import type { CaptionPreset, EntranceAnimation } from '../captions/presets.ts';
 import { createProject } from '../core/timeline.ts';
 import { drawCaption } from '../render/captions.ts';
-import { dialog, h } from './dom.ts';
+import { dialog, h, panel } from './dom.ts';
 import { loadStoredFonts } from './fonts.ts';
 import { exportPresetDialog, pickAndImportPreset } from './presetIO.ts';
 import type { Store } from './store.ts';
@@ -77,14 +77,15 @@ export function openStyleEditor(store: Store): void {
       h('button', { class: 'btn', onclick: () => void exportPresetDialog(store, p) }, 'Export…'),
     );
 
-    const parts: (Node | null)[] = [h('div', { class: 'bt-panel-title' }, 'Style'), sel, top];
+    const styleBits: (Node | null)[] = [sel, top];
+    const parts: (Node | null)[] = [];
 
     if (!editable) {
-      parts.push(h('p', { class: 'hint' }, 'The built-in style follows your default font and letter-hole settings. Duplicate it to change colours, sizes or the animation.'));
+      styleBits.push(h('p', { class: 'hint' }, 'The built-in style follows your default font and letter-hole settings. Duplicate it to change colours, sizes or the animation.'));
     } else {
       const name = h('input', { class: 'input', value: p.name, 'aria-label': 'Style name' });
       name.addEventListener('change', () => { store.renamePreset(p, name.value); render(); });
-      parts.push(h('label', { class: 'prop style-row' }, h('span', { class: 'prop-l' }, 'Name'), name));
+      styleBits.push(h('label', { class: 'prop style-row' }, h('span', { class: 'prop-l' }, 'Name'), name));
 
       // Variants: each one is a look that a caption can use (for example another colour for emphasis).
       const vsel = h('select', { class: 'input', 'aria-label': 'Variant' }, ...p.styles.map((s, i) => h('option', { value: String(i), selected: i === variant }, s.name)));
@@ -118,17 +119,17 @@ export function openStyleEditor(store: Store): void {
         render();
       } }, 'Remove variant');
       parts.push(
-        h('div', { class: 'bt-panel-title' }, 'Variants'),
-        vsel,
-        h('label', { class: 'prop style-row' }, h('span', { class: 'prop-l' }, 'Variant name'), vname),
-        h('div', { class: 'row' }, addVariant, delVariant),
-        styleControls(p.styles[variant]!, { placement: true, fonts: fontNames, onChange: changed }),
+        panel('Variants',
+          vsel,
+          h('label', { class: 'prop style-row' }, h('span', { class: 'prop-l' }, 'Variant name'), vname),
+          h('div', { class: 'row' }, addVariant, delVariant),
+          styleControls(p.styles[variant]!, { placement: true, fonts: fontNames, onChange: changed })),
         animationControls(p.animation, (a) => { p.animation = a; changed(); replay(); }),
       );
     }
 
     root.replaceChildren(
-      h('div', { class: 'style-side' }, ...parts),
+      h('div', { class: 'style-side' }, panel('Style', ...styleBits), ...parts),
       h('div', { class: 'style-stage' }, canvas, h('button', { class: 'btn', onclick: replay }, 'Replay animation')),
     );
     paint(1000);
@@ -151,7 +152,7 @@ function animationControls(a: EntranceAnimation, set: (a: EntranceAnimation) => 
     h('option', { value: 'bounce', selected: a.type === 'bounce' }, 'Bounce in'),
     h('option', { value: 'none', selected: a.type === 'none' }, 'None'));
   type.addEventListener('change', () => set(type.value === 'none' ? { type: 'none' } : { type: 'bounce', frames: 6, overshoot: 1.15 }));
-  const parts: HTMLElement[] = [h('div', { class: 'bt-panel-title' }, 'Entrance'), h('label', { class: 'prop style-row' }, h('span', { class: 'prop-l' }, 'Animation'), type)];
+  const parts: HTMLElement[] = [h('label', { class: 'prop style-row' }, h('span', { class: 'prop-l' }, 'Animation'), type)];
   if (a.type === 'bounce') {
     const num = (label: string, value: number, min: number, max: number, step: number, apply: (v: number) => EntranceAnimation) => {
       const input = h('input', { type: 'number', class: 'input num', min, max, step, value, 'aria-label': label });
@@ -166,5 +167,5 @@ function animationControls(a: EntranceAnimation, set: (a: EntranceAnimation) => 
       num('Overshoot', a.overshoot, 1, 3, 0.05, (v) => ({ ...a, overshoot: v })),
     );
   }
-  return h('div', {}, ...parts);
+  return panel('Entrance', ...parts);
 }

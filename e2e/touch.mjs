@@ -148,7 +148,7 @@ try {
     const blob = await (await fetch('/e2e/.media/vonly.webm')).blob();
     await window.turbocutApp.importMedia([new File([blob], 'extra.webm', { type: 'video/webm' })]);
   });
-  await page.getByRole('button', { name: 'Media', exact: true }).tap();
+  await page.getByRole('tab', { name: 'Media', exact: true }).tap();
   await page.waitForSelector('.bin-item');
   const clipsBefore = (await state()).clips.length;
   await page.locator('.bin-item', { hasText: 'extra.webm' }).getByRole('button', { name: 'Add' }).tap();
@@ -156,7 +156,7 @@ try {
   console.log('after tapping Add:', JSON.stringify(afterAdd));
   assert.ok(afterAdd.length === 1, 'tapping Add puts the clip on the timeline');
   await page.screenshot({ path: `${out}touch-bin.png` });
-  await page.getByRole('button', { name: 'Media', exact: true }).tap(); // tap the open tab again: the sheet closes
+  await page.getByRole('tab', { name: 'Media', exact: true }).tap(); // tap the open tab again: the sheet closes
   await page.locator('.tl-head').first().tap();
   assert.ok(await page.getByRole('menuitem', { name: /this track/ }).first().isVisible(), 'tapping a track chip opens its menu');
   await page.keyboard.press('Escape');

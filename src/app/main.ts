@@ -9,7 +9,7 @@ import { VideoSampleSink } from 'mediabunny';
 import { Actions } from './actions.ts';
 import { BinPanel } from './binPanel.ts';
 import { CaptionsPanel } from './captionsPanel.ts';
-import { fmtTime, h, popupMenu } from './dom.ts';
+import { fmtTime, h, panel, popupMenu } from './dom.ts';
 import { importFont, loadStoredFonts } from './fonts.ts';
 import { Hotkeys, type HotkeyAction } from './hotkeys.ts';
 import { Inspector } from './inspector.ts';
@@ -86,7 +86,7 @@ store.on('view', () => (zoom.value = String(Math.log(store.zoom))));
 const status = h('div', { class: 'status', role: 'status' });
 
 const tabs: Record<string, HTMLElement> = { Clip: inspector.el, Keys: keys.el, Media: bin.el, Captions: captions.el, Project: projectPanel() };
-const tabBar = h('div', { class: 'tabs bt-tabbar' });
+const tabBar = h('div', { class: 'tabs', role: 'tablist' });
 const tabBody = h('div', { class: 'tab-body' });
 let activeTab = 'Clip';
 const side = h('aside', { class: 'bt-side side collapsed' }, tabBar, tabBody);
@@ -95,7 +95,7 @@ function showTab(name: string, userTap = false): void {
   if (userTap && name === activeTab) side.classList.toggle('collapsed');
   else if (userTap) side.classList.remove('collapsed');
   activeTab = name;
-  for (const b of tabBar.children) (b as HTMLElement).setAttribute('aria-current', b.textContent === name ? 'page' : 'false');
+  for (const b of tabBar.children) (b as HTMLElement).setAttribute('aria-selected', String(b.textContent === name));
   tabBody.replaceChildren(tabs[name]!);
 }
 showTab('Clip');
@@ -108,7 +108,7 @@ function drawLayout(): void {
   app.dataset.density = l.density;
   app.style.setProperty('--panel-w', `${l.panelWidth}px`);
   app.style.setProperty('--tl-h', `${l.timelineHeight}%`);
-  tabBar.replaceChildren(...l.tabs.map((name) => h('button', { class: 'bt-tab', onclick: () => showTab(name, true) }, name)));
+  tabBar.replaceChildren(...l.tabs.map((name) => h('button', { class: 'tab', role: 'tab', onclick: () => showTab(name, true) }, name)));
   if (!l.tabs.includes(activeTab as TabName)) showTab(l.tabs[0]!);
   else showTab(activeTab);
 }
@@ -136,11 +136,7 @@ function projectPanel(): HTMLElement {
     const [w, hh] = aspect.value.split('x').map(Number) as [number, number];
     store.edit((p) => ((p.width = w), (p.height = hh)));
   });
-  return h('div', { class: 'stack' },
-    h('div', { class: 'bt-panel-title' }, 'Project'), name, aspect,
-    h('p', { class: 'hint' }, `Frame rate is ${store.project.fps} fps.`),
-    h('button', { class: 'btn', onclick: () => settings() }, 'Settings…'),
-  );
+  return panel('Project', name, aspect, h('p', { class: 'hint' }, `Frame rate is ${store.project.fps} fps.`), h('button', { class: 'btn', onclick: () => settings() }, 'Settings…'));
 }
 
 const header = h('header', { class: 'bt-top top' },
@@ -161,7 +157,9 @@ const transport = h('div', { class: 'transport' },
 );
 
 // Edit actions live in one bar right under the timeline, in thumb reach on a phone.
-const snapBtn = h('button', { class: 'btn', 'aria-label': 'Snapping', title: 'Snapping (N)', onclick: () => actions.toggleSnapping() }, '🧲');
+const snapBtn = h('button', { class: 'btn', 'aria-label': 'Snapping', title: 'Snapping (N)', onclick: () => actions.toggleSnapping() });
+// A magnet drawn in the text colour (an emoji ignores the theme).
+snapBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15V4h4v11a2 2 0 0 0 4 0V4h4v11a6 6 0 0 1-12 0z"/><path d="M6 8h4M14 8h4"/></svg>';
 const syncSnap = () => {
   snapBtn.setAttribute('aria-pressed', String(store.settings.snapping));
   snapBtn.classList.toggle('on', store.settings.snapping);

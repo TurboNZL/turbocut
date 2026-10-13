@@ -34,7 +34,7 @@ export function dialog(title: string, body: Node, buttons: HTMLElement[] = [], e
   const win = h(
     'div',
     { class: `bt-window dlg ${extraClass}`.trim(), role: 'dialog', 'aria-label': title },
-    h('div', { class: 'bt-titlebar' }, h('span', {}, title), h('button', { class: 'bt-close', 'aria-label': 'Close', onclick: close }, '×')),
+    h('div', { class: 'bt-titlebar flex-titlebar' }, h('h2', {}, title), h('button', { class: 'bt-close', 'aria-label': 'Close', onclick: close }, '×')),
     h('div', { class: 'bt-body' }, body),
     buttons.length ? h('div', { class: 'bt-footer' }, buttons) : null,
   );
@@ -87,4 +87,9 @@ export function popupMenu(anchor: HTMLElement, items: MenuItem[]): { close: () =
   setTimeout(() => window.addEventListener('pointerdown', away, true), 0);
   window.addEventListener('keydown', esc, true);
   return { close };
+}
+
+/** A settings panel the way turbothemes expects it: the title is the first child of a `.card.bt-panel`. */
+export function panel(title: string, ...children: (Node | string | null)[]): HTMLElement {
+  return h('section', { class: 'card bt-panel' }, h('h2', { class: 'bt-panel-title' }, title), ...children.filter((c) => c !== null));
 }

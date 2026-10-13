@@ -19,7 +19,7 @@ try {
   await page.waitForFunction(() => window.turbocutApp);
   const state = () => page.evaluate(() => ({ def: window.turbocutApp.store.settings.defaultFont, builtin: window.turbocutApp.store.presets[0].styles[0].fontname, loaded: [...document.fonts].map((f) => f.family.replace(/"/g, '')) }));
 
-  await page.getByRole('button', { name: 'Captions', exact: true }).click();
+  await page.getByRole('tab', { name: 'Captions', exact: true }).click();
   await page.getByRole('button', { name: 'Fonts…' }).click();
   await page.getByRole('dialog', { name: 'Fonts' }).waitFor();
   assert.match(await page.locator('.font-manager').textContent(), /None yet/);
@@ -53,7 +53,7 @@ try {
 
   // a style asking for a font this device lacks is reported
   await page.evaluate(() => { const s = window.turbocutApp.store; const p = s.duplicatePreset(s.presets[0]); p.styles[0].fontname = 'Nonexistent Display Face'; s.setPreset(p); });
-  await page.getByRole('button', { name: 'Captions', exact: true }).click();
+  await page.getByRole('tab', { name: 'Captions', exact: true }).click();
   await page.getByRole('button', { name: 'Fonts…' }).click();
   await page.locator('.font-missing').waitFor();
   assert.match(await page.locator('.font-missing').textContent(), /Nonexistent Display Face/);

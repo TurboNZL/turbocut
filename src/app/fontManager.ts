@@ -1,4 +1,4 @@
-import { dialog, h } from './dom.ts';
+import { dialog, h, panel } from './dom.ts';
 import { fontAvailable, importFont, listFonts, removeFont, type FontEntry } from './fonts.ts';
 import { pickFiles } from './platform.ts';
 import type { Store } from './store.ts';
@@ -93,10 +93,8 @@ export function openFontManager(store: Store, onClose?: () => void): void {
       h('p', { class: 'hint' }, 'Fonts you add stay on this device. A caption style can carry its fonts when you export it. Only add fonts you have the right to use.'),
       h('div', { class: 'row' }, add),
       ...(missing.length ? [h('div', { class: 'card bt-panel font-missing' }, h('strong', {}, 'Missing on this device'), h('p', { class: 'hint' }, `${missing.join(', ')}. Styles that use these fall back to a plain font. Add the file, or import a style that carries it.`))] : []),
-      h('h3', { class: 'bt-panel-title' }, 'Your fonts'),
-      ...(userRows.length ? userRows : [h('p', { class: 'hint' }, 'None yet.')]),
-      h('h3', { class: 'bt-panel-title' }, 'Built into most devices'),
-      ...SYSTEM_FONTS.filter((f) => fontAvailable(f)).map((f) => row(f, [], 'System font. It may look different on another device.')),
+      panel('Your fonts', ...(userRows.length ? userRows : [h('p', { class: 'hint' }, 'None yet.')])),
+      panel('Built into most devices', ...SYSTEM_FONTS.filter((f) => fontAvailable(f)).map((f) => row(f, [], 'System font. It may look different on another device.'))),
     );
   };
   void redraw();

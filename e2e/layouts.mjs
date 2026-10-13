@@ -22,7 +22,7 @@ try {
   const attrs = () => page.evaluate(() => ({ panel: document.getElementById('app').dataset.panel, density: document.getElementById('app').dataset.density }));
   const openLayout = async () => {
     await page.getByRole('button', { name: 'Settings' }).first().click();
-    await page.locator('.settings-nav').getByRole('button', { name: 'Layout', exact: true }).click();
+    await page.locator('.settings-nav').getByRole('tab', { name: 'Layout', exact: true }).click();
     await page.getByLabel('Layout', { exact: true }).waitFor();
   };
   const choose = (name) => page.getByLabel('Layout', { exact: true }).selectOption(name);
@@ -72,7 +72,7 @@ try {
   assert.deepEqual(l.tabs, ['Media', 'Clip', 'Captions', 'Project']);
   await page.keyboard.press('Escape');
   await page.locator('.dlg .bt-close').click();
-  const tabNames = await page.$$eval('.tabs .bt-tab', (els) => els.map((e) => e.textContent));
+  const tabNames = await page.$$eval('.tabs .tab', (els) => els.map((e) => e.textContent));
   assert.deepEqual(tabNames, ['Media', 'Clip', 'Captions', 'Project'], 'the panel shows the chosen tabs in order');
   assert.ok(Math.abs((await box('.side')).w - 480) < 3, 'panel width applied');
   await page.screenshot({ path: `${out}layout-custom.png` });
@@ -81,7 +81,7 @@ try {
   await page.reload();
   await page.waitForFunction(() => window.turbocutApp);
   assert.equal((await attrs()).panel, 'left');
-  assert.deepEqual(await page.$$eval('.tabs .bt-tab', (els) => els.map((e) => e.textContent)), ['Media', 'Clip', 'Captions', 'Project']);
+  assert.deepEqual(await page.$$eval('.tabs .tab', (els) => els.map((e) => e.textContent)), ['Media', 'Clip', 'Captions', 'Project']);
 
   // export and import in a fresh browser profile
   await openLayout();
@@ -94,7 +94,7 @@ try {
   await other.goto('http://localhost:5215/');
   await other.waitForFunction(() => window.turbocutApp);
   await other.getByRole('button', { name: 'Settings' }).first().click();
-  await other.locator('.settings-nav').getByRole('button', { name: 'Layout', exact: true }).click();
+  await other.locator('.settings-nav').getByRole('tab', { name: 'Layout', exact: true }).click();
   const [chooser] = await Promise.all([other.waitForEvent('filechooser'), other.getByRole('button', { name: 'Import…' }).click()]);
   await chooser.setFiles(file);
   await other.waitForFunction(() => window.turbocutApp.store.settings.layout === 'Mine');

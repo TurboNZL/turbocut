@@ -30,7 +30,7 @@ try {
   assert.equal(await app(() => Object.keys(window.turbocutApp.store.project.assets).length), 3, 'three assets in the bin');
 
   // ---- 2. the Media tab lists them with thumbnails
-  await page.getByRole('button', { name: 'Media', exact: true }).click();
+  await page.getByRole('tab', { name: 'Media', exact: true }).click();
   await page.waitForSelector('.bin-item');
   assert.equal(await page.locator('.bin-item').count(), 3);
   await page.waitForFunction(() => document.querySelectorAll('.bin-thumb canvas').length === 3, null, { timeout: 15000 });

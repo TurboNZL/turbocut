@@ -245,7 +245,7 @@ export class KeysPanel {
       this.render();
     } }, 'Delete keyframe');
     box.append(
-      h('div', { class: 'bt-panel-title' }, `${param.label.replace(' %', '')} keyframe`),
+      h('h2', { class: 'bt-panel-title' }, `${param.label.replace(' %', '')} keyframe`),
       h('label', { class: 'prop' }, h('span', { class: 'prop-l' }, 'Frame'), time, h('span', { class: 'unit' }, `${(key.t / fps).toFixed(2)} s`)),
       h('label', { class: 'prop' }, h('span', { class: 'prop-l' }, 'Value'), value),
       h('label', { class: 'prop' }, h('span', { class: 'prop-l' }, 'Then'), ease),

@@ -1,4 +1,4 @@
-import { h } from './dom.ts';
+import { h, panel } from './dom.ts';
 import { AUTO_LAYOUT, BUILTIN_LAYOUTS, LIMITS, TAB_NAMES, cleanLayout, exportLayout, findLayout, importLayout, uniqueLayoutName, type Density, type Layout, type PanelPlacement, type TabName } from './layout.ts';
 import { pickFiles, saveFile } from './platform.ts';
 import type { Store } from './store.ts';
@@ -68,15 +68,15 @@ export function layoutManager(store: Store, redraw: () => void): HTMLElement {
     },
   }, 'Import…');
 
-  const parts: HTMLElement[] = [
+  const top: HTMLElement[] = [
     h('p', { class: 'hint' }, 'A layout sets where the side panel sits, how big the panel and timeline are, how large the controls are and which panel tabs show. It applies as you change it.'),
     field('Layout', pick),
     h('div', { class: 'row' }, duplicate, remove, exp, imp),
   ];
 
   if (!custom) {
-    parts.push(h('p', { class: 'hint' }, 'Built-in layouts cannot be changed. Duplicate one to make your own.'));
-    return h('div', { class: 'stack layout-manager' }, ...parts);
+    top.push(h('p', { class: 'hint' }, 'Built-in layouts cannot be changed. Duplicate one to make your own.'));
+    return h('div', { class: 'stack layout-manager' }, panel('Layout', ...top));
   }
 
   // Editing: every change replaces the layout in place with a cleaned copy, so the page and the saved list agree.
@@ -96,8 +96,8 @@ export function layoutManager(store: Store, redraw: () => void): HTMLElement {
   const name = h('input', { class: 'input', value: active.name, 'aria-label': 'Layout name', maxlength: 40 });
   name.addEventListener('change', () => edit({ name: name.value }, true));
 
-  const panel = h('select', { class: 'input', 'aria-label': 'Panel position' }, ...PANELS.map(([v, l]) => h('option', { value: v, selected: v === active.panel }, l)));
-  panel.addEventListener('change', () => edit({ panel: panel.value as PanelPlacement }));
+  const panelSel = h('select', { class: 'input', 'aria-label': 'Panel position' }, ...PANELS.map(([v, l]) => h('option', { value: v, selected: v === active.panel }, l)));
+  panelSel.addEventListener('change', () => edit({ panel: panelSel.value as PanelPlacement }));
   const density = h('select', { class: 'input', 'aria-label': 'Control size' }, ...DENSITIES.map(([v, l]) => h('option', { value: v, selected: v === active.density }, l)));
   density.addEventListener('change', () => edit({ density: density.value as Density }));
 
@@ -128,15 +128,15 @@ export function layoutManager(store: Store, redraw: () => void): HTMLElement {
       h('button', { class: 'btn btn-ghost', disabled: i === order.length - 1, 'aria-label': `Move ${t} down`, onclick: () => move(1) }, '↓'));
   };
 
-  parts.push(
+  const fields: HTMLElement[] = [
     field('Name', name),
-    field('Panel position', panel),
+    field('Panel position', panelSel),
     slider('Panel width', active.panelWidth, LIMITS.panelWidth, ' px', 'panelWidth'),
     slider('Timeline height', active.timelineHeight, LIMITS.timelineHeight, ' %', 'timelineHeight'),
     field('Control size', density),
-    h('div', { class: 'bt-panel-title' }, 'Panel tabs'),
-    h('p', { class: 'hint' }, 'Untick a tab to hide it. At least one stays.'),
-    ...order.map(tabRow),
-  );
-  return h('div', { class: 'stack layout-manager' }, ...parts);
+  ];
+  return h('div', { class: 'stack layout-manager' },
+    panel('Layout', ...top),
+    panel('Position and size', ...fields),
+    panel('Panel tabs', h('p', { class: 'hint' }, 'Untick a tab to hide it. At least one stays.'), ...order.map(tabRow)));
 }
