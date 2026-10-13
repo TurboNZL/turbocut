@@ -31,6 +31,12 @@ try {
     assert.ok(h.filled < h.trueCounters * 0.6, `"filled" must behave like the classic stroke: ${h.filled} of ${h.trueCounters} clear`);
     assert.ok(h.rim > h.trueCounters * 0.1 && h.rim < h.trueCounters * 0.9, `"rim" keeps a rim but leaves the middle open: ${h.rim} of ${h.trueCounters} clear`);
     assert.ok(h.clear > h.trueCounters * 0.9, `"clear" must leave counters fully open: ${h.clear} of ${h.trueCounters}`);
+    // Every letter's hole is solid with "filled", whatever its size (checked with the real font when it is on disk).
+    for (const width of [9, 14]) {
+      const per = await page.evaluate((w) => window.letterHoles('oOaegbdpq0689', 'filled', w), width);
+      console.log(`clear pixels left inside letters with "filled", outline ${width}:`, JSON.stringify(per));
+      for (const [ch, n] of Object.entries(per)) if (ch !== '_font') assert.equal(n, 0, `"filled" must fill the hole of "${ch}" completely (${n} clear pixels at outline ${width})`);
+    }
     assert.ok(h.outlinePixels > 2000 && h.fillPixels > 2000, 'outline and fill are both still drawn');
     await page.close();
   }

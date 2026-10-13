@@ -7,7 +7,7 @@ import { drawVideo } from '../src/render/compose.ts';
 import { outsideMask, rasterizeText } from '../src/render/outlinedText.ts';
 import { renderPcm16k } from '../src/transcribe/pcm.ts';
 
-declare global { interface Window { run: (opts: { captions: boolean }) => Promise<any>; previewMatchesExport: () => Promise<number>; captionHoles: () => Promise<any>; speechAudio: () => Promise<{ b64: string; samples: number }> } }
+declare global { interface Window { run: (opts: { captions: boolean }) => Promise<any>; previewMatchesExport: () => Promise<number>; captionHoles: () => Promise<any>; letterHoles: (letters: string, counters: string, outline: number) => Promise<Record<string, number>>; speechAudio: () => Promise<{ b64: string; samples: number }> } }
 
 window.run = async ({ captions }) => {
   const lib = new MediaLibrary();
@@ -127,4 +127,30 @@ window.speechAudio = async () => {
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return { b64: btoa(bin), samples: pcm.samples.length };
+};
+
+/**
+ * Clear (see-through) pixels still enclosed inside each letter, for one counter style. With "filled" every letter must
+ * come out at 0, whatever the size of its hole (a lowercase o in a heavy font has a wider hole than an O).
+ * Uses the real font when it is on disk (e2e/.media/SquadLatin-Black.otf), else a bold system font.
+ */
+window.letterHoles = async (letters, counters, outlineWidth) => {
+  let family = 'sans-serif';
+  const res = await fetch('/e2e/.media/SquadLatin-Black.otf');
+  if (res.ok && !/html/.test(res.headers.get('content-type') ?? '')) {
+    const face = new FontFace('SquadTest', await res.arrayBuffer());
+    document.fonts.add(await face.load());
+    family = 'SquadTest';
+  }
+  const out: Record<string, number> = { _font: family === 'sans-serif' ? 0 : 1 };
+  for (const ch of letters) {
+    const r = rasterizeText({ lines: [ch], font: `700 96px "${family}", sans-serif`, fontSize: 96, lineHeight: 115, align: 'center', baseline: 'alphabetic', fill: { r: 255, g: 200, b: 0, a: 255 }, outline: { r: 0, g: 0, b: 0, a: 255 }, outlineWidth, counters: counters as any });
+    const x = r.canvas.getContext('2d', { willReadFrequently: true })!;
+    const img = x.getImageData(0, 0, r.canvas.width, r.canvas.height);
+    const outside = outsideMask(img.data, r.canvas.width, r.canvas.height);
+    let n = 0;
+    for (let i = 0; i < outside.length; i++) if (!outside[i] && img.data[i * 4 + 3]! < 8) n++;
+    out[ch] = n;
+  }
+  return out;
 };

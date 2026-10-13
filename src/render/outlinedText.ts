@@ -17,12 +17,12 @@ export interface RasterSpec {
   fill: Rgba;
   outline: Rgba;
   outlineWidth: number;
-  /** What happens inside the holes of letters (e, a, g, o). Default 'rim'. */
+  /** What happens inside the holes of letters (e, a, g, o). Default 'filled'. */
   counters?: CounterStyle;
 }
 
 /**
- * filled: the classic stroke look, small holes fill solid with the outline colour.
+ * filled: every hole fills solid with the outline colour, whatever its size (the classic stroke only managed the small ones).
  * rim:    holes keep a thinner rim of outline colour and stay open in the middle.
  * clear:  no outline inside holes at all, the picture shows straight through.
  */
@@ -190,17 +190,20 @@ export function rasterizeText(s: RasterSpec): TextRaster {
     const { labels, count } = labelRegions(holes, w, h);
     const radius = new Float32Array(count + 1); // largest distance to ink inside each hole = how open it is
     for (let i = 0; i < labels.length; i++) if (labels[i]) radius[labels[i]!] = Math.max(radius[labels[i]!]!, dist[i]!);
-    const mode = s.counters ?? 'rim';
+    const mode = s.counters ?? 'filled';
     const holeWidth = (label: number) => (mode === 'filled' ? s.outlineWidth : mode === 'clear' ? 0 : Math.min(s.outlineWidth, radius[label]! * 0.5));
 
     // 4. outline colour where it belongs, feathered by one pixel
     const o = octx.createImageData(w, h);
     const alphaK = s.outline.a / 255;
     for (let i = 0; i < dist.length; i++) {
-      const a = uni[i * 4 + 3]!;
-      if (!a || isInk[i]) continue;
-      const width = outside[i] ? s.outlineWidth : holeWidth(labels[i]!);
-      const k = Math.min(1, Math.max(0, width - dist[i]! + 0.5));
+      if (isInk[i]) continue;
+      const inHole = !outside[i];
+      // "filled" paints the whole hole, even the middle that the stroke never reaches.
+      const a = inHole && mode === 'filled' ? 255 : uni[i * 4 + 3]!;
+      if (!a) continue;
+      const width = inHole ? holeWidth(labels[i]!) : s.outlineWidth;
+      const k = inHole && mode === 'filled' ? 1 : Math.min(1, Math.max(0, width - dist[i]! + 0.5));
       if (k <= 0) continue;
       o.data[i * 4] = s.outline.r;
       o.data[i * 4 + 1] = s.outline.g;

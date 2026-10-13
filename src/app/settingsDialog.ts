@@ -71,7 +71,7 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
   trackOrder.addEventListener('change', () => store.updateSettings({ videoOnTop: trackOrder.value === 'video' }));
 
   const counters = h('select', { class: 'input', 'aria-label': 'Letter holes' },
-    ...([['rim', 'Thin rim, open middle'], ['filled', 'Filled with the outline colour'], ['clear', 'Clear, the picture shows through']] as [CounterMode, string][]).map(([v, l]) => h('option', { value: v, selected: s.counters === v }, l)));
+    ...([['filled', 'Filled with the outline colour'], ['rim', 'Thin rim, open middle'], ['clear', 'Clear, the picture shows through']] as [CounterMode, string][]).map(([v, l]) => h('option', { value: v, selected: s.counters === v }, l)));
   counters.addEventListener('change', () => store.updateSettings({ counters: counters.value as CounterMode }));
 
   const fonts = h('datalist', { id: 'font-list' }, ...['Arial Black', 'Impact', 'Arial', 'Verdana', 'Georgia', 'Courier New'].map((f) => h('option', { value: f })));

@@ -14,6 +14,8 @@ export interface TranscribeSettings {
 }
 
 export interface Settings {
+  /** 2: the letter-hole default became 'filled'; older stored 'rim' values came from the old default and are upgraded once. */
+  settingsVersion: number;
   /** Clips and edges jump to the playhead and to each other when dragged close. */
   snapping: boolean;
   /** Draw a low-detail waveform inside audio clips. */
@@ -31,11 +33,12 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS = (touch: boolean): Settings => ({
+  settingsVersion: 2,
   snapping: true,
   waveforms: !touch, // a phone has less to spare
   videoOnTop: true,
   defaultFont: 'Arial Black',
-  counters: 'rim',
+  counters: 'filled',
   autoCheckUpdates: true,
   transcribe: { mode: 'local', url: '', token: '', lang: 'english', model: MODELS[0].id, compute: 'auto' },
   hotkeys: {},
@@ -50,7 +53,7 @@ export function mergeSettings(stored: unknown, defaults: Settings): Settings {
   const s = stored as Record<string, any>;
   for (const k of ['snapping', 'waveforms', 'videoOnTop', 'autoCheckUpdates'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
   if (typeof s.defaultFont === 'string' && s.defaultFont.trim()) out.defaultFont = s.defaultFont.trim();
-  if (s.counters === 'filled' || s.counters === 'rim' || s.counters === 'clear') out.counters = s.counters;
+  if (s.counters === 'filled' || s.counters === 'rim' || s.counters === 'clear') out.counters = s.counters === 'rim' && s.settingsVersion !== 2 ? 'filled' : s.counters;
   if (s.transcribe && typeof s.transcribe === 'object') {
     const t = s.transcribe;
     if (t.mode === 'local' || t.mode === 'remote') out.transcribe.mode = t.mode;

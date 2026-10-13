@@ -74,7 +74,7 @@ export function styleControls(style: AssStyle, o: StyleControlOptions): HTMLElem
   };
 
   const counters = h('select', { class: 'input', 'aria-label': 'Letter holes' },
-    ...([['rim', 'Thin rim'], ['filled', 'Filled'], ['clear', 'Clear']] as const).map(([v, l]) => h('option', { value: v, selected: (style.counters ?? 'rim') === v }, l)));
+    ...([['filled', 'Filled'], ['rim', 'Thin rim'], ['clear', 'Clear']] as const).map(([v, l]) => h('option', { value: v, selected: (style.counters ?? 'filled') === v }, l)));
   counters.addEventListener('change', () => {
     begin();
     style.counters = counters.value as AssStyle['counters'];

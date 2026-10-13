@@ -97,4 +97,12 @@ describe('settings', () => {
     expect(importSettings(text, defaults).snapping).toBe(false);
     expect(() => importSettings('{"format":"nope"}', defaults)).toThrow('Not a TurboCut settings file');
   });
+
+  it('defaults letter holes to filled, and upgrades the old stored default once', () => {
+    const defaults = DEFAULT_SETTINGS(false);
+    expect(defaults.counters).toBe('filled');
+    expect(mergeSettings({ counters: 'rim' }, defaults).counters).toBe('filled'); // saved by the old default
+    expect(mergeSettings({ counters: 'rim', settingsVersion: 2 }, defaults).counters).toBe('rim'); // a later, deliberate choice
+    expect(mergeSettings({ counters: 'clear' }, defaults).counters).toBe('clear');
+  });
 });
