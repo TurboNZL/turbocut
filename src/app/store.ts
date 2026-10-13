@@ -2,7 +2,7 @@ import type { CaptionPreset } from '../captions/presets.ts';
 import { createProject } from '../core/timeline.ts';
 import type { Frame, Project } from '../core/types.ts';
 import { MediaLibrary } from '../media/library.ts';
-import { BUILTIN_PRESET } from './builtin.ts';
+import { builtinPreset } from './builtin.ts';
 import { loadSettings, saveSettings, type Settings } from './settings.ts';
 
 export type Topic = 'project' | 'playhead' | 'selection' | 'play' | 'view' | 'status' | 'preset' | 'settings';
@@ -37,10 +37,14 @@ export class Store {
   zoom = 3;
   status = '';
   settings: Settings = loadSettings(typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
-  presets: CaptionPreset[] = [BUILTIN_PRESET, ...readPresets()];
-  preset: CaptionPreset = this.presets.find((p) => p.name === localStorage.getItem(ACTIVE_KEY)) ?? BUILTIN_PRESET;
+  presets: CaptionPreset[] = [builtinPreset(this.settings.defaultFont, this.settings.counters), ...readPresets()];
+  preset: CaptionPreset = this.presets.find((p) => p.name === localStorage.getItem(ACTIVE_KEY)) ?? this.presets[0]!;
 
   private subs = new Map<Topic, Set<() => void>>();
+
+  constructor() {
+    this.on('settings', () => this.refreshBuiltin());
+  }
   private undoStack: string[] = [];
   private redoStack: string[] = [];
 
@@ -135,19 +139,69 @@ export class Store {
     this.emit('status');
   }
 
+  /** The built-in style follows the default font and letter-hole settings. */
+  private refreshBuiltin(): void {
+    const old = this.presets[0]!;
+    const st = old.styles[0]!;
+    if (st.fontname === this.settings.defaultFont && st.counters === this.settings.counters) return;
+    const fresh = builtinPreset(this.settings.defaultFont, this.settings.counters);
+    this.presets[0] = fresh;
+    if (this.preset === old) this.preset = fresh;
+    this.emit('preset');
+  }
+
+  private persistPresets(): void {
+    try {
+      localStorage.setItem(PRESETS_KEY, JSON.stringify(this.presets.filter((x) => !x.builtin)));
+      localStorage.setItem(ACTIVE_KEY, this.preset.name);
+    } catch {
+      /* storage may be blocked; the presets still work this session */
+    }
+  }
+
+  /** Make `p` the active style. User presets are saved on this device (a preset with the same name is replaced). */
   setPreset(p: CaptionPreset, remember = true): void {
     this.preset = p;
     this.project.captionPreset = p.name;
-    if (remember) {
+    if (remember && !p.builtin) {
       if (!this.presets.some((x) => x.name === p.name)) this.presets.push(p);
       else this.presets = this.presets.map((x) => (x.name === p.name ? p : x));
-      try {
-        localStorage.setItem(PRESETS_KEY, JSON.stringify(this.presets.filter((x) => x !== BUILTIN_PRESET)));
-        localStorage.setItem(ACTIVE_KEY, p.name);
-      } catch {
-        /* storage may be blocked; the preset still works this session */
-      }
     }
+    if (remember) this.persistPresets();
+    this.emit('preset');
+  }
+
+  /** A unique name: "Name", "Name 2", "Name 3"... */
+  uniquePresetName(base: string): string {
+    const names = new Set(this.presets.map((x) => x.name));
+    if (!names.has(base)) return base;
+    for (let i = 2; ; i++) if (!names.has(`${base} ${i}`)) return `${base} ${i}`;
+  }
+
+  /** A new editable preset copied from `from` and made active. */
+  duplicatePreset(from: CaptionPreset, name?: string): CaptionPreset {
+    const copy: CaptionPreset = { ...structuredClone(from), name: this.uniquePresetName(name ?? `${from.name} copy`) };
+    delete copy.builtin;
+    this.setPreset(copy);
+    return copy;
+  }
+
+  /** Rename a user preset (the name stays unique). */
+  renamePreset(p: CaptionPreset, name: string): void {
+    const clean = name.trim();
+    if (p.builtin || !clean || clean === p.name) return;
+    p.name = this.uniquePresetName(clean);
+    if (this.preset === p) this.project.captionPreset = p.name;
+    this.persistPresets();
+    this.emit('preset');
+  }
+
+  deletePreset(name: string): void {
+    const p = this.presets.find((x) => x.name === name);
+    if (!p || p.builtin) return;
+    this.presets = this.presets.filter((x) => x !== p);
+    if (this.preset === p) this.preset = this.presets[0]!;
+    this.persistPresets();
     this.emit('preset');
   }
 }

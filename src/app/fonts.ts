@@ -94,3 +94,44 @@ export async function loadStoredFonts(): Promise<string[]> {
     return [];
   }
 }
+
+/** The imported font files that declare any of these family names (system fonts like Arial are not in here). */
+export async function fontsForFamilies(families: string[]): Promise<StoredFont[]> {
+  const want = new Set(families.map((f) => f.toLowerCase()));
+  try {
+    const all = await tx<StoredFont[]>(await open(), 'readonly', (s) => s.getAll());
+    return all.filter((f) => f.families.some((x) => want.has(x.toLowerCase())));
+  } catch {
+    return [];
+  }
+}
+
+export function toBase64(bytes: ArrayBuffer): string {
+  const u = new Uint8Array(bytes);
+  let bin = '';
+  for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode(...u.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+export function fromBase64(b64: string): ArrayBuffer {
+  const bin = atob(b64);
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u.buffer;
+}
+
+/** Register and remember fonts that arrived inside a preset file. Returns the family names now available. */
+export async function installFonts(fonts: { families: string[]; data: string }[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const f of fonts) {
+    const rec: StoredFont = { families: f.families, bytes: fromBase64(f.data) };
+    await register(rec);
+    try {
+      await tx(await open(), 'readwrite', (s) => s.put(rec));
+    } catch {
+      /* storage blocked: the font works this session */
+    }
+    out.push(...f.families);
+  }
+  return out;
+}

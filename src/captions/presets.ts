@@ -11,7 +11,21 @@ export interface CaptionPreset {
   name: string;
   styles: AssStyle[];
   animation: EntranceAnimation;
+  /** The built-in style: generated from the settings and not editable (duplicate it to change it). Never written to files. */
+  builtin?: boolean;
 }
+
+/** A font file carried inside a preset file, so the style looks the same on another device. */
+export interface EmbeddedFont {
+  /** Every family name the font declares, so styles asking for any of them find it. */
+  families: string[];
+  /** The font file, base64. */
+  data: string;
+}
+
+/** Limits for fonts inside a preset file, so a bad file cannot ask for gigabytes. */
+export const MAX_EMBEDDED_FONTS = 24;
+export const MAX_EMBEDDED_BYTES = 40 * 1024 * 1024;
 
 export type EntranceAnimation =
   | { type: 'none' }
@@ -19,14 +33,37 @@ export type EntranceAnimation =
 
 export const DEFAULT_ANIMATION: EntranceAnimation = { type: 'bounce', frames: 6, overshoot: 1.15 };
 
-export function exportPreset(p: CaptionPreset): string {
-  return JSON.stringify(p, null, 2);
+/** The preset as a file. Pass fonts to bundle them; leave them out for a smaller file that needs the fonts on the other device. */
+export function exportPreset(p: CaptionPreset, fonts: EmbeddedFont[] = []): string {
+  const { builtin: _builtin, ...rest } = p;
+  void _builtin;
+  return JSON.stringify(fonts.length ? { ...rest, fonts } : rest, null, 2);
 }
 
 export class PresetError extends Error {}
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isRgba = (c: any) => c && isNum(c.r) && isNum(c.g) && isNum(c.b) && isNum(c.a);
+
+/** Parse and validate a preset file. Returns the preset (without its fonts) and the fonts that came with it. */
+export function parsePresetFile(json: string): { preset: CaptionPreset; fonts: EmbeddedFont[] } {
+  const preset = importPreset(json);
+  const raw = (preset as CaptionPreset & { fonts?: unknown }).fonts;
+  delete (preset as CaptionPreset & { fonts?: unknown }).fonts;
+  const fonts: EmbeddedFont[] = [];
+  if (raw !== undefined) {
+    if (!Array.isArray(raw) || raw.length > MAX_EMBEDDED_FONTS) throw new PresetError('The fonts in this preset are not valid');
+    let total = 0;
+    for (const f of raw) {
+      const ok = f && Array.isArray(f.families) && f.families.length > 0 && f.families.length <= 8 && f.families.every((x: unknown) => typeof x === 'string' && x.trim()) && typeof f.data === 'string' && /^[A-Za-z0-9+/=\s]+$/.test(f.data);
+      if (!ok) throw new PresetError('A font in this preset is not valid');
+      total += Math.floor((f.data.length * 3) / 4);
+      if (total > MAX_EMBEDDED_BYTES) throw new PresetError('The fonts in this preset are too large');
+      fonts.push({ families: f.families.map((x: string) => x.trim()), data: f.data.replace(/\s+/g, '') });
+    }
+  }
+  return { preset, fonts };
+}
 
 /** Parse and validate preset JSON. Throws PresetError with a readable reason. Never executes anything. */
 export function importPreset(json: string): CaptionPreset {
@@ -46,6 +83,7 @@ export function importPreset(json: string): CaptionPreset {
     if (!isRgba(s.primary) || !isRgba(s.outlineColour) || !isRgba(s.backColour))
       throw new PresetError(`Style "${s.name}" has an invalid colour`);
   }
+  for (const st of data.styles) if (st.counters !== undefined && !['filled', 'rim', 'clear'].includes(st.counters)) delete st.counters;
   const a = data.animation;
   if (a?.type === 'bounce') {
     if (!isNum(a.frames) || a.frames < 1 || a.frames > 60 || !isNum(a.overshoot) || a.overshoot < 1 || a.overshoot > 3)

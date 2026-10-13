@@ -1,5 +1,5 @@
 import { dialogueToCues, parseAss, writeAss } from '../captions/ass.ts';
-import { PresetError, entranceTags, exportPreset, importPreset, presetFromAss, styleByName } from '../captions/presets.ts';
+import { entranceTags, styleByName } from '../captions/presets.ts';
 import { groupWords, RemoteTranscriber, SHORTS_GROUPING, type Transcriber } from '../transcribe/provider.ts';
 import { LocalTranscriber, MODELS, type Compute } from '../transcribe/local.ts';
 import { cleanWords } from '../transcribe/post.ts';
@@ -8,6 +8,8 @@ import { renderPcm16k } from '../transcribe/pcm.ts';
 import { h } from './dom.ts';
 import { importFont } from './fonts.ts';
 import { pickFiles, saveFile } from './platform.ts';
+import { exportPresetDialog, pickAndImportPreset } from './presetIO.ts';
+import { openStyleEditor } from './styleEditor.ts';
 import type { Store } from './store.ts';
 
 export class CaptionsPanel {
@@ -35,8 +37,9 @@ export class CaptionsPanel {
       if (p) store.setPreset(p);
     });
 
-    const importPresetBtn = h('button', { class: 'btn', onclick: () => this.importPreset() }, 'Import preset');
-    const exportPresetBtn = h('button', { class: 'btn', onclick: () => saveFile(exportPreset(store.preset), `${store.preset.name}.turbocut-preset.json`, 'application/json') }, 'Export preset');
+    const importPresetBtn = h('button', { class: 'btn', onclick: () => void pickAndImportPreset(store) }, 'Import style');
+    const exportPresetBtn = h('button', { class: 'btn', onclick: () => void exportPresetDialog(store) }, 'Export style');
+    const editBtn = h('button', { class: 'btn btn-accent', onclick: () => openStyleEditor(store) }, 'Edit styles…');
     const fontBtn = h('button', { class: 'btn', onclick: () => this.importFont() }, 'Add font');
     const fontNote = h('p', { class: 'hint' }, `Style uses: ${[...new Set(store.preset.styles.map((s) => s.fontname))].join(', ')}. If a font is missing, add its file here and it is remembered on this device.`);
 
@@ -84,7 +87,7 @@ export class CaptionsPanel {
     this.el.replaceChildren(
       h('div', { class: 'bt-panel-title' }, 'Style'),
       presetSel,
-      h('div', { class: 'row' }, importPresetBtn, exportPresetBtn, fontBtn),
+      h('div', { class: 'row' }, editBtn, importPresetBtn, exportPresetBtn, fontBtn),
       fontNote,
       h('div', { class: 'bt-panel-title' }, 'Auto captions'),
       summary,
@@ -96,19 +99,6 @@ export class CaptionsPanel {
       this.list,
     );
     this.renderCues();
-  }
-
-  private async importPreset(): Promise<void> {
-    const [file] = await pickFiles('.json,.ass,application/json');
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const preset = /\.ass$/i.test(file.name) ? presetFromAss(file.name.replace(/\.ass$/i, ''), text) : importPreset(text);
-      this.store.setPreset(preset);
-      this.store.say(`Preset "${preset.name}" imported (${preset.styles.length} styles).`);
-    } catch (e) {
-      this.store.say(e instanceof PresetError ? `Not a usable preset: ${e.message}` : `Could not read that file: ${e}`);
-    }
   }
 
   private async importFont(): Promise<void> {

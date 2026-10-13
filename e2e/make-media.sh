@@ -12,3 +12,17 @@ ffmpeg -loglevel error -y -f lavfi -i "color=c=black:s=320x240:r=30:d=75" \
   -c:v libvpx-vp9 -b:v 200k -deadline realtime -cpu-used 8 -c:a libopus -b:a 128k "$dir/chirp.webm"
 # vonly.webm: 4 s of video with no audio track at all (for multi-track picture tests)
 ffmpeg -loglevel error -y -f lavfi -i "testsrc=size=640x360:rate=30:duration=4" -c:v libvpx-vp9 -b:v 500k -deadline realtime -cpu-used 8 -an "$dir/vonly.webm"
+# TurboTestFont.ttf: a tiny font with a made-up family name (a subset of DejaVu Sans, which is freely redistributable), for the style editor tests
+python3 - "$dir/TurboTestFont.ttf" <<'PY' || echo "skipping TurboTestFont.ttf (needs python3 fonttools and DejaVu Sans)"
+import sys
+from fontTools import subset, ttLib
+src = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+opts = subset.Options(); opts.name_IDs = ["*"]
+font = subset.load_font(src, opts)
+s = subset.Subsetter(opts); s.populate(text="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ")
+s.subset(font)
+for r in font["name"].names:
+    if r.nameID in (1, 16): r.string = "Turbo Test Font"
+    if r.nameID in (4, 6): r.string = "TurboTestFont"
+font.save(sys.argv[1])
+PY

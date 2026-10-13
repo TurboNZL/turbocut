@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { formatColour, formatTime, parseAss, parseColour, parseTime, writeAss } from '../src/captions/ass.ts';
-import { entranceScale, entranceTags, exportPreset, importPreset, presetFromAss, PresetError } from '../src/captions/presets.ts';
+import { entranceScale, entranceTags, exportPreset, importPreset, MAX_EMBEDDED_BYTES, MAX_EMBEDDED_FONTS, parsePresetFile, presetFromAss, PresetError } from '../src/captions/presets.ts';
 import { bounce } from '../src/core/easing.ts';
 
 const sample = readFileSync(new URL('./fixtures/sample.ass', import.meta.url), 'utf8');
@@ -83,5 +83,32 @@ print(",".join(repr(ns['bounce_scale'](i/6)) for i in range(6)))
     expect(tags.match(/\\t\(/g)).toHaveLength(6);
     expect(tags.endsWith('\\fscx100\\fscy100)')).toBe(true);
     expect(entranceTags({ type: 'none' }, 30)).toBe('');
+  });
+});
+
+describe('preset files with fonts', () => {
+  const p = presetFromAss('x', readFileSync(new URL('./fixtures/sample.ass', import.meta.url), 'utf8'));
+  const font = { families: ['Squad Test'], data: Buffer.from('not really a font').toString('base64') };
+
+  it('round-trips bundled fonts and leaves them out when none are passed', () => {
+    const back = parsePresetFile(exportPreset(p, [font]));
+    expect(back.fonts).toEqual([font]);
+    expect(back.preset).toEqual(p);
+    expect(JSON.parse(exportPreset(p)).fonts).toBeUndefined();
+    expect(parsePresetFile(exportPreset(p)).fonts).toEqual([]);
+  });
+
+  it('never writes the built-in flag to a file', () => {
+    expect(JSON.parse(exportPreset({ ...p, builtin: true })).builtin).toBeUndefined();
+  });
+
+  it('rejects malformed or oversized fonts', () => {
+    const file = (fonts: unknown) => JSON.stringify({ ...p, fonts });
+    expect(() => parsePresetFile(file('x'))).toThrow(PresetError);
+    expect(() => parsePresetFile(file([{ families: [], data: 'AAAA' }]))).toThrow(PresetError);
+    expect(() => parsePresetFile(file([{ families: ['A'], data: '<script>' }]))).toThrow(PresetError);
+    expect(() => parsePresetFile(file(Array.from({ length: MAX_EMBEDDED_FONTS + 1 }, () => font)))).toThrow(PresetError);
+    const big = { families: ['A'], data: 'A'.repeat(Math.ceil((MAX_EMBEDDED_BYTES * 4) / 3) + 8) };
+    expect(() => parsePresetFile(file([big]))).toThrow(/too large/);
   });
 });
