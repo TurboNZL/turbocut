@@ -1,4 +1,5 @@
 import { loadStoredFonts } from './fonts.ts';
+import { layoutManager } from './layoutManager.ts';
 import { openFontManager } from './fontManager.ts';
 import { deviceCheck } from './deviceCheck.ts';
 import { dialog, h } from './dom.ts';
@@ -10,8 +11,8 @@ import { MODELS, type Compute } from '../transcribe/local.ts';
 import { assetFor, checkForUpdate, desktopUpdater, openApk, type UpdateStatus } from './updater.ts';
 import { APP_VERSION } from './version.ts';
 
-export type SettingsTab = 'General' | 'Keys' | 'Captions' | 'Updates' | 'Device' | 'About';
-const TABS: SettingsTab[] = ['General', 'Keys', 'Captions', 'Updates', 'Device', 'About'];
+export type SettingsTab = 'General' | 'Layout' | 'Fonts' | 'Keys' | 'Captions' | 'Updates' | 'Device' | 'About';
+const TABS: SettingsTab[] = ['General', 'Layout', 'Fonts', 'Keys', 'Captions', 'Updates', 'Device', 'About'];
 
 /** True while the shortcut editor is waiting for a key, so the editor's own shortcuts stay quiet. */
 export let capturingKey = false;
@@ -50,6 +51,8 @@ export function openSettings(deps: SettingsDeps, tab: SettingsTab = 'General'): 
   const build = (t: SettingsTab): HTMLElement => {
     switch (t) {
       case 'General': return general(deps, () => show(current));
+      case 'Layout': return layoutManager(store, () => show(current));
+      case 'Fonts': return fontsTab(deps);
       case 'Keys': return keys(deps, () => show(current));
       case 'Captions': return captionsEngine(deps);
       case 'Updates': return updates(deps);
@@ -113,6 +116,12 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
     h('div', { class: 'bt-panel-title' }, 'Settings file'),
     h('div', { class: 'row' }, exportBtn, importBtn),
   );
+}
+
+function fontsTab({ store }: SettingsDeps): HTMLElement {
+  return h('div', { class: 'stack' },
+    h('p', { class: 'hint' }, `The default font is "${store.settings.defaultFont}". Add font files, see each one drawn, change the default or remove fonts in the font manager.`),
+    h('button', { class: 'btn btn-accent', onclick: () => openFontManager(store) }, 'Open the font manager…'));
 }
 
 function keys({ hotkeys }: SettingsDeps, redraw: () => void): HTMLElement {

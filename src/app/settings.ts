@@ -1,5 +1,6 @@
 import type { Compute } from '../transcribe/local.ts';
 import { MODELS } from '../transcribe/local.ts';
+import { AUTO_LAYOUT, cleanLayout, type Layout } from './layout.ts';
 
 export type CounterMode = 'filled' | 'rim' | 'clear';
 
@@ -26,6 +27,10 @@ export interface Settings {
   defaultFont: string;
   /** What the holes of letters look like in new styles. */
   counters: CounterMode;
+  /** Name of the active editor layout (built in or one of `layouts`). */
+  layout: string;
+  /** The person's own layouts. */
+  layouts: Layout[];
   autoCheckUpdates: boolean;
   transcribe: TranscribeSettings;
   /** Shortcuts the person changed: action id to key combos. Anything not here uses the default. */
@@ -39,6 +44,8 @@ export const DEFAULT_SETTINGS = (touch: boolean): Settings => ({
   videoOnTop: true,
   defaultFont: 'Arial Black',
   counters: 'filled',
+  layout: AUTO_LAYOUT,
+  layouts: [],
   autoCheckUpdates: true,
   transcribe: { mode: 'local', url: '', token: '', lang: 'english', model: MODELS[0].id, compute: 'auto' },
   hotkeys: {},
@@ -54,6 +61,8 @@ export function mergeSettings(stored: unknown, defaults: Settings): Settings {
   for (const k of ['snapping', 'waveforms', 'videoOnTop', 'autoCheckUpdates'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
   if (typeof s.defaultFont === 'string' && s.defaultFont.trim()) out.defaultFont = s.defaultFont.trim();
   if (s.counters === 'filled' || s.counters === 'rim' || s.counters === 'clear') out.counters = s.counters === 'rim' && s.settingsVersion !== 2 ? 'filled' : s.counters;
+  if (Array.isArray(s.layouts)) out.layouts = s.layouts.map((l: unknown) => cleanLayout(l)).filter((l: Layout | null): l is Layout => !!l).slice(0, 30);
+  if (typeof s.layout === 'string') out.layout = s.layout;
   if (s.transcribe && typeof s.transcribe === 'object') {
     const t = s.transcribe;
     if (t.mode === 'local' || t.mode === 'remote') out.transcribe.mode = t.mode;

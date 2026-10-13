@@ -13,6 +13,7 @@ import { fmtTime, h, popupMenu } from './dom.ts';
 import { importFont, loadStoredFonts } from './fonts.ts';
 import { Hotkeys, type HotkeyAction } from './hotkeys.ts';
 import { Inspector } from './inspector.ts';
+import { applyLayout, findLayout, type TabName } from './layout.ts';
 import { KeysPanel } from './keysPanel.ts';
 import { pickFiles, platform } from './platform.ts';
 import { Player } from './player.ts';
@@ -97,8 +98,23 @@ function showTab(name: string, userTap = false): void {
   for (const b of tabBar.children) (b as HTMLElement).setAttribute('aria-current', b.textContent === name ? 'page' : 'false');
   tabBody.replaceChildren(tabs[name]!);
 }
-for (const name of Object.keys(tabs)) tabBar.append(h('button', { class: 'bt-tab', onclick: () => showTab(name, true) }, name));
 showTab('Clip');
+/** Draw the chosen layout: panel side and size, timeline height, control size and which panel tabs show. */
+const narrowQuery = matchMedia('(max-width: 820px)');
+const touchQuery = matchMedia('(pointer: coarse)');
+function drawLayout(): void {
+  const l = applyLayout(findLayout(store.settings.layout, store.settings.layouts), narrowQuery.matches, touchQuery.matches);
+  app.dataset.panel = l.panel;
+  app.dataset.density = l.density;
+  app.style.setProperty('--panel-w', `${l.panelWidth}px`);
+  app.style.setProperty('--tl-h', `${l.timelineHeight}%`);
+  tabBar.replaceChildren(...l.tabs.map((name) => h('button', { class: 'bt-tab', onclick: () => showTab(name, true) }, name)));
+  if (!l.tabs.includes(activeTab as TabName)) showTab(l.tabs[0]!);
+  else showTab(activeTab);
+}
+store.on('settings', drawLayout);
+narrowQuery.addEventListener('change', drawLayout);
+touchQuery.addEventListener('change', drawLayout);
 // Switch panels only when a DIFFERENT clip or caption gets selected. Undo, redo and picking a track also announce a
 // selection change; they must not pull the person out of the panel they are working in. The Keys panel stays put so
 // keyframes can be edited clip after clip.
@@ -174,6 +190,7 @@ player.canvas.addEventListener('click', () => player.toggle());
 const stage = h('section', { class: 'stage' }, h('div', { class: 'preview' }, player.canvas), transport);
 const app = document.getElementById('app')!;
 app.append(header, h('main', { class: 'main' }, stage, side), h('section', { class: 'bottom' }, timeline.el), editBar, status);
+drawLayout();
 
 const tick = () => {
   const p = store.project;
