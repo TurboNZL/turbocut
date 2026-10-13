@@ -4,8 +4,9 @@ import { addClip, createClip, createProject } from '../src/core/timeline.ts';
 import { exportProject } from '../src/export/exporter.ts';
 import { MediaLibrary } from '../src/media/library.ts';
 import { drawVideo } from '../src/render/compose.ts';
+import { outsideMask, rasterizeText } from '../src/render/outlinedText.ts';
 
-declare global { interface Window { run: (opts: { captions: boolean }) => Promise<any>; previewMatchesExport: () => Promise<number> } }
+declare global { interface Window { run: (opts: { captions: boolean }) => Promise<any>; previewMatchesExport: () => Promise<number>; captionHoles: () => Promise<any> } }
 
 window.run = async ({ captions }) => {
   const lib = new MediaLibrary();
@@ -75,4 +76,34 @@ window.previewMatchesExport = async () => {
   let sum = 0;
   for (let i = 0; i < a.length; i += 4) sum += Math.abs(a[i]! - b[i]!) + Math.abs(a[i + 1]! - b[i + 1]!) + Math.abs(a[i + 2]! - b[i + 2]!);
   return sum / (a.length / 4) / 3;
+};
+
+/**
+ * Counters (the holes in e, a, g) must stay clear. Measures enclosed transparent area for plain text (the
+ * true counters), for the old centred-stroke method, and for the new outline.
+ */
+window.captionHoles = async () => {
+  const font = '700 96px sans-serif';
+  const text = 'ge a8';
+  const spec = { lines: [text], font, fontSize: 96, lineHeight: 115, align: 'center' as const, baseline: 'alphabetic' as const, fill: { r: 255, g: 200, b: 0, a: 255 }, outline: { r: 0, g: 0, b: 0, a: 255 }, outlineWidth: 9 };
+  const enclosed = (cv: OffscreenCanvas) => {
+    const x = cv.getContext('2d', { willReadFrequently: true })!;
+    const img = x.getImageData(0, 0, cv.width, cv.height);
+    const out = outsideMask(img.data, cv.width, cv.height);
+    let n = 0;
+    for (let i = 0; i < out.length; i++) if (!out[i] && img.data[i * 4 + 3]! < 8) n++;
+    return n;
+  };
+  const plain = rasterizeText({ ...spec, outlineWidth: 0 });
+  const fresh = rasterizeText(spec);
+  // The old method: centred stroke, then fill on top.
+  const old = new OffscreenCanvas(fresh.canvas.width, fresh.canvas.height);
+  const o = old.getContext('2d')!;
+  o.font = font; o.textAlign = 'center'; o.lineJoin = 'round'; o.lineWidth = 18; o.strokeStyle = '#000'; o.fillStyle = '#fc0';
+  o.strokeText(text, fresh.ox, fresh.oy); o.fillText(text, fresh.ox, fresh.oy);
+  // Is there still an outline just outside the letters? Look for black pixels.
+  const f = fresh.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, fresh.canvas.width, fresh.canvas.height).data;
+  let black = 0, yellow = 0;
+  for (let i = 0; i < f.length; i += 4) { if (f[i + 3]! > 200 && f[i]! < 40 && f[i + 1]! < 40) black++; if (f[i + 3]! > 200 && f[i]! > 240 && f[i + 1]! > 180) yellow++; }
+  return { trueCounters: enclosed(plain.canvas), oldMethod: enclosed(old), newMethod: enclosed(fresh.canvas), outlinePixels: black, fillPixels: yellow };
 };

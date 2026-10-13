@@ -1,3 +1,4 @@
+import { registerAacEncoder } from '@mediabunny/aac-encoder';
 import {
   AudioBufferSource,
   BufferTarget,
@@ -6,6 +7,7 @@ import {
   Output,
   QUALITY_HIGH,
   WebMOutputFormat,
+  canEncodeAudio,
   getFirstEncodableAudioCodec,
   getFirstEncodableVideoCodec,
   type Quality,
@@ -37,7 +39,8 @@ export interface ExportResult {
 
 /**
  * Render the project to a file. Prefers H.264 + AAC in MP4 (what the platforms want for shorts) and falls
- * back to VP9/AV1 + Opus when the runtime has no H.264 encoder (open-source Chromium builds, some Linux setups).
+ * back to VP9/AV1 + Opus in WebM when the runtime has no H.264 encoder (open-source Chromium builds).
+ * AAC comes from the platform when it can, otherwise from a WASM encoder.
  */
 export async function exportProject(p: Project, lib: MediaLibrary, o: ExportOptions = {}): Promise<ExportResult> {
   const t0 = performance.now();
@@ -47,9 +50,11 @@ export async function exportProject(p: Project, lib: MediaLibrary, o: ExportOpti
 
   const vcodec = await getFirstEncodableVideoCodec(['avc', 'vp9', 'av1', 'vp8'], { width: p.width, height: p.height });
   if (!vcodec) throw new Error('This device cannot encode video');
-  const mp4Audio = await getFirstEncodableAudioCodec(['aac']);
-  const useMp4 = vcodec === 'avc' && (!hasAudio || !!mp4Audio);
-  const acodec = hasAudio ? (useMp4 ? mp4Audio : await getFirstEncodableAudioCodec(['opus'])) : null;
+  // The container follows from the video codec, so the two can never disagree: H.264 goes in MP4 with AAC,
+  // everything else goes in WebM with Opus.
+  const useMp4 = vcodec === 'avc';
+  if (hasAudio && useMp4 && !(await canEncodeAudio('aac'))) registerAacEncoder(); // Linux/Electron have no native AAC encoder
+  const acodec = hasAudio ? await getFirstEncodableAudioCodec(useMp4 ? ['aac'] : ['opus']) : null;
   if (hasAudio && !acodec) throw new Error('This device cannot encode audio');
 
   const container = useMp4 ? 'mp4' : 'webm';

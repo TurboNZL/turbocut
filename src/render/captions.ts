@@ -2,6 +2,7 @@ import { entranceScale, styleByName, type CaptionPreset } from '../captions/pres
 import type { AssStyle } from '../captions/ass.ts';
 import type { Frame, Project } from '../core/types.ts';
 import type { Ctx2D } from './compose.ts';
+import { rasterizeText, type TextRaster } from './outlinedText.ts';
 
 const css = (c: { r: number; g: number; b: number; a: number }) => `rgba(${c.r},${c.g},${c.b},${(c.a / 255).toFixed(3)})`;
 
@@ -35,6 +36,8 @@ function anchor(style: AssStyle, w: number, h: number) {
   return { x, y, align: (['left', 'center', 'right'] as const)[col]!, base: (['bottom', 'middle', 'top'] as const)[row]! };
 }
 
+const cache = new Map<string, TextRaster>();
+
 /** Draw the caption for `frame` with the preset's style and entrance animation. */
 export function drawCaption(ctx: Ctx2D, p: Project, preset: CaptionPreset, frame: Frame): void {
   const hit = activeCue(p, frame);
@@ -44,28 +47,37 @@ export function drawCaption(ctx: Ctx2D, p: Project, preset: CaptionPreset, frame
   if (s <= 0) return;
   const a = anchor(style, p.width, p.height);
   const lh = style.fontsize * 1.2;
+  const fontFor = (px: number) => `${style.italic ? 'italic ' : ''}${style.bold ? '700 ' : ''}${px}px "${style.fontname}", sans-serif`;
 
-  ctx.save();
-  ctx.font = `${style.italic ? 'italic ' : ''}${style.bold ? '700 ' : ''}${style.fontsize}px "${style.fontname}", sans-serif`;
-  // Wrap to the safe width, like ASS does (WrapStyle 0), so a long caption never runs off the frame.
+  // Wrap to the safe width at full size, like ASS does (WrapStyle 0), so a long caption never runs off the frame.
+  const probe = ctx;
+  probe.save();
+  probe.font = fontFor(style.fontsize);
   const maxWidth = Math.max(40, p.width - style.marginL - style.marginR);
-  const lines = wrapText(hit.cue.text, maxWidth, (t) => ctx.measureText(t).width);
-  const block = (lines.length - 1) * lh;
-  ctx.translate(a.x, a.y - (a.base === 'bottom' ? block : a.base === 'middle' ? block / 2 : 0));
-  ctx.scale(s, s);
-  ctx.textAlign = a.align;
-  ctx.textBaseline = a.base === 'bottom' ? 'alphabetic' : a.base === 'top' ? 'top' : 'middle';
-  ctx.lineJoin = 'round';
-  ctx.miterLimit = 2;
-  lines.forEach((line, i) => {
-    const y = i * lh;
-    if (style.outline > 0) {
-      ctx.lineWidth = style.outline * 2; // ASS outline is the visible width outside the glyph; the stroke is centred
-      ctx.strokeStyle = css(style.outlineColour);
-      ctx.strokeText(line, 0, y);
-    }
-    ctx.fillStyle = css(style.primary);
-    ctx.fillText(line, 0, y);
-  });
-  ctx.restore();
+  const lines = wrapText(hit.cue.text, maxWidth, (t) => probe.measureText(t).width);
+  probe.restore();
+
+  // The text is rasterised at its animated size (crisp at every step of the bounce) and cached.
+  const q = Math.round(s * 100) / 100;
+  const key = JSON.stringify([lines, fontFor(style.fontsize), q, style.outline, style.primary, style.outlineColour, a.align, a.base, document.fonts?.size ?? 0]);
+  let raster = cache.get(key);
+  if (!raster) {
+    raster = rasterizeText({
+      lines,
+      font: fontFor(style.fontsize * q),
+      fontSize: style.fontsize * q,
+      lineHeight: lh * q,
+      align: a.align,
+      baseline: a.base === 'bottom' ? 'alphabetic' : a.base === 'top' ? 'top' : 'middle',
+      fill: style.primary,
+      outline: style.outlineColour,
+      outlineWidth: style.outline * q,
+    });
+    if (cache.size > 80) cache.delete(cache.keys().next().value!);
+    cache.set(key, raster);
+  }
+  const block = (lines.length - 1) * lh * q;
+  // The bitmap's anchor is the first line's origin: shift up so the last line (bottom) or the middle sits on the anchor.
+  const top = a.y - (a.base === 'bottom' ? block : a.base === 'middle' ? block / 2 : 0);
+  ctx.drawImage(raster.canvas, a.x - raster.ox, top - raster.oy);
 }

@@ -234,4 +234,12 @@ window.addEventListener('drop', (e) => {
 });
 
 // Exposed so tests and automation can drive the editor without synthesising pointer input.
-(window as any).turbocutApp = { store, player, themes, importMedia, importFont, runExport, split };
+async function exportForTest() {
+  const r = await exportProject(store.project, store.lib, { preset: store.preset });
+  const bytes = new Uint8Array(r.data);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return { container: r.container, videoCodec: r.videoCodec, audioCodec: r.audioCodec, bytes: bytes.length, frames: r.frames, seconds: r.seconds, b64: btoa(bin) };
+}
+
+(window as any).turbocutApp = { store, player, themes, importMedia, importFont, runExport, split, exportForTest };

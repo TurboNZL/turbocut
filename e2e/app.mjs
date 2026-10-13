@@ -3,14 +3,14 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
-import { chromium } from 'playwright-core';
+import { launch } from './browser.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
 const out = `${root}e2e/.out/`;
 mkdirSync(out, { recursive: true });
 const server = await createServer({ root, server: { port: 5190, strictPort: true }, logLevel: 'error' });
 await server.listen();
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium', args: ['--js-flags=--expose-gc'] });
+const browser = await launch(['--js-flags=--expose-gc']);
 const errors = [];
 try {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true });

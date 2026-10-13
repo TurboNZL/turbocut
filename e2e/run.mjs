@@ -3,13 +3,13 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
-import { chromium } from 'playwright-core';
+import { launch } from './browser.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
 mkdirSync(`${root}e2e/.out`, { recursive: true });
 const server = await createServer({ root, server: { port: 5188, strictPort: true }, logLevel: 'error' });
 await server.listen();
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+const browser = await launch();
 try {
   {
     const page = await browser.newPage();
@@ -18,6 +18,18 @@ try {
     const diff = await page.evaluate(() => window.previewMatchesExport());
     console.log(`preview vs export mean difference: ${diff.toFixed(2)} / 255`);
     assert.ok(diff < 0.5, `preview must match export, got ${diff}`);
+    await page.close();
+  }
+  {
+    const page = await browser.newPage();
+    await page.goto('http://localhost:5188/e2e/index.html');
+    await page.waitForFunction(() => typeof window.captionHoles === 'function');
+    const h = await page.evaluate(() => window.captionHoles());
+    console.log('caption counters (enclosed clear pixels):', JSON.stringify(h));
+    assert.ok(h.trueCounters > 500, 'the test text has counters to measure');
+    assert.ok(h.oldMethod < h.trueCounters * 0.6, `the old centred stroke should be filling counters (${h.oldMethod} of ${h.trueCounters})`);
+    assert.ok(h.newMethod > h.trueCounters * 0.9, `counters must stay clear: ${h.newMethod} of ${h.trueCounters}`);
+    assert.ok(h.outlinePixels > 2000 && h.fillPixels > 2000, 'outline and fill are both still drawn');
     await page.close();
   }
   for (const captions of [false, true]) {

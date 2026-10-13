@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  e2e:
+    name: Browser end-to-end (real export in Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install ffmpeg and Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pnpm exec playwright-core install --with-deps chromium
+      - run: sh e2e/make-media.sh
+      - run: pnpm e2e
+      - name: Keep screenshots and exported files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-output
+          path: e2e/.out
+          retention-days: 7
+          if-no-files-found: ignore
+
+  electron:
+    name: Electron shell (the built app, run inside Electron)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      # No --ignore-scripts: Electron downloads its binary in a post-install step.
+      - run: pnpm install --frozen-lockfile
+      - name: Install ffmpeg and a virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg xvfb
+      - run: sh e2e/make-media.sh
+      - run: pnpm build
+      - run: xvfb-run -a pnpm e2e:electron
+      - name: Keep exported file
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-output
+          path: e2e/.out
+          retention-days: 7
+          if-no-files-found: ignore

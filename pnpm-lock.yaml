@@ -7,7 +7,13 @@ settings:
 importers:
 
   .:
-    dependencies:
+    devDependencies:
+      '@capacitor/android':
+        specifier: ^8.5.3
+        version: 8.5.3(@capacitor/core@8.5.3)
+      '@capacitor/cli':
+        specifier: ^8.5.3
+        version: 8.5.3
       '@capacitor/core':
         specifier: ^8.5.3
         version: 8.5.3
@@ -20,19 +26,9 @@ importers:
       '@huggingface/transformers':
         specifier: ^4.3.1
         version: 4.3.1(@types/node@22.20.5)
-      mediabunny:
-        specifier: ^1.61.3
-        version: 1.61.3
-      turbothemes:
-        specifier: github:TurboNZL/turbothemes
-        version: git+https://git@github.com:TurboNZL/turbothemes.git#2735f534753af8da69a00b30fd7ce0d1221e2e66
-    devDependencies:
-      '@capacitor/android':
-        specifier: ^8.5.3
-        version: 8.5.3(@capacitor/core@8.5.3)
-      '@capacitor/cli':
-        specifier: ^8.5.3
-        version: 8.5.3
+      '@mediabunny/aac-encoder':
+        specifier: ^1.61.4
+        version: 1.61.4(mediabunny@1.61.3)
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.5
@@ -42,9 +38,15 @@ importers:
       electron-builder:
         specifier: ^26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
+      mediabunny:
+        specifier: ^1.61.3
+        version: 1.61.3
       playwright-core:
         specifier: ^1.64.0
         version: 1.64.0
+      turbothemes:
+        specifier: github:TurboNZL/turbothemes
+        version: git+https://git@github.com:TurboNZL/turbothemes.git#2735f534753af8da69a00b30fd7ce0d1221e2e66
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -488,6 +490,11 @@ packages:
   '@malept/flatpak-bundler@0.4.0':
     resolution: {integrity: sha512-9QOtNffcOF/c1seMCDnjckb3R9WHcG34tky+FHpNKKCW0wc/scYLwMtO+ptyGUfMW0/b/n4qRiALlaFHc9Oj7Q==}
     engines: {node: '>= 10.0.0'}
+
+  '@mediabunny/aac-encoder@1.61.4':
+    resolution: {integrity: sha512-BXqI+lQhpgPuiXMF4CIm/7isfkeUXjX2ysPtjN35dfI4L1RwW1//6VuJNsNMKw5vBPNjz31JeDd8ffFhJ2KipA==}
+    peerDependencies:
+      mediabunny: ^1.0.0
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
@@ -2742,6 +2749,10 @@ snapshots:
       tmp-promise: 3.0.3
     transitivePeerDependencies:
       - supports-color
+
+  '@mediabunny/aac-encoder@1.61.4(mediabunny@1.61.3)':
+    dependencies:
+      mediabunny: 1.61.3
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
