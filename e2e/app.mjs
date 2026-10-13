@@ -1,6 +1,6 @@
 // Drives the real TurboCut UI in headless Chromium: import, split, undo, play, caption, export, theme. Writes screenshots to e2e/.out/.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
 import { launch } from './browser.mjs';
@@ -66,7 +66,8 @@ try {
 
   // 5b. your real caption font and Kdenlive styles (only when the font file is present locally; it is not in the repo)
   const fontUrl = '/e2e/.media/SquadLatin-Black.otf';
-  if ((await page.request.get(`http://localhost:5190${fontUrl}`)).ok()) {
+  // Check the disk, not the dev server: Vite answers a missing file with index.html and a 200.
+  if (existsSync(`${root}e2e/.media/SquadLatin-Black.otf`)) {
     const shot = await app(async (url) => {
       const app = window.turbocutApp;
       const fams = await app.importFont(new File([await (await fetch(url)).blob()], 'SquadLatin-Black.otf'));
