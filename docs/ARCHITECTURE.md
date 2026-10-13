@@ -25,13 +25,19 @@ Verified by `pnpm e2e` (headless Chromium, real WebCodecs, checked with ffprobe/
 
 Known gaps: box blur and zoom blur (need a shader pass, removed from the type until built); audio speed change shifts pitch; no preview playback loop yet; the first decode of a clip is not pre-warmed.
 
-## Planned, not built yet
+## The app (built)
 
-1. Playback and scrubbing preview (use `getFrame` for scrubs, a sequential feed for play).
-2. Timeline UI, shortcuts, theme picker wiring.
-3. Electron main + preload, Capacitor project.
-4. Local Whisper provider, reference transcription server.
-5. Twitch resolver implementation.
+`src/app` is plain DOM plus a small `Store` (project, selection, playhead, settings, caption presets; topics `project`, `selection`, `preset`, `settings`...). Undo is whole-project JSON snapshots.
+
+- **Timeline**: tracks of any number of video and audio kinds (order reversible in Settings), linked picture and sound, a media bin, snapping you can switch off, optional low-quality waveforms. On touch the playhead is fixed at the centre and the timeline scrolls; only the selected clip takes a finger, with 32 px trim handles. Zoom: pinch (in place, so the touch target survives), ctrl or alt + wheel (anchored at the cursor), buttons.
+- **Settings dialog** (`settingsDialog.ts`): general, remappable hotkeys (`hotkeys.ts`, combos are normalised), captions engine, updates, device check. Settings are validated on load (`settings.ts`) and can be exported and imported.
+- **Keyframes** (`core/animation.ts`): one `Param` list drives the inspector, the Keys dopesheet and next/previous-key jumps. Video: position, scale, rotation, opacity, blur, pixelate. Audio: volume.
+- **Text layers**: a clip with `text` (content plus an `AssStyle` and the same entrance animation), drawn by the same outline renderer as captions.
+- **Caption styles** (`styleEditor.ts`, `presetIO.ts`): a style is a preset of variants plus an entrance. The built-in one follows the default font and letter-hole settings and is read-only (duplicate it). Export bundles the font files the styles use (base64 in the JSON, `fonts`) unless the box is cleared; import registers and remembers them. Limits are enforced in `parsePresetFile`.
+- **Updates**: `updater.ts` reads the public GitHub Releases. Desktop uses electron-updater (the app downloads and restarts); Android opens the APK; web just reloads. Versions are Year.Month.Update (CalVer, `2026.10.3`), stamped by the Build workflow.
+- **Web**: `site/` is the landing page (finds the right download from the newest release); the Pages workflow publishes it at the root and the app at `/app`. `scripts/serve.mjs` is a zero-dependency static server with optional self-signed HTTPS, shipped in the release as `-web.zip` for people who want a browser app on their own network without installing the desktop app.
+
+Open items: the Twitch resolver is not implemented; the landing page and Pages workflow need Pages enabled once (Settings > Pages > Source: GitHub Actions).
 
 ## Not verified yet (do not rely on these)
 
@@ -39,4 +45,4 @@ Known gaps: box blur and zoom blur (need a shader pass, removed from the type un
 - **Android WebView WebCodecs.** Support is listed from WebView 94 on a docs mirror, but I have not confirmed hardware encode, nor tested in a Capacitor app. Needs a device test before the export design is final. Fallback if poor: native MediaCodec encode via a Capacitor plugin.
 - **Word timestamps with Transformers.js on WebGPU.** An older upstream issue said they were unsupported; I have not checked whether it was resolved. This is the first thing to prove, because word-by-word captions depend on it. The remote provider and a CPU path are the fallbacks.
 - **Twitch resolver.** Community tools fetch a playback token through Twitch's unofficial GraphQL endpoint and append `sig` and `token` to the quality's source URL. The query hash and client id can change without notice, and downloading may conflict with Twitch's terms or the creator's rights. Not implemented; will be tested against a live clip before it is trusted.
-- **Web hosting.** WebCodecs and WebGPU need a secure context. A LAN host therefore needs HTTPS (or `localhost`), otherwise they are unavailable in the browser.
+- **Web hosting.** WebCodecs and WebGPU need a secure context. A LAN host therefore needs HTTPS (or `localhost`), otherwise they are unavailable in the browser. `serve.mjs --https` was checked with curl on this machine; a second device accepting the self-signed certificate and exporting was not tried. GitHub Pages deployment has not run yet.

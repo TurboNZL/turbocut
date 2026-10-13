@@ -124,9 +124,39 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  web:
+    needs: version
+    name: Web bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Stamp the version
+        run: npm pkg set version=${{ needs.version.outputs.version }}
+      - run: pnpm build
+      - name: Bundle the app with its server
+        run: |
+          mkdir -p bundle/TurboCut-web
+          cp -r dist bundle/TurboCut-web/app
+          cp scripts/serve.mjs bundle/TurboCut-web/serve.mjs
+          printf 'TurboCut web bundle\n\nInstall Node.js 20 or newer, then in this folder run:\n\n  node serve.mjs --https\n\nOpen the address it prints on any device on your network and accept the certificate warning once.\nWithout --https only the computer running it can export video (browsers require a secure page).\n' > bundle/TurboCut-web/README.txt
+          (cd bundle && zip -qr ../TurboCut-${{ needs.version.outputs.version }}-web.zip TurboCut-web)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-web
+          path: TurboCut-${{ needs.version.outputs.version }}-web.zip
+          if-no-files-found: error
+          retention-days: 1
+
   release:
     name: Publish release
-    needs: [version, android, desktop]
+    needs: [version, android, desktop, web]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -155,6 +185,7 @@ jobs:
           - **Android:** the \`-android.apk\`. Open it on the phone and allow installing from that source once. Later versions install over earlier ones.
           - **Windows:** \`-windows-setup.exe\` installs it (and then updates itself); \`-windows-portable.exe\` runs without installing. Windows warns about an unknown publisher because the build is not code-signed.
           - **Linux:** \`.AppImage\` (\`chmod +x\` it, then run it; it updates itself) or the \`.deb\` (\`sudo apt install ./file.deb\`).
+          - **Your own web server:** unzip the \`-web.zip\` and run \`node serve.mjs --https\` (Node.js 20+). Open the address it prints on any device on your network.
           - \`latest.yml\` and \`latest-linux.yml\` are what the desktop app reads to find updates."
       - name: Keep only the five newest releases
         run: |
