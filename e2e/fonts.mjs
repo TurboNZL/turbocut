@@ -22,7 +22,7 @@ try {
   await page.getByRole('tab', { name: 'Captions', exact: true }).click();
   await page.getByRole('button', { name: 'Fonts…' }).click();
   await page.getByRole('dialog', { name: 'Fonts' }).waitFor();
-  assert.match(await page.locator('.font-manager').textContent(), /None yet/);
+  await page.waitForFunction(() => /None yet/.test(document.querySelector('.font-manager')?.textContent ?? '')); // the list is read asynchronously
 
   // add: the file chooser path real users take
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Add font files…' }).click()]);
