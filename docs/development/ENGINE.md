@@ -9,6 +9,7 @@ TurboCut is pinned to `TurboNZL/turboengine` (`.turboengine.json`). The engine i
 | `appearance` | followed as conventions | `src/app/main.ts` (engine start), `src/app/styles.css`, Settings → General (picker) | No React, no Tailwind. `turbothemes/base.css` first, tokens only, hook classes. Layouts are the app's own (`src/app/layout.ts`). Dependency still on the retired turbothemes repository (see below). |
 | `guides-and-docs` | yes | `docs/guides/*.md` bundled by `src/app/guides.ts`, rendered by `src/app/markdown.ts`; `PROJECT_BRIEF.md`; `CLAUDE.md` | Guides show in Settings → Guides, on the home screen, and in a dialog. A safe renderer (text only, no HTML). |
 | `settings-shell` | conventions | `src/app/settingsDialog.ts` | Tabs are the engine's token-only tab recipe (`.tab`), panels are `.card.bt-panel`. |
+| `logos` | yes (engine fca5507) | `branding/logo.json`, `branding/emblems/cut.json`, `scripts/gen-icons.mjs`, `scripts/logo/lib.mjs`; outputs `public/icon*.{svg,png}`, `build/icon.png` (electron-builder), `android/app/src/main/res` | The shared mark with a **cut** emblem (a play button split by a slanted cut). The generator and lib are verbatim. The Android adaptive icon was switched to the generated vector foreground, which meant deleting Capacitor's default `drawable-v24/ic_launcher_foreground.xml`, `values/ic_launcher_background.xml` and `mipmap-*/ic_launcher_foreground.png` (the same names would collide). Regenerate: `PLAYWRIGHT_MODULE=<playwright index.mjs> node scripts/gen-icons.mjs --png`. |
 | `editions`, `window-frame`, `android-shell` | no | | One edition; the native window; a plain Capacitor shell. |
 
 ## UI structure (from the engine's INTEGRATION.md and audit)
@@ -19,7 +20,7 @@ TurboCut is pinned to `TurboNZL/turboengine` (`.turboengine.json`). The engine i
 - e2e selectors use `getByRole('tab')` for tabs.
 
 ## Not yet done
-- **turbothemes source.** The engine moved the package to `turboengine/themes` and retired the old repository. TurboCut still installs `git+https://github.com/TurboNZL/turbothemes.git`. To switch: set the dependency to `git+https://github.com/TurboNZL/turboengine.git#path:/themes`, run `pnpm install --ignore-scripts`, then `pnpm e2e`. It was not done from the cloud session because the install fetches code from a second repository and needed the owner's go-ahead.
+- ~~turbothemes source~~ **Done 2026-10-14:** the dependency is `git+https://github.com/TurboNZL/turboengine.git#path:/themes` (the lockfile records a codeload tarball at engine `fca5507`, which CI can fetch over HTTPS). The old `TurboNZL/turbothemes` repository no longer exists, so the previous dependency could not be installed at all. After the move: typecheck, 73 unit tests, the build, and the e2e suites `styles`, `layouts`, `home`, `guides` and `settings` pass in the cloud session (`run`, `app`, `bin`, `keys`, `fonts`, `touch` and `e2e:electron` were not run).
 - `examples/verify-looks.mjs` (engine) has not been run against TurboCut after the structure fixes; the e2e suites and screenshots were.
 
 ## Taking improvements back

@@ -1,12 +1,22 @@
 {
-  "engine": { "repo": "TurboNZL/turboengine", "ref": "1052e43" },
-  "modules": ["release-pipeline", "updaters", "appearance", "guides-and-docs"],
+  "engine": {
+    "repo": "TurboNZL/turboengine",
+    "ref": "1052e43"
+  },
+  "modules": [
+    "release-pipeline",
+    "updaters",
+    "appearance",
+    "guides-and-docs",
+    "logos"
+  ],
   "themes": "on",
   "moved": {
     "release-pipeline": ".github/workflows/build.yml (one workflow for APK, desktop and web bundle; replaces release.yml, see notes)",
     "updaters": "src/app/updater.ts, electron/main.cjs (setupUpdater), electron/preload.cjs",
     "appearance": "src/app/main.ts (engine start-up), src/app/styles.css, src/app/settingsDialog.ts (picker)",
-    "guides-and-docs": "src/app/guides.ts, src/app/markdown.ts, docs/guides/"
+    "guides-and-docs": "src/app/guides.ts, src/app/markdown.ts, docs/guides/",
+    "logos": "branding/logo.json, branding/emblems/cut.json, scripts/gen-icons.mjs, scripts/logo/lib.mjs (verbatim); outputs: public/icon*.{svg,png}, build/icon.png (electron-builder picks it up), android/app/src/main/res (adaptive vector foreground, notification icon, legacy launcher PNGs)"
   },
-  "notes": "TurboCut is a vanilla TypeScript app (no React, no Tailwind), so the engine's React files are followed as conventions, not copied: hook classes, tab recipe, dialog structure, panel cards, asset naming, version scheme, docs layout, guides inside Settings. Differences on purpose: (1) builds also run for claude/** branches and publish pre-releases, because the owner tests every branch on a phone; (2) no auto-pr.yml, the owner does not want pull requests unless asked; (3) check.yml is ci.yml and runs on every push; (4) turbothemes is still installed from the retired TurboNZL/turbothemes repository until the dependency can be moved to turboengine#path:/themes (the move needs an install that could not be run from the cloud session); (5) editions, window-frame, settings-shell and android-shell are not used: TurboCut has one edition, a native-looking window, and a plain Capacitor Android shell."
+  "notes": "TurboCut is a vanilla TypeScript app (no React, no Tailwind), so the engine's React files are followed as conventions, not copied: hook classes, tab recipe, dialog structure, panel cards, asset naming, version scheme, docs layout, guides inside Settings. Differences on purpose: (1) builds also run for claude/** branches and publish pre-releases, because the owner tests every branch on a phone; (2) no auto-pr.yml, the owner does not want pull requests unless asked; (3) check.yml is ci.yml and runs on every push; (4) turbothemes is installed from turboengine#path:/themes (moved 2026-10-14; the retired TurboNZL/turbothemes repository no longer exists); (5) editions, window-frame, settings-shell and android-shell are not used: TurboCut has one edition, a native-looking window, and a plain Capacitor Android shell. (6) logos: taken from engine fca5507 with a 'cut' emblem (a play button split by a slanted cut); the Android adaptive icon now uses the generated vector foreground (@drawable/ic_launcher_foreground) and the colour in values/colors.xml, so Capacitor's default drawable-v24 foreground, values/ic_launcher_background.xml and mipmap-*/ic_launcher_foreground.png were removed (a duplicate would fail the resource merge); the Android build itself was NOT run, only the resource references were checked by script."
 }
