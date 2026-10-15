@@ -63,10 +63,13 @@ export function assetFor(release: LatestRelease, p: typeof platform = platform, 
   return null;
 }
 
+/** What installing an update answers. Only a failure comes back (on success the app restarts); a failed .deb install carries the command to run by hand. */
+export type InstallResult = { ok: true } | { ok: false; message: string; command?: string };
+
 export interface DesktopUpdater {
   check(): Promise<{ supported: boolean; reason?: string; version?: string }>;
   download(): Promise<void>;
-  install(): Promise<void>;
+  install(): Promise<InstallResult | void>;
   onProgress(fn: (percent: number) => void): void;
 }
 

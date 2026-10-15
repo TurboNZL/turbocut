@@ -13,7 +13,7 @@ await server.listen();
 const browser = await launch();
 const errors = [];
 try {
-  const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
+  const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 }, fps: 30 })).newPage();
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('http://localhost:5203/');
   await page.waitForFunction(() => window.turbocutApp);

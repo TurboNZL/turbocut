@@ -226,6 +226,7 @@ function updates({ store }: SettingsDeps): HTMLElement {
       h('p', {}, h('strong', {}, `Version ${st.latest.version} is available`), ` (you have ${st.current}).`),
       st.latest.notes ? h('pre', { class: 'report' }, st.latest.notes.slice(0, 600)) : h('span'),
     ];
+    const note = h('div', { class: 'stack' });
     const progress = h('progress', { class: 'prog', max: 100, value: 0, style: { display: 'none' } });
     const du = desktopUpdater;
     if (platform === 'electron' && du) {
@@ -235,16 +236,22 @@ function updates({ store }: SettingsDeps): HTMLElement {
         go.addEventListener('click', async () => {
           go.disabled = true;
           progress.style.display = '';
+          note.replaceChildren();
           du.onProgress((p) => (progress.value = p));
           try {
             await du.download();
-            await du.install();
+            const done = await du.install();
+            if (done && !done.ok) {
+              go.disabled = false;
+              const cmd = done.command;
+              note.replaceChildren(h('p', {}, done.message), ...(cmd ? [h('pre', { class: 'report' }, cmd), h('button', { class: 'btn', onclick: () => navigator.clipboard?.writeText(cmd).then(() => store.say('Command copied.')) }, 'Copy command')] : []));
+            }
           } catch (e) {
             go.disabled = false;
             out.append(h('p', {}, `Update failed: ${e instanceof Error ? e.message : e}`));
           }
         });
-        return [...rows, go, progress];
+        return [...rows, go, progress, note];
       }
       rows.push(h('p', { class: 'hint' }, can.reason ?? 'This copy cannot update itself.'));
     }

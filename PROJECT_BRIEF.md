@@ -12,7 +12,8 @@ A lightweight, cross-platform multi-track video editor with built-in automatic c
 - Settings dialog, remappable shortcuts, editor layouts (panel side and size, control size, tabs), font manager, themes from turbothemes, guides, home screen.
 - Export to MP4 (H.264 + AAC) or WebM (VP9/AV1 + Opus) in the app, no upload.
 - Ships as an Android APK, Windows installer and portable, Linux AppImage and .deb, a web bundle with its own server, and the web app itself.
-- Self-update from GitHub Releases; versions Year.Month.Update.
+- Self-update from GitHub Releases, including the Linux .deb (password prompt or terminal fallback); versions Year.Month.Update.
+- 60 fps default frame rate; the engine logo family (`logos` module).
 
 ## Rules that must not be broken
 1. Machine identifiers lowercase, the product is styled TurboCut.
@@ -33,10 +34,11 @@ See `docs/ARCHITECTURE.md` (pipeline, app, unverified items) and `docs/developme
 | Twitch clip import | Paste a clip URL, the clip lands in the bin; resolver tested against a live clip |
 | On-device Whisper proven | A real caption run on the owner's phone produces correct words (needs the model download; the cloud sandbox cannot reach Hugging Face) |
 | Release signing | A private release key and an app bundle for a store build (today: public debug key on purpose) |
-| turbothemes from turboengine | The dependency is `git+https://github.com/TurboNZL/turboengine.git#path:/themes` and `pnpm e2e` passes |
 
 ## Glossary
 - **Style / preset**: a caption look pack (variants plus an entrance), a JSON file.
 - **Variant**: one look inside a style (for example the red one).
 - **Layout**: where the editor puts its panel and how big things are; not a theme.
 - **Letter holes (counters)**: the inside of o, e, a, g.
+- **Clip tab**: the selected clip's settings with its keyframe dopesheet underneath.
+- **Emblem**: the app's own symbol on the engine logo (TurboCut: a play triangle cut by a blade).

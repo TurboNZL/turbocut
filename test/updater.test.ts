@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 import { assetFor, pickLatest } from '../src/app/updater.ts';
 import { compareVersions, isCalVer, parseVersion } from '../src/app/version.ts';
@@ -51,5 +52,34 @@ describe('assetFor', () => {
     expect(assetFor(latest, 'electron', 'Win32')?.name).toMatch(/windows-setup\.exe$/);
     expect(assetFor(latest, 'electron', 'Linux x86_64')?.name).toMatch(/\.AppImage$/);
     expect(assetFor(latest, 'web')).toBeNull();
+  });
+});
+
+describe('.deb install (electron/debInstall.cjs)', () => {
+  const deb = createRequire(import.meta.url)('../electron/debInstall.cjs');
+  it('quotes paths so odd file names cannot break out of the shell', () => {
+    expect(deb.shQuote("a'b")).toBe(`'a'\\''b'`);
+    expect(deb.debInstallScript("/tmp/x y/it's.deb")).toBe(`dpkg -i '/tmp/x y/it'\\''s.deb' || apt-get install -f -y`);
+    expect(deb.manualInstallCommand('/tmp/t.deb')).toBe("sudo apt install '/tmp/t.deb'");
+  });
+  it('explains each pkexec outcome', () => {
+    expect(deb.describePkexec(0)).toEqual({ ok: true });
+    expect(deb.describePkexec(126)).toMatchObject({ ok: false, cancelled: true });
+    expect(deb.describePkexec(127)).toMatchObject({ ok: false, cancelled: false });
+    expect(deb.describePkexec(1, 'Error: Not authorized')).toMatchObject({ cancelled: false });
+    expect(deb.describePkexec(100, 'a\nb\nc\nd').message).toContain('exit code 100');
+  });
+  it('spots no_new_privs and restarts the terminal outside the app process tree', () => {
+    expect(deb.hasNoNewPrivs('Name:\tx\nNoNewPrivs:\t1\nSeccomp:\t0\n')).toBe(true);
+    expect(deb.hasNoNewPrivs('NoNewPrivs:\t0\n')).toBe(false);
+    const run = deb.outsideTree('xterm', ['-e', 'x'], { DISPLAY: ':0', HOME: '/h' });
+    expect(run.bin).toBe('systemd-run');
+    expect(run.args).toEqual(['--user', '--collect', '--wait', '--quiet', '--setenv=DISPLAY', '--', 'xterm', '-e', 'x']);
+  });
+  it('treats a release whose installers are not attached yet as not an error, and compares installed versions exactly', () => {
+    expect(deb.isStillBuilding('Cannot find latest-linux.yml in the latest release artifacts')).toBe(true);
+    expect(deb.isStillBuilding('getaddrinfo ENOTFOUND github.com')).toBe(false);
+    expect(deb.installedMatches('2026.10.3\n', '2026.10.3')).toBe(true);
+    expect(deb.installedMatches('2026.10.2', '2026.10.3')).toBe(false);
   });
 });

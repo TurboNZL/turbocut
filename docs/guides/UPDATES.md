@@ -6,7 +6,7 @@ Versions are **Year.Month.Update**, for example `2026.10.3`: the third build of 
 | Version | How it updates |
 |---|---|
 | Windows installer, Linux AppImage | Settings → Updates → *Check for updates*; the app downloads the new version and restarts into it. |
-| Linux .deb | It cannot replace itself (installing a package needs your password). Settings → Updates points you to the new .deb; install it with `sudo apt install ./file.deb`. |
+| Linux .deb | Settings → Updates → *Download and restart*: the app downloads the package and asks for your password (a normal system prompt). If your desktop shows no prompt, a terminal window opens and asks instead. TurboCut restarts once the new version is installed. If neither works, the card shows the one command to copy: `sudo apt install ./file.deb`. |
 | Windows portable | It cannot update itself: download the new file. |
 | Android | The check opens the new APK; Android installs it over the old one. See [Android APK](ANDROID_APK.md). |
 | Web (including your own server) | Reload the page; the server always serves the newest copy you gave it. |

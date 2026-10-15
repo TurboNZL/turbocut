@@ -93,6 +93,7 @@ export function openHome(deps: HomeDeps): { close: () => void } {
   root.append(
     h('div', { class: 'home-inner stack' },
       h('header', { class: 'home-head' },
+        h('img', { class: 'home-logo', src: `${import.meta.env.BASE_URL}icon.svg`, alt: '', width: 72, height: 72 }),
         h('h1', {}, 'TurboCut'),
         h('p', { class: 'lead' }, 'A light video editor for shorts, with captions made for you.')),
       panel('Start',

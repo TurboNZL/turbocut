@@ -42,7 +42,7 @@ await win.evaluate(() => window.turbocutApp.store.seek(0));
 await win.evaluate(() => window.turbocutApp.player.play());
 for (const t of [3, 6, 10]) { await win.waitForTimeout(t === 3 ? 3000 : t === 6 ? 3000 : 4000); results['play' + t] = await sample(`playing ${t} s`); }
 const frame = await win.evaluate(() => window.turbocutApp.store.playhead);
-console.log('playhead after ~10 s of playback:', frame, '(30 fps => about 300)');
+console.log('playhead after ~10 s of playback:', frame, '(60 fps => about 600)');
 await win.evaluate(() => window.turbocutApp.player.pause());
 await win.waitForTimeout(500);
 results.paused = await sample('paused');

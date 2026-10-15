@@ -58,13 +58,12 @@ try {
   await page.getByLabel('Layout name').waitFor();
   assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.layouts.length), 1);
 
-  // edit the copy: left panel, narrow, hide Keys, move Media first
+  // edit the copy: left panel, narrow, move Media first
   await page.getByLabel('Layout name').fill('Mine');
   await page.getByLabel('Layout name').press('Tab');
   await page.getByLabel('Panel position').selectOption('left');
   await page.getByLabel('Panel width').fill('480');
-  await page.getByLabel('Show Keys').uncheck();
-  await page.getByRole('button', { name: 'Move Media up' }).click(); // hidden tabs sink to the bottom of the list, so Media is second
+  await page.getByRole('button', { name: 'Move Media up' }).click();
   const l = await page.evaluate(() => window.turbocutApp.store.settings.layouts[0]);
   assert.equal(l.name, 'Mine');
   assert.equal(l.panel, 'left');

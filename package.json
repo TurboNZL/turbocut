@@ -3,6 +3,7 @@
   "version": "2026.10.1",
   "description": "TurboCut: a lightweight, cross-platform multi-track video editor with built-in auto captions.",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -39,7 +40,7 @@
     "electron-builder": "^26.15.3",
     "mediabunny": "^1.61.3",
     "playwright-core": "^1.64.0",
-    "turbothemes": "git+https://github.com/TurboNZL/turbothemes.git",
+    "turbothemes": "git+https://github.com/TurboNZL/turboengine.git#path:/themes",
     "typescript": "^5.7.2",
     "vite": "^8.3.4",
     "vitest": "^3.0.0"

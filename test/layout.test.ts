@@ -20,10 +20,14 @@ describe('layouts', () => {
 
   it('repairs wrong values and keeps at least one tab', () => {
     const l = cleanLayout({ name: ' Mine ', panel: 'top', panelWidth: 9999, timelineHeight: -4, density: 'huge', tabs: ['Keys', 'Nope', 'Keys', 'Clip'] })!;
-    expect(l).toEqual({ name: 'Mine', panel: 'auto', panelWidth: 560, timelineHeight: 20, density: 'auto', tabs: ['Keys', 'Clip'] });
-    expect(cleanLayout({ name: 'x', tabs: [] })!.tabs).toHaveLength(5);
+    expect(l).toEqual({ name: 'Mine', panel: 'auto', panelWidth: 560, timelineHeight: 20, density: 'auto', tabs: ['Clip'] });
+    expect(cleanLayout({ name: 'x', tabs: [] })!.tabs).toHaveLength(4);
     expect(cleanLayout({ panel: 'left' })).toBeNull();
     expect(cleanLayout('nope')).toBeNull();
+  });
+
+  it('moves the old Keys tab into Clip', () => {
+    expect(cleanLayout({ name: 'Old', tabs: ['Media', 'Keys', 'Captions'] })!.tabs).toEqual(['Media', 'Clip', 'Captions']);
   });
 
   it('round-trips through a file and rejects other files', () => {

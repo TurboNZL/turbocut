@@ -7,7 +7,7 @@ export function createProject(opts: Partial<Pick<Project, 'name' | 'fps' | 'widt
   return {
     version: 1,
     name: opts.name ?? 'Untitled',
-    fps: opts.fps ?? 30,
+    fps: opts.fps ?? 60,
     width: opts.width ?? 1080,
     height: opts.height ?? 1920,
     assets: {},

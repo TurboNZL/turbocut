@@ -56,3 +56,6 @@ Apps with downloads need somewhere to explain them, and GitHub Pages is not free
 - Chromium's synthesized scroll and pinch gestures do not work in headless runs; send paced raw touch events.
 - Electron on Linux has no AAC encoder: bundle a WebAssembly AAC encoder fallback, choose the container from the video codec.
 - Releases exist (and updaters see them) minutes before their assets: treat "release without manifest" as "still building".
+
+## 9. Done: the .deb installer and the cut emblem
+The vanilla CommonJS .deb updater (`electron/updater.cjs`, `electron/debInstall.cjs`) and the `cut` emblem are already in the engine (`modules/updaters/variants/vanilla-electron`, `modules/logos`, engine commit `4b4264b`). Also learned here: a 60 fps default frame rate makes every "seconds to frames" test constant change (a 3 s text layer is 180 frames, a 6 s export is 360); and merging a dopesheet under the inspector means e2e must scroll it into view before dragging.
