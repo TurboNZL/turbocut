@@ -25,7 +25,7 @@ function readPresets(): CaptionPreset[] {
 
 /** All editor state in one place. The UI subscribes to topics and re-renders the part that changed. */
 export class Store {
-  project: Project = createProject({ name: 'Untitled', fps: 30, width: 1080, height: 1920 });
+  project: Project = createProject({ name: 'Untitled', fps: 60, width: 1080, height: 1920 });
   lib = new MediaLibrary();
   selected: string | null = null;
   selectedCue: string | null = null;

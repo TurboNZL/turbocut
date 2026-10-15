@@ -21,7 +21,7 @@ TurboCut is a light video editor for shorts (9:16, under a minute) that also cop
 ## Where things are
 | You want | Go to |
 |---|---|
-| Keyframes (zoom, position, opacity, blur, pixelate, volume) | **Keys** tab; **K** adds keys, **,** and **.** jump between them |
+| Keyframes (zoom, position, opacity, blur, pixelate, volume) | **Clip** tab, Keyframes section; **K** adds keys, **,** and **.** jump between them |
 | A text layer | the **Text** button in the edit bar |
 | Another panel layout | Settings → [Layout](LAYOUTS_AND_KEYS.md) |
 | Fonts | Settings → Fonts, or Captions → Fonts… |

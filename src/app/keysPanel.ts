@@ -14,7 +14,7 @@ const EASINGS: [Easing, string][] = [['inOut', 'Smooth'], ['linear', 'Linear'], 
  * add or remove a keyframe at the playhead. The strip below edits the selected keyframe's time, value and easing.
  */
 export class KeysPanel {
-  readonly el = h('div', { class: 'keys' });
+  readonly el = h('section', { class: 'keys card bt-panel' });
   private sel: { param: string; t: number } | null = null;
   private dragging = false;
   private grid: HTMLElement | null = null;
@@ -59,8 +59,8 @@ export class KeysPanel {
     this.el.replaceChildren();
     this.grid = null;
     if (!clip) {
-      this.el.append(h('p', { class: 'hint' }, 'Select a clip to edit its keyframes.'));
-      return;
+      return; // the Clip tab above already says to select a clip
+
     }
     const fps = this.store.project.fps;
     const D = Math.max(1, clip.duration);
@@ -91,7 +91,7 @@ export class KeysPanel {
     }
     grid.append(h('div', { class: 'ks-ph' }));
     this.grid = grid;
-    this.el.append(nav, grid, this.details());
+    this.el.append(h('h2', { class: 'bt-panel-title' }, 'Keyframes'), nav, grid, this.details());
     this.movePlayhead();
   }
 

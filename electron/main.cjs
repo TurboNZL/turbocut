@@ -1,9 +1,10 @@
 // TurboCut desktop shell (Windows, Linux). The app itself is the same web build used everywhere;
 // this only opens a window and serves it over a secure, privileged app:// origin so WebCodecs,
 // WebGPU, workers and fetch behave exactly as they do on a web host.
-const { app, BrowserWindow, protocol, net, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, protocol, net, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { setupUpdater } = require('./updater.cjs');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
@@ -36,45 +37,6 @@ function createWindow() {
   });
   void win.loadURL(process.env.TURBOCUT_DEV_URL || 'app://turbocut/index.html');
   return win;
-}
-
-/**
- * Self-update from GitHub Releases (electron-updater). Works for the Windows installer and the Linux AppImage.
- * The portable .exe and the .deb cannot replace themselves; for those the app falls back to the download page.
- */
-function setupUpdater(getWindow) {
-  let updater = null;
-  const unsupported = () => {
-    if (!app.isPackaged) return 'This is a development run, not an installed app.';
-    if (process.env.PORTABLE_EXECUTABLE_DIR) return 'The portable version cannot update itself. Download the new file instead.';
-    if (process.platform === 'linux' && !process.env.APPIMAGE) return 'Only the AppImage updates itself. For the .deb, download the new package.';
-    return null;
-  };
-  const get = () => {
-    if (updater) return updater;
-    ({ autoUpdater: updater } = require('electron-updater'));
-    updater.autoDownload = false;
-    updater.allowPrerelease = true; // test builds are published as pre-releases
-    updater.autoInstallOnAppQuit = false;
-    updater.on('download-progress', (p) => getWindow()?.webContents.send('updater:progress', Math.round(p.percent)));
-    return updater;
-  };
-  ipcMain.handle('updater:check', async () => {
-    const reason = unsupported();
-    if (reason) return { supported: false, reason };
-    try {
-      const r = await get().checkForUpdates();
-      return { supported: true, version: r?.updateInfo?.version };
-    } catch (e) {
-      return { supported: false, reason: String(e && e.message ? e.message : e) };
-    }
-  });
-  ipcMain.handle('updater:download', async () => {
-    await get().downloadUpdate();
-  });
-  ipcMain.handle('updater:install', async () => {
-    get().quitAndInstall(false, true);
-  });
 }
 
 app.whenReady().then(() => {

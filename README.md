@@ -3,6 +3,12 @@
 A lightweight multi-track video editor for short vertical clips (and longer 16:9 edits), with built-in automatic captions.
 One web codebase; Electron wraps it for Windows and Ubuntu, Capacitor wraps it for Android.
 
+## Features
+
+- Multi-track video and audio timeline, 60 fps by default, with keyframes on every setting (Clip tab).
+- Automatic captions (local Whisper or a GPU server), caption styles and fonts.
+- Exports MP4 or WebM in the app; runs on Windows, Ubuntu, Android and the web.
+
 ## Get it
 
 The app's own **home screen** lists the newest downloads with install help (and the Guides explain the Android APK step by step). Builds are on the repository's **Releases** page. Every push to `main` or a `claude/*` branch publishes a release named after the version (Year.Month.Update, for example `v2026.10.3`), and the five newest are kept. Each file is a plain download, not a zip (except the web bundle):
@@ -13,7 +19,7 @@ The app's own **home screen** lists the newest downloads with install help (and 
 | `turbocut-<version>-windows-setup.exe` | Windows installer; the app then updates itself. Windows may warn about an unknown publisher (not code-signed). |
 | `turbocut-<version>-windows-portable.exe` | Windows, runs without installing. |
 | `turbocut-<version>-linux-x86_64.AppImage` | Linux: `chmod +x` it and run it; it updates itself. |
-| `turbocut-<version>-linux-amd64.deb` | Linux: `sudo apt install ./turbocut-….deb`. |
+| `turbocut-<version>-linux-amd64.deb` | Linux: `sudo apt install ./turbocut-….deb` the first time; after that the app updates itself (it asks for your password). |
 | `turbocut-<version>-web.zip` | Your own web server, no desktop app: see below. |
 
 The app checks for updates itself (Settings, Updates).
@@ -50,3 +56,11 @@ See `docs/ARCHITECTURE.md` for how it is put together and what is verified.
 ## Caption styles and fonts
 
 TurboCut does not ship third-party fonts. Add your font file (**Captions → Add font**, or **Settings → General → Add a font file** to also make it the default font) and it is remembered on that device. **Captions → Edit styles…** opens the style editor: duplicate the built-in style, change variants (colour, size, outline, position, letter holes), the entrance animation, and watch the live preview. **Export style** puts the fonts the style uses inside the file unless you untick *Include fonts*; **Import style** installs them again on another device, so share only fonts you may redistribute. Font files are git-ignored on purpose.
+
+## Engine
+
+Built on [TurboNZL/turboengine](https://github.com/TurboNZL/turboengine) (`.turboengine.json` says which commit and modules; `docs/development/ENGINE.md` says what differs).
+
+## License
+
+MIT, see `LICENSE`.

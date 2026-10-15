@@ -13,7 +13,7 @@ await server.listen();
 const browser = await launch(['--js-flags=--expose-gc']);
 const errors = [];
 try {
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true });
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true, fps: 30 });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && !/404|favicon|fonts|jsdelivr|net::ERR/.test(m.text()) && errors.push(m.text()));
@@ -108,7 +108,7 @@ try {
   console.log('export OK:', v.codec_name, v.nb_read_frames, 'frames,', probe.streams.some((s) => s.codec_type === 'audio') ? 'with audio' : 'NO AUDIO');
 
   // 8. phone-size screenshot
-  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, fps: 30 });
   const pp = await phone.newPage();
   pp.on('pageerror', (e) => errors.push('phone: ' + e.message));
   await pp.goto('http://localhost:5190/');

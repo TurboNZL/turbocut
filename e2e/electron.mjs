@@ -47,7 +47,7 @@ try {
   const a = probe.streams.find((s) => s.codec_type === 'audio');
   console.log('ffprobe:', v.codec_name, `${v.width}x${v.height}`, v.nb_read_frames, 'frames +', a?.codec_name);
   assert.equal(`${v.width}x${v.height}`, '1080x1920');
-  assert.equal(Number(v.nb_read_frames), 180);
+  assert.equal(Number(v.nb_read_frames), 360, "6 s at the 60 fps default");
   assert.ok(a, 'audio stream present');
   if (env.h264) assert.deepEqual([v.codec_name, a.codec_name, info.container], ['h264', 'aac', 'mp4'], 'H.264 + AAC in MP4 when the shell can encode H.264');
   assert.deepEqual(errors, []);

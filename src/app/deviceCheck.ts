@@ -9,7 +9,7 @@ const yes = (b: boolean) => (b ? 'yes' : 'NO');
 
 async function enc(codec: string, hw: HardwareAcceleration, w: number, h: number): Promise<boolean> {
   try {
-    return !!(await VideoEncoder.isConfigSupported({ codec, width: w, height: h, bitrate: 8e6, framerate: 30, hardwareAcceleration: hw })).supported;
+    return !!(await VideoEncoder.isConfigSupported({ codec, width: w, height: h, bitrate: 8e6, framerate: 60, hardwareAcceleration: hw })).supported;
   } catch {
     return false;
   }
@@ -26,7 +26,7 @@ async function benchmark(w: number, h: number): Promise<string> {
       let bytes = 0;
       let error = '';
       const e = new VideoEncoder({ output: (c) => (bytes += c.byteLength), error: (err) => (error = String(err)) });
-      e.configure({ codec, width: w, height: h, bitrate: 8e6, framerate: 30, hardwareAcceleration: hw });
+      e.configure({ codec, width: w, height: h, bitrate: 8e6, framerate: 60, hardwareAcceleration: hw });
       const N = 45;
       const t0 = performance.now();
       for (let i = 0; i < N; i++) {

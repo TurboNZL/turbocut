@@ -3,7 +3,7 @@
  * panel tabs show and in what order. A few ship built in; people save their own, and share them as small JSON files.
  * Pure data and validation here; `main.ts` applies the result to the page.
  */
-export const TAB_NAMES = ['Clip', 'Keys', 'Media', 'Captions', 'Project'] as const;
+export const TAB_NAMES = ['Clip', 'Media', 'Captions', 'Project'] as const;
 export type TabName = (typeof TAB_NAMES)[number];
 
 export type PanelPlacement = 'auto' | 'right' | 'left' | 'sheet';
@@ -46,7 +46,8 @@ export function cleanLayout(raw: unknown, fallback: Layout = BUILTIN_LAYOUTS[0]!
   const density: Density = r.density === 'compact' || r.density === 'normal' || r.density === 'large' || r.density === 'auto' ? r.density : fallback.density;
   const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
   const seen = new Set<string>();
-  const tabs = (Array.isArray(r.tabs) ? r.tabs : []).filter((t): t is TabName => (TAB_NAMES as readonly string[]).includes(t as string) && !seen.has(t as string) && !!seen.add(t as string));
+  // The Keys tab was merged into Clip: a saved layout that still lists it keeps its place as Clip.
+  const tabs = (Array.isArray(r.tabs) ? r.tabs.map((t) => (t === 'Keys' ? 'Clip' : t)) : []).filter((t): t is TabName => (TAB_NAMES as readonly string[]).includes(t as string) && !seen.has(t as string) && !!seen.add(t as string));
   return {
     name: r.name.trim().slice(0, 40),
     panel,

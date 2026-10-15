@@ -216,7 +216,8 @@ textarea.input { width: 100%; resize: vertical; font: inherit; }
 .card.bt-panel { padding: 0.7rem 0.8rem; }
 .card.bt-panel > .bt-panel-title { margin: 0 0 0.5rem; font-size: 1rem; }
 .stack > .card.bt-panel, .tab-body > .card.bt-panel { margin: 0 0 0.6rem; }
-.insp.card, .keys .card { margin-bottom: 0.6rem; }
+.insp.card, .keys.card { margin-bottom: 0.6rem; }
+.keys.card:empty { display: none; }
 
 /* Guides and the rendered Markdown */
 .guides { display: grid; grid-template-columns: 200px minmax(0, 1fr); flex: 1; min-height: 0; width: 100%; }
@@ -246,7 +247,8 @@ textarea.input { width: 100%; resize: vertical; font: inherit; }
 /* Home screen */
 .home { position: fixed; inset: 0; z-index: 40; overflow-y: auto; background: hsl(var(--bg)); color: hsl(var(--fg)); padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
 .home-inner { max-width: 46rem; margin: 0 auto; padding: 1rem 16px 3rem; }
-.home-head h1 { margin: 1rem 0 0.2rem; font-size: clamp(2rem, 7vw, 3rem); }
+.home-logo { display: block; width: 72px; height: 72px; margin-top: 1rem; }
+.home-head h1 { margin: 0.5rem 0 0.2rem; font-size: clamp(2rem, 7vw, 3rem); }
 .home-head .lead { margin: 0 0 0.6rem; color: hsl(var(--muted)); font-size: 1.1rem; }
 .home-starts { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 0.6rem; margin-bottom: 0.7rem; }
 .home-start { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; padding: 0.7rem 0.4rem; height: auto; }

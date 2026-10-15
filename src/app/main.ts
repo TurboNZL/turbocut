@@ -86,7 +86,7 @@ zoom.addEventListener('input', () => store.setZoom(Math.exp(Number(zoom.value)))
 store.on('view', () => (zoom.value = String(Math.log(store.zoom))));
 const status = h('div', { class: 'status', role: 'status' });
 
-const tabs: Record<string, HTMLElement> = { Clip: inspector.el, Keys: keys.el, Media: bin.el, Captions: captions.el, Project: projectPanel() };
+const tabs: Record<string, HTMLElement> = { Clip: h('div', { class: 'clip-tab' }, inspector.el, keys.el), Media: bin.el, Captions: captions.el, Project: projectPanel() };
 const tabBar = h('div', { class: 'tabs', role: 'tablist' });
 const tabBody = h('div', { class: 'tab-body' });
 let activeTab = 'Clip';
@@ -117,12 +117,11 @@ store.on('settings', drawLayout);
 narrowQuery.addEventListener('change', drawLayout);
 touchQuery.addEventListener('change', drawLayout);
 // Switch panels only when a DIFFERENT clip or caption gets selected. Undo, redo and picking a track also announce a
-// selection change; they must not pull the person out of the panel they are working in. The Keys panel stays put so
-// keyframes can be edited clip after clip.
+// selection change; they must not pull the person out of the panel they are working in.
 let lastSelected: string | null = null;
 let lastCue: string | null = null;
 store.on('selection', () => {
-  if (store.selected && store.selected !== lastSelected && activeTab !== 'Keys') showTab('Clip');
+  if (store.selected && store.selected !== lastSelected) showTab('Clip');
   if (store.selectedCue && store.selectedCue !== lastCue) showTab('Captions');
   lastSelected = store.selected;
   lastCue = store.selectedCue;

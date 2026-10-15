@@ -43,7 +43,7 @@ try {
   let page = await newPage();
   await page.keyboard.press('t'); // Add a text layer
   let st = await page.evaluate(() => { const s = window.turbocutApp.store; const c = s.project.tracks[0].clips[0]; return { n: s.project.tracks[0].clips.length, text: c?.text?.content, dur: c?.duration, sel: s.selected === c?.id }; });
-  assert.deepEqual(st, { n: 1, text: 'Your text', dur: 90, sel: true }, 'T adds a selected 3 s text layer');
+  assert.deepEqual(st, { n: 1, text: 'Your text', dur: 180, sel: true }, 'T adds a selected 3 s text layer');
   const base = await look(page, 30);
   console.log('text on black:', JSON.stringify(base));
   assert.ok(base.bright > 300, 'the words are drawn');
@@ -60,7 +60,7 @@ try {
   await page.screenshot({ path: `${out}text-layer.png` });
 
   // ---- keyframe editor: X moves the text across the frame
-  await page.getByRole('tab', { name: 'Keys', exact: true }).click();
+  await page.getByRole('tab', { name: 'Clip', exact: true }).click(); // keyframes now sit under the Clip settings
   assert.equal(await page.locator('.ks-row').count(), 7, 'a video layer shows its 7 animatable settings');
   const xRow = page.locator('.ks-row[data-param="x"]');
   await page.evaluate(() => window.turbocutApp.store.seek(0));
@@ -84,6 +84,7 @@ try {
   // dragging a diamond changes its time; Ctrl+Z puts it back
   const keyTimes = () => page.evaluate(() => window.turbocutApp.store.project.tracks[0].clips[0].keys.x.map((k) => k.t));
   assert.deepEqual(await keyTimes(), [0, 60]);
+  await xRow.locator('.ks-key').nth(1).scrollIntoViewIfNeeded(); // the dopesheet sits below the clip settings now
   const d2 = await xRow.locator('.ks-key').nth(1).boundingBox();
   await page.mouse.move(d2.x + d2.width / 2, d2.y + d2.height / 2);
   await page.mouse.down();
@@ -130,7 +131,7 @@ try {
   });
   const clipIds = await page.evaluate(() => window.turbocutApp.store.project.tracks.map((t) => t.clips[0].id));
   await page.evaluate((id) => window.turbocutApp.store.select(id), clipIds[0]);
-  await page.getByRole('tab', { name: 'Keys', exact: true }).click();
+  await page.getByRole('tab', { name: 'Clip', exact: true }).click(); // keyframes now sit under the Clip settings
   const blurRow = page.locator('.ks-row[data-param="blur"]');
   await page.evaluate(() => window.turbocutApp.store.seek(0));
   await blurRow.getByRole('button').first().click();
