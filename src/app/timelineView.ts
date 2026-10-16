@@ -1,3 +1,4 @@
+import { icon } from './icons.ts';
 import { clipEnd, moveLinked, trimEnd, trimStart } from '../core/timeline.ts';
 import { drawWave } from '../media/waveform.ts';
 import type { Clip, Track } from '../core/types.ts';
@@ -139,8 +140,8 @@ export class TimelineView {
 
   private trackRow(track: Track): HTMLElement {
     const { selected } = this.store;
-    const badges = `${track.hidden ? ' ⊘' : ''}${track.muted ? ' 🔇' : ''}${track.locked ? ' 🔒' : ''}`;
-    const head = h('button', { class: 'tl-head', 'aria-label': `Track ${track.name} options`, title: 'Track options' }, track.name, badges ? h('small', {}, badges) : null);
+    const badges = [track.hidden ? icon('hidden', 12) : null, track.muted ? icon('mute', 12) : null, track.locked ? icon('lock', 12) : null].filter((b): b is HTMLSpanElement => !!b);
+    const head = h('button', { class: 'tl-head', 'aria-label': `Track ${track.name} options`, title: 'Track options' }, track.name, badges.length ? h('small', { class: 'tl-badges' }, ...badges) : null);
     head.addEventListener('click', (e) => {
       e.stopPropagation();
       this.store.setActiveTrack(track.id);

@@ -3,6 +3,7 @@ import { removeKeyframe, setKeyframe } from '../core/keyframes.ts';
 import { findClip } from '../core/timeline.ts';
 import type { Clip, Easing, Keyframe } from '../core/types.ts';
 import { h } from './dom.ts';
+import { icon } from './icons.ts';
 import type { Store } from './store.ts';
 
 const LABEL_W = 78;
@@ -16,6 +17,8 @@ const EASINGS: [Easing, string][] = [['inOut', 'Smooth'], ['linear', 'Linear'], 
 export class KeysPanel {
   readonly el = h('section', { class: 'keys card bt-panel' });
   private sel: { param: string; t: number } | null = null;
+  /** The fold is open (kept between clips; a clip that already has keyframes opens it anyway). */
+  private open = false;
   private dragging = false;
   private grid: HTMLElement | null = null;
   private ppf = 1;
@@ -24,7 +27,15 @@ export class KeysPanel {
     store.on('selection', () => ((this.sel = null), this.render()));
     store.on('project', () => !this.dragging && this.render());
     store.on('playhead', () => this.movePlayhead());
-    new ResizeObserver(() => !this.dragging && this.render()).observe(this.el);
+    // Only a change of WIDTH matters (the diamonds are laid out across it), and rebuilding changes the height: redrawing from inside the
+    // observer callback would loop, so wait for the next frame.
+    let lastW = 0;
+    new ResizeObserver(() => {
+      const w = this.el.clientWidth;
+      if (w === lastW || this.dragging) return;
+      lastW = w;
+      requestAnimationFrame(() => this.render());
+    }).observe(this.el);
     this.render();
   }
 
@@ -91,7 +102,11 @@ export class KeysPanel {
     }
     grid.append(h('div', { class: 'ks-ph' }));
     this.grid = grid;
-    this.el.append(h('h2', { class: 'bt-panel-title' }, 'Keyframes'), nav, grid, this.details());
+    // Folded away until wanted: the sliders above already set a value and add a key; this is for moving keys in time.
+    const fold = h('details', { class: 'ks-fold' }, h('summary', {}, 'Keyframes', icon('chevron', 14)), h('div', { class: 'ks-body' }, nav, grid, this.details()));
+    fold.open = this.open || Object.values(clip.keys).some((k) => k?.length);
+    fold.addEventListener('toggle', () => (this.open = fold.open));
+    this.el.append(fold);
     this.movePlayhead();
   }
 

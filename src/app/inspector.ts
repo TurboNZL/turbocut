@@ -3,6 +3,7 @@ import { removeKeyframe, setKeyframe } from '../core/keyframes.ts';
 import { findClip } from '../core/timeline.ts';
 import type { Clip } from '../core/types.ts';
 import { h, rangeFill } from './dom.ts';
+import { icon, setIcon } from './icons.ts';
 import { styleControls } from './styleControls.ts';
 import type { Store } from './store.ts';
 
@@ -31,9 +32,15 @@ export class Inspector {
   private build(): void {
     const clip = this.clip();
     if ((clip?.id ?? null) === this.builtFor) return this.refresh();
+    const first = this.builtFor === undefined;
     this.builtFor = clip?.id ?? null;
     this.refreshers = [];
     this.el.replaceChildren();
+    if (!first) {
+      this.el.classList.remove('tk-swap');
+      void this.el.offsetWidth;
+      this.el.classList.add('tk-swap');
+    }
     if (!clip) {
       this.el.append(h('p', { class: 'hint' }, 'Select a clip on the timeline to edit it.'));
       return;
@@ -68,7 +75,7 @@ export class Inspector {
     const store = this.store;
     const num = h('input', { type: 'number', class: 'input num', min: param.min * param.scale, max: param.max * param.scale, step: param.step * param.scale, 'aria-label': param.label });
     const range = h('input', { type: 'range', class: 'bt-range', min: param.min * param.scale, max: param.max * param.scale, step: param.step * param.scale, 'aria-label': `${param.label} slider` });
-    const key = h('button', { class: 'btn btn-ghost kf', title: 'Keyframe at the playhead', 'aria-label': `Keyframe ${param.label}` }, '◇');
+    const key = h('button', { class: 'btn btn-ghost kf', title: 'Keyframe at the playhead', 'aria-label': `Keyframe ${param.label}` }, icon('key', 16));
 
     const apply = (shown: number) => {
       const clip = this.clip();
@@ -108,7 +115,7 @@ export class Inspector {
       range.value = String(v);
       rangeFill(range);
       const keys = param.keys(clip);
-      key.textContent = keys?.some((k) => k.t === this.relNow()) ? '◆' : keys?.length ? '◈' : '◇';
+      setIcon(key, keys?.some((k) => k.t === this.relNow()) ? 'keyOn' : keys?.length ? 'keyPart' : 'key', 16);
       key.classList.toggle('on', !!keys?.length);
     });
     return h('label', { class: 'prop' }, h('span', { class: 'prop-l' }, param.label), range, num, key);

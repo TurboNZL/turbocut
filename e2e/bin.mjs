@@ -48,7 +48,7 @@ try {
   assert.equal(await page.locator('.bin-item', { hasText: 'second.webm' }).locator('.bin-meta').textContent().then((x) => /used 1/.test(x)), true, 'the bin shows it is used');
 
   // ---- 4. a second video track, then drag the picture-only clip onto it with the mouse
-  await page.getByRole('button', { name: '+ Track' }).click();
+  await page.getByRole('button', { name: 'Add a track' }).click();
   await page.getByRole('menuitem', { name: 'Add a video track' }).click();
   t = await tracks();
   assert.deepEqual(t.filter((x) => x.kind === 'video').map((x) => x.name), ['V1', 'V2']);

@@ -3,10 +3,11 @@
 TurboCut is a light video editor for shorts (9:16, under a minute) that also copes with 16:9 edits up to about twenty minutes. It runs on Android, Windows, Linux and in a browser, and it makes captions for you.
 
 ## Make your first short
-1. **Import.** Home → *Import video*, or the **Media** tab → import. The first video goes straight onto the timeline with its sound; later ones wait in the bin until you add them.
+1. **Import.** Home → *Import video*, **File → Import media**, or the **Media** tab → import. The first video goes straight onto the timeline with its sound; later ones wait in the bin until you add them.
 2. **Cut.** Move the playhead and use **Split**. **Trim start** and **Trim end** cut to the playhead. **Delete** removes the selected clip. Picture and sound are linked, so they cut and move together.
 3. **Captions.** Captions tab → *Generate captions*. Pick your style first (see [Caption styles and fonts](STYLES_AND_FONTS.md)). Fix any wrong word in the list under the button.
-4. **Export.** The **Export** button at the top (or **Ctrl+E**). The file is an MP4 where the device can encode H.264, otherwise a WebM (see [Export and codecs](EXPORT.md)).
+4. **Save.** **File → Save project** (Ctrl+S) keeps the edit as a `.turbocut` file; see [Saving and opening projects](PROJECTS.md).
+5. **Export.** The **Export** button at the top (or **Ctrl+E**). The file is an MP4 where the device can encode H.264, otherwise a WebM (see [Export and codecs](EXPORT.md)).
 
 ## On a phone
 - The playhead stays in the middle and the timeline scrolls under it. Drag the timeline to scrub.
@@ -22,6 +23,7 @@ TurboCut is a light video editor for shorts (9:16, under a minute) that also cop
 | You want | Go to |
 |---|---|
 | Keyframes (zoom, position, opacity, blur, pixelate, volume) | **Clip** tab, Keyframes section; **K** adds keys, **,** and **.** jump between them |
+| Save, open or start a project | **File** menu at the top: [Projects](PROJECTS.md) |
 | A text layer | the **Text** button in the edit bar |
 | Another panel layout | Settings → [Layout](LAYOUTS_AND_KEYS.md) |
 | Fonts | Settings → Fonts, or Captions → Fonts… |

@@ -1,6 +1,6 @@
 import type { CaptionPreset } from '../captions/presets.ts';
 import { createProject } from '../core/timeline.ts';
-import type { Frame, Project } from '../core/types.ts';
+import type { Asset, Frame, Project } from '../core/types.ts';
 import { MediaLibrary } from '../media/library.ts';
 import { builtinPreset } from './builtin.ts';
 import { loadSettings, saveSettings, type Settings } from './settings.ts';
@@ -36,6 +36,8 @@ export class Store {
   /** Timeline zoom in CSS pixels per frame. */
   zoom = 3;
   status = '';
+  /** Edits since the project was last saved to a file or loaded. */
+  dirty = false;
   settings: Settings = loadSettings(typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
   presets: CaptionPreset[] = [builtinPreset(this.settings.defaultFont, this.settings.counters), ...readPresets()];
   preset: CaptionPreset = this.presets.find((p) => p.name === localStorage.getItem(ACTIVE_KEY)) ?? this.presets[0]!;
@@ -62,11 +64,13 @@ export class Store {
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
     fn(this.project);
+    this.dirty = true;
     this.emit('project');
   }
 
   /** Like `edit`, but one undo step for a whole drag: call `begin()` once, then mutate freely. */
   begin(): void {
+    this.dirty = true;
     this.undoStack.push(JSON.stringify(this.project));
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
@@ -77,6 +81,7 @@ export class Store {
     if (!prev) return;
     this.redoStack.push(JSON.stringify(this.project));
     this.project = JSON.parse(prev);
+    this.dirty = true;
     this.afterHistory();
   }
 
@@ -85,7 +90,27 @@ export class Store {
     if (!next) return;
     this.undoStack.push(JSON.stringify(this.project));
     this.project = JSON.parse(next);
+    this.dirty = true;
     this.afterHistory();
+  }
+
+  /** Replace the whole project (opened from a file or started new). History, selection and playhead start over; the media library is emptied. */
+  loadProject(p: Project): void {
+    this.project = p;
+    this.lib.clear();
+    this.undoStack = [];
+    this.redoStack = [];
+    this.selected = null;
+    this.selectedCue = null;
+    this.activeTrack = null;
+    this.playhead = 0;
+    this.dirty = false;
+    this.emit('project', 'selection', 'playhead');
+  }
+
+  /** Media entries whose file is not open (after loading a project from a file). */
+  missingAssets(): Asset[] {
+    return Object.values(this.project.assets).filter((a) => !this.lib.has(a.id));
   }
 
   private afterHistory(): void {

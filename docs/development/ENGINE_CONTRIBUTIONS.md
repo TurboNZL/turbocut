@@ -59,3 +59,8 @@ Apps with downloads need somewhere to explain them, and GitHub Pages is not free
 
 ## 9. Done: the .deb installer and the cut emblem
 The vanilla CommonJS .deb updater (`electron/updater.cjs`, `electron/debInstall.cjs`) and the `cut` emblem are already in the engine (`modules/updaters/variants/vanilla-electron`, `modules/logos`, engine commit `4b4264b`). Also learned here: a 60 fps default frame rate makes every "seconds to frames" test constant change (a 3 s text layer is 180 frames, a 6 s export is 360); and merging a dopesheet under the inspector means e2e must scroll it into view before dragging.
+
+## 10. Vanilla port of `motion`, symbol-only favicons, project files
+- `src/app/motion.css` is the engine's `motion.css` classes for a non-React app, plus `tk-fade`; replaying an animation needs `classList.remove; void el.offsetWidth; classList.add`. Gotcha: a `ResizeObserver` callback that rebuilds DOM and changes the observer's own height logs "ResizeObserver loop completed with undelivered notifications"; compare the width and rebuild in `requestAnimationFrame`.
+- A project-file format (`format` + `version`, validate every part, media referenced by name and size, relink dialog) could become a shared module for apps that edit documents on top of media.
+- One global rule gives every pressable element `cursor: pointer` (and `not-allowed` when disabled); the theme's `.btn` did not. It could live in turbothemes `base.css`.

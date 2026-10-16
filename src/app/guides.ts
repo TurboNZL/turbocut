@@ -11,7 +11,7 @@ export interface Guide {
 }
 
 /** Title table: order and short names. A guide not listed here still shows up, after these, under its own first heading. */
-const ORDER = ['GETTING_STARTED.md', 'ANDROID_APK.md', 'CAPTIONS.md', 'STYLES_AND_FONTS.md', 'LAYOUTS_AND_KEYS.md', 'EXPORT.md', 'UPDATES.md', 'WEB_SERVER.md'];
+const ORDER = ['GETTING_STARTED.md', 'PROJECTS.md', 'ANDROID_APK.md', 'CAPTIONS.md', 'STYLES_AND_FONTS.md', 'LAYOUTS_AND_KEYS.md', 'EXPORT.md', 'UPDATES.md', 'WEB_SERVER.md'];
 
 export const guides: Guide[] = Object.entries(files)
   .map(([path, body]) => {
