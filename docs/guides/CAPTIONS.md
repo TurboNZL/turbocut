@@ -8,7 +8,8 @@ Captions tab → *Generate captions* turns the speech in your timeline into time
 
 ## Settings that matter
 - **Language** is English by default. Automatic detection on a multilingual model sometimes chose the wrong language and invented text; set the language you speak.
-- **Model**: bigger models are more accurate and slower to download and run.
+- **Model**: bigger models are more accurate and slower to download and run. The first time you press *Generate captions* on this device TurboCut asks which one to download: **Accurate** (about 250 MB) is preselected on a computer, **Balanced** (about 80 MB) on a phone. Change it later in Settings → Captions.
+- **Caption length**: *Automatic* gives short lines of a few words for tall video and whole sentences for wide video. Pick *Short lines* or *Whole sentences* to force one.
 - **Processor**: *Automatic* tries WebGPU first. If captions look wrong, try the other one.
 
 ## What TurboCut cleans up for you
@@ -16,8 +17,8 @@ Whisper sometimes writes words where nobody speaks, repeats a phrase in a loop, 
 
 ## When captions look wrong
 1. Check the language.
-2. Try a bigger model, or the other processor.
+2. Try the Accurate model, or the other processor. The small models time words loosely and mishear more.
 3. Press *Copy captions report* and send it: it lists the model, the processor, the audio level and the first words exactly as the model returned them.
 
 ## Editing
-Every caption is a row: change the text, pick a style variant (for example another colour for emphasis), jump to it, or delete it. *Import .ass* and *Export .ass* exchange captions with other editors; the entrance animation is baked into the file so other players show the same bounce.
+Every caption is a row: change the text, pick a style variant (for example another colour for emphasis), jump to it, or delete it. To cut a caption in two, select it (in the list or on the CC row), put the playhead where you want the cut and press **S**. *Import .ass* and *Export .ass* exchange captions with other editors; the entrance animation is baked into the file so other players show the same bounce.

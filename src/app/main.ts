@@ -9,9 +9,10 @@ import { VideoSampleSink } from 'mediabunny';
 import { Actions } from './actions.ts';
 import { BinPanel } from './binPanel.ts';
 import { CaptionsPanel } from './captionsPanel.ts';
-import { fmtTime, h, panel, popupMenu } from './dom.ts';
+import { fmtTime, h, panel } from './dom.ts';
 import { importFont, loadStoredFonts } from './fonts.ts';
 import { Hotkeys, type HotkeyAction } from './hotkeys.ts';
+import { icon, setIcon } from './icons.ts';
 import { openHome } from './home.ts';
 import { Inspector } from './inspector.ts';
 import { applyLayout, findLayout, type TabName } from './layout.ts';
@@ -20,19 +21,24 @@ import { pickFiles, platform } from './platform.ts';
 import { Player } from './player.ts';
 import { openSettings, capturingKey, type SettingsTab } from './settingsDialog.ts';
 import { Store, ZOOM_MAX, ZOOM_MIN } from './store.ts';
+import { detectSystemFonts, fontPermission } from './systemFonts.ts';
 import { TimelineView } from './timelineView.ts';
 import { checkForUpdate } from './updater.ts';
 
 // Phones and some webviews cannot do the Liquid Glass lens; everything else about the look still applies.
 const themes = start({ persist: true, picker: true, lens: platform === 'web' || platform === 'electron', appearance: { theme: 'auto', ui: 'auto' } });
 void loadStoredFonts();
+// Installed fonts: the desktop app lists them straight away (no prompt in Electron); a browser only if the person already allowed it.
+void (async () => {
+  if (platform === 'electron' || (await fontPermission()) === 'granted') await detectSystemFonts();
+})();
 
 const store = new Store();
 const player = new Player(store);
 const actions = new Actions(store, player);
 const timeline = new TimelineView(store, {
   onUserTouch: () => store.playing && player.pause(),
-  trackActions: { toggle: (id, what) => actions.toggleTrack(id, what), remove: (id) => actions.removeTrack(id) },
+  trackActions: { toggle: (id, what) => actions.toggleTrack(id, what), remove: (id) => actions.removeTrack(id), add: (kind) => actions.addTrack(kind) },
 });
 const inspector = new Inspector(store);
 const captions = new CaptionsPanel(store);
@@ -56,6 +62,7 @@ hotkeys.register([
   act('Playback', 'toStart', 'Go to the start', ['Home'], () => store.seek(0)),
   act('Playback', 'toEnd', 'Go to the end', ['End'], () => store.seek(projectDuration(store.project))),
   act('Editing', 'split', 'Split at the playhead', ['S'], () => actions.split()),
+  act('Editing', 'deselect', 'Select nothing', ['Escape'], () => !document.querySelector('.dlg-backdrop, .popup-menu') && store.clearSelection()),
   act('Editing', 'delete', 'Delete the selection', ['Delete', 'Backspace'], () => actions.remove(false)),
   act('Editing', 'rippleDelete', 'Delete and close the gap', ['Shift+Delete', 'Shift+Backspace'], () => actions.remove(true)),
   act('Editing', 'trimStart', 'Trim the start to the playhead', ['['], () => actions.trimToPlayhead('start')),
@@ -78,7 +85,7 @@ hotkeys.register([
 
 // ---------------------------------------------------------------- layout
 const time = h('span', { class: 'time mono' });
-const playBtn = h('button', { class: 'btn btn-accent', 'aria-label': 'Play or pause', onclick: () => player.toggle() }, '▶');
+const playBtn = h('button', { class: 'btn btn-accent', 'aria-label': 'Play or pause', onclick: () => player.toggle() }, icon('play'));
 const lnMin = Math.log(ZOOM_MIN);
 const lnMax = Math.log(ZOOM_MAX);
 const zoom = h('input', { type: 'range', class: 'bt-range zoom', min: lnMin, max: lnMax, step: 0.01, value: Math.log(store.zoom), 'aria-label': 'Timeline zoom' });
@@ -90,14 +97,14 @@ const tabs: Record<string, HTMLElement> = { Clip: h('div', { class: 'clip-tab' }
 const tabBar = h('div', { class: 'tabs', role: 'tablist' });
 const tabBody = h('div', { class: 'tab-body' });
 let activeTab = 'Clip';
-const side = h('aside', { class: 'bt-side side collapsed' }, tabBar, tabBody);
+const side = h('aside', { class: 'bt-side bt-shell side collapsed' }, tabBar, tabBody);
 function showTab(name: string, userTap = false): void {
   // On a narrow screen the panel is a sheet: tap a tab to open it, tap the open tab again to close it.
   if (userTap && name === activeTab) side.classList.toggle('collapsed');
   else if (userTap) side.classList.remove('collapsed');
   activeTab = name;
   for (const b of tabBar.children) (b as HTMLElement).setAttribute('aria-selected', String(b.textContent === name));
-  tabBody.replaceChildren(tabs[name]!);
+  if (tabBody.firstChild !== tabs[name]) tabBody.replaceChildren(tabs[name]!); // putting the same panel back would restart whatever animation its look gives a new element
 }
 showTab('Clip');
 /** Draw the chosen layout: panel side and size, timeline height, control size and which panel tabs show. */
@@ -141,26 +148,25 @@ function projectPanel(): HTMLElement {
 
 const header = h('header', { class: 'bt-top top' },
   h('strong', { class: 'logo' }, 'TurboCut'),
-  h('button', { class: 'btn', 'aria-label': 'Home', title: 'Home', onclick: () => showHome() }, '⌂'),
+  h('button', { class: 'btn', 'aria-label': 'Home', title: 'Home', onclick: () => showHome() }, icon('home')),
   h('button', { class: 'btn', onclick: () => void importFiles() }, 'Import'),
-  h('button', { class: 'btn', 'aria-label': 'Undo', title: 'Undo (Ctrl+Z)', onclick: () => store.undo() }, '↶'),
-  h('button', { class: 'btn', 'aria-label': 'Redo', title: 'Redo (Ctrl+Shift+Z)', onclick: () => store.redo() }, '↷'),
+  h('button', { class: 'btn', 'aria-label': 'Undo', title: 'Undo (Ctrl+Z)', onclick: () => store.undo() }, icon('undo')),
+  h('button', { class: 'btn', 'aria-label': 'Redo', title: 'Redo (Ctrl+Shift+Z)', onclick: () => store.redo() }, icon('redo')),
   h('span', { class: 'spacer' }),
-  h('button', { class: 'btn', 'aria-label': 'Settings', title: 'Settings (Ctrl+,)', onclick: () => settings() }, '⚙'),
+  h('button', { class: 'btn', 'aria-label': 'Settings', title: 'Settings (Ctrl+,)', onclick: () => settings() }, icon('settings')),
   h('button', { class: 'btn btn-accent', onclick: () => void actions.runExport() }, 'Export'),
 );
 
 const transport = h('div', { class: 'transport' },
-  h('button', { class: 'btn', 'aria-label': 'Start', onclick: () => store.seek(0) }, '⏮'),
+  h('button', { class: 'btn', 'aria-label': 'Start', onclick: () => store.seek(0) }, icon('skipStart')),
   playBtn,
-  h('button', { class: 'btn', 'aria-label': 'End', onclick: () => store.seek(projectDuration(store.project)) }, '⏭'),
+  h('button', { class: 'btn', 'aria-label': 'End', onclick: () => store.seek(projectDuration(store.project)) }, icon('skipEnd')),
   time,
 );
 
 // Edit actions live in one bar right under the timeline, in thumb reach on a phone.
 const snapBtn = h('button', { class: 'btn', 'aria-label': 'Snapping', title: 'Snapping (N)', onclick: () => actions.toggleSnapping() });
-// A magnet drawn in the text colour (an emoji ignores the theme).
-snapBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15V4h4v11a2 2 0 0 0 4 0V4h4v11a6 6 0 0 1-12 0z"/><path d="M6 8h4M14 8h4"/></svg>';
+setIcon(snapBtn, 'magnet'); // drawn in the text colour (an emoji ignores the theme)
 const syncSnap = () => {
   snapBtn.setAttribute('aria-pressed', String(store.settings.snapping));
   snapBtn.classList.toggle('on', store.settings.snapping);
@@ -174,11 +180,6 @@ const editBar = h('div', { class: 'edit-bar' },
   h('button', { class: 'btn', onclick: () => actions.remove(false), title: 'Delete the selection' }, 'Delete'),
   h('button', { class: 'btn', onclick: () => actions.addText(), title: 'Add a text layer (T)' }, 'Text'),
   snapBtn,
-  h('button', {
-    class: 'btn',
-    title: 'Add a track',
-    onclick: (e: Event) => popupMenu(e.currentTarget as HTMLElement, [{ label: 'Add a video track', run: () => actions.addTrack('video') }, { label: 'Add an audio track', run: () => actions.addTrack('audio') }]),
-  }, '+ Track'),
   h('span', { class: 'spacer' }),
   h('button', { class: 'btn', 'aria-label': 'Zoom out timeline', onclick: () => store.setZoom(store.zoom / 1.5) }, '−'),
   zoom,
@@ -206,7 +207,7 @@ const tick = () => {
 };
 store.on('playhead', tick);
 store.on('project', tick);
-store.on('play', () => (playBtn.textContent = store.playing ? '⏸' : '▶'));
+store.on('play', () => setIcon(playBtn, store.playing ? 'pause' : 'play'));
 store.on('status', () => (status.textContent = store.status));
 tick();
 store.say('Import a clip to start. Press ? for shortcuts.');
@@ -280,4 +281,4 @@ async function probeAudio(seconds: number) {
   for (let t = 0; t < seconds; t += 6) await mixWindow(store.project, store.lib, t, t + 6);
 }
 
-(window as any).turbocutApp = { store, player, themes, actions, hotkeys, settings, importFont, importMedia: (f: File[]) => actions.importMedia(f), runExport: () => actions.runExport(), split: () => actions.split(), exportForTest, probeVideo, probeAudio, probeDecode };
+(window as any).turbocutApp = { store, player, themes, actions, detectSystemFonts, hotkeys, settings, importFont, importMedia: (f: File[]) => actions.importMedia(f), runExport: () => actions.runExport(), split: () => actions.split(), exportForTest, probeVideo, probeAudio, probeDecode };

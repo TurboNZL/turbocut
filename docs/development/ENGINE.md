@@ -10,13 +10,16 @@ TurboCut is pinned to `TurboNZL/turboengine` (`.turboengine.json`). The engine i
 | `appearance` | followed as conventions | `src/app/main.ts` (engine start), `src/app/styles.css`, Settings → General (picker) | No React, no Tailwind. `turbothemes/base.css` first, tokens only, hook classes. Layouts are the app's own (`src/app/layout.ts`). Dependency is `turboengine#path:/themes`. |
 | `guides-and-docs` | yes | `docs/guides/*.md` bundled by `src/app/guides.ts`, rendered by `src/app/markdown.ts`; `PROJECT_BRIEF.md`; `CLAUDE.md` | Guides show in Settings → Guides, on the home screen, and in a dialog. A safe renderer (text only, no HTML). |
 | `settings-shell` | conventions | `src/app/settingsDialog.ts` | Tabs are the engine's token-only tab recipe (`.tab`), panels are `.card.bt-panel`. |
+| `system-fonts` | yes (new, from TurboCut) | `src/app/systemFonts.ts`, `src/app/fonts.ts` (`fontChoices`), `src/app/fontManager.ts` | The module's source. Electron lists fonts at start; a browser asks once. |
 | `editions`, `window-frame`, `android-shell` | no | | One edition; the native window; a plain Capacitor shell. |
 
 ## UI structure (from the engine's INTEGRATION.md and audit)
 - Dialog title is an `h2` in a flex `.bt-titlebar` (`dom.ts` `dialog`).
 - Settings panels are `section.card.bt-panel` with an `h2.bt-panel-title` first (`dom.ts` `panel`).
 - In-page tabs are `.tabs`/`.tab` with `role="tablist"`/`"tab"` and `aria-selected`; never `.bt-tab`/`.bt-tabbar` (those are the phone bottom bar).
-- Icons are SVG in `currentColor` (the snapping magnet), not emoji.
+- Icons are SVG in `currentColor` (`src/app/icons.ts`: transport, header, track badges, the add-track corner), never emoji or symbol characters.
+- The side panel is a `bt-shell` bar, so the floating looks (Liquid Glass, Spotify, One UI) draw it floating and rounded; `styles.css` adds the gap those looks leave out on the right and at the bottom.
+- The video preview is a rectangle in every look (a frame is not rounded).
 - e2e selectors use `getByRole('tab')` for tabs.
 
 ## Not yet done

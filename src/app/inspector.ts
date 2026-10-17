@@ -2,6 +2,7 @@ import { keyTimes, neighbourKey, paramsFor, valueAt, type Param } from '../core/
 import { removeKeyframe, setKeyframe } from '../core/keyframes.ts';
 import { findClip } from '../core/timeline.ts';
 import type { Clip } from '../core/types.ts';
+import { DEFAULT_ANIMATION } from '../captions/presets.ts';
 import { h, rangeFill } from './dom.ts';
 import { styleControls } from './styleControls.ts';
 import type { Store } from './store.ts';
@@ -124,9 +125,19 @@ export class Inspector {
       store.emit('project');
     });
     text.addEventListener('change', () => (this.dirty = false));
-    const controls = styleControls(clip.text!.style, { onBegin: () => this.edit(), onChange: () => store.emit('project'), fonts: undefined });
+    const controls = styleControls(clip.text!.style, { onBegin: () => this.edit(), onChange: () => store.emit('project') });
     controls.addEventListener('change', () => (this.dirty = false));
-    return h('div', { class: 'stack' }, text, controls);
+    // Pop in like captions do (the default), or appear and stay still.
+    const entrance = h('select', { class: 'input', 'aria-label': 'Entrance animation' },
+      h('option', { value: 'bounce' }, 'Pop in (bounce)'),
+      h('option', { value: 'none' }, 'None (appears and stays still)'));
+    entrance.value = clip.text!.animation.type;
+    entrance.addEventListener('change', () => {
+      store.begin();
+      clip.text!.animation = entrance.value === 'none' ? { type: 'none' } : { ...DEFAULT_ANIMATION };
+      store.emit('project');
+    });
+    return h('div', { class: 'stack' }, text, h('label', { class: 'prop style-row' }, h('span', { class: 'prop-l' }, 'Entrance'), entrance), controls);
   }
 
   private speed(): HTMLElement {

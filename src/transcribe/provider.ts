@@ -87,9 +87,23 @@ export interface GroupOptions {
   maxWords: number;
   /** ...or when the speaker pauses this long (seconds). */
   pause: number;
+  /** ...or after a word that ends a sentence (. ! ? …). */
+  sentences?: boolean;
 }
 
-export const SHORTS_GROUPING: Omit<GroupOptions, 'fps'> = { maxChars: 18, maxWords: 4, pause: 0.35 };
+/** Tall video: a few big words at a time. */
+export const SHORTS_GROUPING: Omit<GroupOptions, 'fps'> = { maxChars: 18, maxWords: 4, pause: 0.35, sentences: true };
+/** Wide video: a caption is a sentence (or most of one), at most about two lines. */
+export const SENTENCE_GROUPING: Omit<GroupOptions, 'fps'> = { maxChars: 64, maxWords: 14, pause: 0.7, sentences: true };
+
+/** The grouping a setting stands for. `auto` picks short lines for tall and square video and sentences for wide video. */
+export function groupingFor(setting: 'auto' | 'short' | 'sentence', width: number, height: number): Omit<GroupOptions, 'fps'> {
+  if (setting === 'short') return SHORTS_GROUPING;
+  if (setting === 'sentence') return SENTENCE_GROUPING;
+  return width > height ? SENTENCE_GROUPING : SHORTS_GROUPING;
+}
+
+const ENDS_SENTENCE = /[.!?…]["')\]]*$/;
 
 /** Group word timings into short caption cues, the way vertical-video captions are normally shown. */
 export function groupWords(words: TimedWord[], o: GroupOptions, style = 'Default'): CaptionCue[] {
@@ -115,7 +129,7 @@ export function groupWords(words: TimedWord[], o: GroupOptions, style = 'Default
   for (const w of words) {
     const prev = cur[cur.length - 1];
     const len = cur.reduce((n, x) => n + x.text.trim().length + 1, 0) + w.text.trim().length;
-    if (prev && (w.start - prev.end >= o.pause || cur.length >= o.maxWords || len > o.maxChars)) flush();
+    if (prev && (w.start - prev.end >= o.pause || cur.length >= o.maxWords || len > o.maxChars || (o.sentences && ENDS_SENTENCE.test(prev.text.trim())))) flush();
     cur.push(w);
   }
   flush();

@@ -52,8 +52,8 @@ importers:
         specifier: ^1.64.0
         version: 1.64.0
       turbothemes:
-        specifier: git+https://github.com/TurboNZL/turboengine.git#path:/themes
-        version: https://codeload.github.com/TurboNZL/turboengine/tar.gz/c1dc91f1b86bb3fdaf449feef991a4acf7ea6e90#path:/themes
+        specifier: github:TurboNZL/turboengine#path:/themes
+        version: https://codeload.github.com/TurboNZL/turboengine/tar.gz/c7950820b2738bb3b90a9e8f1cb37f9d80c0782d#path:/themes
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -2092,8 +2092,8 @@ packages:
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
-  turbothemes@https://codeload.github.com/TurboNZL/turboengine/tar.gz/c1dc91f1b86bb3fdaf449feef991a4acf7ea6e90#path:/themes:
-    resolution: {path: /themes, tarball: https://codeload.github.com/TurboNZL/turboengine/tar.gz/c1dc91f1b86bb3fdaf449feef991a4acf7ea6e90}
+  turbothemes@https://codeload.github.com/TurboNZL/turboengine/tar.gz/c7950820b2738bb3b90a9e8f1cb37f9d80c0782d#path:/themes:
+    resolution: {path: /themes, tarball: https://codeload.github.com/TurboNZL/turboengine/tar.gz/c7950820b2738bb3b90a9e8f1cb37f9d80c0782d}
     version: 1.0.0
     engines: {node: '>=22.6'}
     hasBin: true
@@ -4423,7 +4423,7 @@ snapshots:
 
   tslib@2.8.1: {}
 
-  turbothemes@https://codeload.github.com/TurboNZL/turboengine/tar.gz/c1dc91f1b86bb3fdaf449feef991a4acf7ea6e90#path:/themes: {}
+  turbothemes@https://codeload.github.com/TurboNZL/turboengine/tar.gz/c7950820b2738bb3b90a9e8f1cb37f9d80c0782d#path:/themes: {}
 
   type-fest@0.13.1:
     optional: true

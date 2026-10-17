@@ -5,7 +5,19 @@ export const MODELS = [
   { id: 'onnx-community/whisper-tiny.en_timestamped', label: 'Fast, English only (tiny)' },
   { id: 'onnx-community/whisper-small_timestamped', label: 'Accurate (small, about 250 MB)' },
 ] as const;
-export const DEFAULT_MODEL = MODELS[0].id;
+export const BALANCED_MODEL: string = MODELS[0].id;
+export const ACCURATE_MODEL: string = MODELS[2].id;
+
+/** The model offered first: accurate on a computer (the download is once, the wait is for a short clip), balanced on a phone. */
+export const recommendedModel = (touch: boolean): string => (touch ? BALANCED_MODEL : ACCURATE_MODEL);
+export const DEFAULT_MODEL = BALANCED_MODEL;
+
+/** The choices shown the first time captions are generated: what each costs and gives. */
+export const MODEL_CHOICES: { id: string; name: string; size: string; note: string }[] = [
+  { id: 'onnx-community/whisper-tiny.en_timestamped', name: 'Fast', size: 'about 40 MB', note: 'English only. Quickest, and the most mistakes and the loosest timing.' },
+  { id: BALANCED_MODEL, name: 'Balanced', size: 'about 80 MB', note: 'Good for clear speech. The best fit for a phone.' },
+  { id: ACCURATE_MODEL, name: 'Accurate', size: 'about 250 MB', note: 'Fewer wrong words and tighter timing. Slower, and the better choice on a computer.' },
+];
 
 export type Compute = 'auto' | 'webgpu' | 'wasm';
 

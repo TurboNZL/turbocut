@@ -17,6 +17,10 @@ Settings → Fonts (or Captions → Fonts…) is the font manager:
 - Each font is shown drawn in itself, with where it is used.
 - **Make default**: the default font is used by the built-in style, new styles and new text layers.
 - **Remove** a font; styles that used it fall back to a plain font until you add it again.
+- **Find installed fonts** lists every font installed on this computer (the desktop app does it on its own). In Chrome or Edge you are asked once to allow it. Where a browser cannot list fonts, only well-known ones are checked. Installed fonts appear in every font box; type any name to use it.
 - A *Missing on this device* box lists fonts that styles ask for but this device does not have.
+
+## Text layers
+A text layer has its own **Entrance**: *Pop in (bounce)*, like captions, or *None*, which appears and stays still.
 
 TurboCut ships no third-party fonts. Fonts you add stay on this device.

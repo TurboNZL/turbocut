@@ -28,6 +28,12 @@ try {
   assert.equal(upd.supported, false);
   assert.match(upd.reason, /development run/i);
 
+  // The desktop app lists the fonts installed on this computer by itself (Chromium's Local Font Access API, no prompt in Electron).
+  const sys = await win.evaluate(async () => { const d = await window.turbocutApp.detectSystemFonts(); return { source: d.source, n: d.fonts.length, sample: d.fonts.slice(0, 3).map((f) => f.family) }; });
+  console.log('installed fonts:', JSON.stringify(sys));
+  assert.equal(sys.source, 'local-fonts', 'Electron answers queryLocalFonts');
+  assert.ok(sys.n > 0, 'and returns fonts');
+
   // Import through the app and export through the app. In Electron the download goes through the shell.
   const media = readFileSync(`${root}e2e/.media/src.webm`).toString('base64');
   await win.evaluate(async (b64) => {

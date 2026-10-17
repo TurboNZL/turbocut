@@ -3,6 +3,8 @@
  * document on every start, so a preset that names "Squad Latin Black" keeps working after a restart.
  * TurboCut does not ship third-party fonts: you import the files you have the right to use.
  */
+import { detectedFonts, fontInstalled } from './systemFonts.ts';
+
 const DB = 'turbocut.fonts';
 const STORE = 'fonts';
 
@@ -64,6 +66,7 @@ export function fontFamilies(bytes: ArrayBuffer): string[] {
 
 async function register(f: StoredFont): Promise<void> {
   for (const family of f.families) {
+    addedFamilies.add(family);
     const face = new FontFace(family, f.bytes.slice(0));
     await face.load();
     document.fonts.add(face);
@@ -74,6 +77,7 @@ const unquote = (family: string) => family.replace(/^["']|["']$/g, '');
 
 function unregister(families: string[]): void {
   const gone = new Set(families.map((f) => f.toLowerCase()));
+  for (const f of [...addedFamilies]) if (gone.has(f.toLowerCase())) addedFamilies.delete(f);
   for (const face of [...document.fonts]) if (gone.has(unquote(face.family).toLowerCase())) document.fonts.delete(face);
 }
 
@@ -120,19 +124,20 @@ export async function removeFont(entry: FontEntry): Promise<void> {
   }
 }
 
-let probe: CanvasRenderingContext2D | null = null;
-/** Is a font with this name available to the page (a system font or one that was added)? Compares text widths against the fallbacks. */
-export function fontAvailable(name: string): boolean {
-  probe ??= document.createElement('canvas').getContext('2d');
-  if (!probe) return true;
-  const sample = 'mmmmmmmmmmlliWWW0123';
-  for (const base of ['monospace', 'serif', 'sans-serif']) {
-    probe.font = `72px ${base}`;
-    const plain = probe.measureText(sample).width;
-    probe.font = `72px "${name.replace(/"/g, '')}", ${base}`;
-    if (probe.measureText(sample).width !== plain) return true;
-  }
-  return false;
+/** Is a font with this name available to the page (a system font or one that was added)? */
+export const fontAvailable = fontInstalled;
+
+const BUILT_IN = ['Arial Black', 'Impact', 'Arial', 'Verdana', 'Georgia', 'Courier New'];
+const addedFamilies = new Set<string>();
+
+/**
+ * Font names to offer in a font box: the ones the person added, every installed font once they have been detected, and
+ * a few that nearly every device has. Synchronous, so a box can be drawn at once; it grows after `detectSystemFonts()`.
+ */
+export function fontChoices(): string[] {
+  const detected = detectedFonts()?.fonts.map((f) => f.family) ?? [];
+  const seen = new Set<string>();
+  return [...addedFamilies, ...BUILT_IN, ...detected].filter((n) => !seen.has(n.toLowerCase()) && !!seen.add(n.toLowerCase()));
 }
 
 /** Import a font file. Returns the family names it is now available under. */

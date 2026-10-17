@@ -1,11 +1,12 @@
 import { dialogueToCues, parseAss, writeAss } from '../captions/ass.ts';
 import { entranceTags, styleByName } from '../captions/presets.ts';
-import { groupWords, RemoteTranscriber, SHORTS_GROUPING, type Transcriber } from '../transcribe/provider.ts';
+import { groupingFor, groupWords, RemoteTranscriber, type Transcriber } from '../transcribe/provider.ts';
 import { LocalTranscriber, MODELS, type Compute } from '../transcribe/local.ts';
 import { cleanWords } from '../transcribe/post.ts';
 import { projectDuration } from '../core/timeline.ts';
 import { renderPcm16k } from '../transcribe/pcm.ts';
 import { h, panel } from './dom.ts';
+import { chooseModel } from './modelChoice.ts';
 import { openFontManager } from './fontManager.ts';
 import { pickFiles, saveFile } from './platform.ts';
 import { exportPresetDialog, pickAndImportPreset } from './presetIO.ts';
@@ -16,6 +17,7 @@ export class CaptionsPanel {
   readonly el = h('div', { class: 'caps' });
   private list = h('div', { class: 'cue-list' });
   private abort: AbortController | null = null;
+  private goButton: HTMLButtonElement | null = null;
   /** Set by the app so the panel can open Settings on the Captions tab. */
   openEngineSettings?: () => void;
   private report = '';
@@ -54,9 +56,17 @@ export class CaptionsPanel {
     const change = h('button', { class: 'btn btn-ghost', onclick: () => this.openEngineSettings?.() }, 'Change…');
     const progress = h('progress', { class: 'prog', max: 1, value: 0, style: { display: 'none' } });
     const go = h('button', { class: 'btn btn-accent' }, 'Generate captions');
+    this.goButton = go;
     const cancel = h('button', { class: 'btn', style: { display: 'none' } }, 'Cancel');
     cancel.addEventListener('click', () => this.abort?.abort());
     go.addEventListener('click', async () => {
+      // First time on this device: ask which speech model to download before anything else happens.
+      const t0 = this.store.settings.transcribe;
+      if (t0.mode === 'local' && !t0.modelChosen) {
+        // Saving the choice redraws this panel (and this button), so start again from the new button once it is saved.
+        if (await chooseModel(this.store, matchMedia('(pointer: coarse)').matches)) setTimeout(() => this.goButton?.click(), 0);
+        return;
+      }
       go.disabled = true;
       cancel.style.display = '';
       progress.style.display = '';
@@ -184,7 +194,7 @@ export class CaptionsPanel {
 
     if (words.length === 0) throw new Error(raw.length ? 'Only invented text was found (nothing over real speech). Try another model or processor, then copy the captions report.' : 'No speech found');
     const totalFrames = projectDuration(p);
-    const cues = groupWords(words, { fps: p.fps, ...SHORTS_GROUPING })
+    const cues = groupWords(words, { fps: p.fps, ...groupingFor(this.store.settings.transcribe.grouping, p.width, p.height) })
       .filter((c) => c.start < totalFrames)
       .map((c) => ({ ...c, end: Math.min(c.end, totalFrames) })); // never past the last frame
     this.store.edit((pr) => (pr.captions = cues));

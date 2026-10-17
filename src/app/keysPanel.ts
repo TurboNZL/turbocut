@@ -41,14 +41,26 @@ export class KeysPanel {
   }
 
   private rendering = false;
+  /** What the last build drew (clip, size, every key). A redraw that would draw the same thing is skipped, so the panel is not torn down and rebuilt for nothing. */
+  private drawn = '';
+
+  private signature(): string {
+    const clip = this.clip();
+    if (!clip) return '';
+    const keys = this.params().map((p) => `${p.id}:${(p.keys(clip) ?? []).map((k) => `${k.t}@${k.v}`).join(',')}`).join('|');
+    return `${clip.id}#${clip.duration}#${Math.round(this.el.clientWidth / 4)}#${this.sel ? `${this.sel.param}${this.sel.t}` : ''}#${keys}`;
+  }
 
   private render(): void {
     // Rebuilding removes the focused input, which can fire another change event and ask for another rebuild while this one is
     // half done. Ignore that nested request: the rebuild already in progress shows the current state.
     if (this.rendering) return;
+    const sig = this.signature();
+    if (sig === this.drawn && this.el.childElementCount > 0) return this.movePlayhead();
     this.rendering = true;
     try {
       this.build();
+      this.drawn = sig;
     } finally {
       this.rendering = false;
     }
