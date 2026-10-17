@@ -94,6 +94,8 @@ export interface Asset {
   ref: string;
   hasVideo: boolean;
   hasAudio: boolean;
+  /** Size of the media file in bytes, so a saved project can find the right file again. */
+  size?: number;
   duration: Frame;
   width: number;
   height: number;

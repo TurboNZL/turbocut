@@ -20,7 +20,8 @@ const sample = async (label) => {
 };
 const results = {};
 results.start = await sample('start');
-const [chooser] = await Promise.all([win.waitForEvent('filechooser'), win.getByRole('button', { name: 'Import' }).click()]);
+await win.getByRole('button', { name: 'File' }).click();
+const [chooser] = await Promise.all([win.waitForEvent('filechooser'), win.getByRole('menuitem', { name: 'Import media…' }).click()]);
 await chooser.setFiles(file);
 await win.waitForFunction(() => window.turbocutApp.store.project.tracks[0].clips.length > 0, null, { timeout: 60000 });
 await win.waitForTimeout(1500);

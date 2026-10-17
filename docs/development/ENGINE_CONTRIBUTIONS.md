@@ -69,3 +69,8 @@ The vanilla CommonJS .deb updater (`electron/updater.cjs`, `electron/debInstall.
 - **Selection is one thing.** Two independent selection fields (clip and caption) made Delete remove the wrong one and left a highlight no click could clear. Keep one selection, clear it on an empty press and on Escape.
 - **Split follows the selection or the active track**, not "everything under the playhead": the unexpected cut of a track you were not looking at is worse than one extra click.
 - **Symbol characters are emoji on many systems** (`⏮ ⏸ ⚙`): draw icons as inline SVG in `currentColor` (`src/app/icons.ts`).
+
+## 12. Vanilla port of `motion`, symbol-only favicons, project files
+- `src/app/motion.css` is the engine's `motion.css` classes for a non-React app, plus `tk-fade`; replaying an animation needs `classList.remove; void el.offsetWidth; classList.add`. Gotcha: a `ResizeObserver` callback that rebuilds DOM and changes the observer's own height logs "ResizeObserver loop completed with undelivered notifications"; compare the width and rebuild in `requestAnimationFrame`.
+- A project-file format (`format` + `version`, validate every part, media referenced by name and size, relink dialog) could become a shared module for apps that edit documents on top of media.
+- One global rule gives every pressable element `cursor: pointer` (and `not-allowed` when disabled); the theme's `.btn` did not. It could live in turbothemes `base.css`.

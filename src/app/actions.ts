@@ -1,10 +1,11 @@
 import { cueAt, findCue, splitCue } from '../core/captions.ts';
-import { addClip, addTrack, clipEnd, createClip, findClip, findFreeStart, newId, projectDuration, removeLinked, removeTrack, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
+import { matchMedia, parseProject, projectFileName, serializeProject } from '../core/projectFile.ts';
+import { addClip, createProject, addTrack, clipEnd, createClip, findClip, findFreeStart, newId, projectDuration, removeLinked, removeTrack, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
 import type { Track } from '../core/types.ts';
 import { overlaps } from '../core/timeline.ts';
 import { exportProject } from '../export/exporter.ts';
 import { dialog, h } from './dom.ts';
-import { keepAwake, saveFile } from './platform.ts';
+import { keepAwake, pickFiles, saveFile } from './platform.ts';
 import type { Player } from './player.ts';
 import { CAPTION_TRACK, type Store } from './store.ts';
 
@@ -30,6 +31,114 @@ export class Actions {
         store.say(`Could not open ${file.name}: ${e instanceof Error ? e.message : e}. This device may not support its format.`);
       }
     }
+  }
+
+  // ---------------------------------------------------------------- project files
+
+  /** Save the edit as a `.turbocut` file (the media stays where it is). */
+  async saveProject(): Promise<void> {
+    const { store } = this;
+    const name = projectFileName(store.project.name);
+    await saveFile(serializeProject(store.project), name, 'application/json');
+    store.dirty = false;
+    store.say(`Saved ${name}. It holds the edit, not the video: keep the media files too.`);
+  }
+
+  /** Ask before throwing away unsaved work, then run `go`. */
+  guardUnsaved(go: () => void): void {
+    if (!this.store.dirty) return go();
+    const dlg = dialog('Unsaved changes', h('p', {}, 'This project has changes that are not saved to a file.'), [
+      h('button', { class: 'btn btn-accent', onclick: () => void this.saveProject().then(() => (dlg.close(), go())) }, 'Save, then continue'),
+      h('button', { class: 'btn', onclick: () => (dlg.close(), go()) }, 'Discard them'),
+      h('button', { class: 'btn btn-ghost', onclick: () => dlg.close() }, 'Cancel'),
+    ]);
+  }
+
+  /** A fresh project at the same size. */
+  newProject(): void {
+    this.guardUnsaved(() => {
+      const { width, height } = this.store.project;
+      this.store.loadProject(createProject({ name: 'Untitled', width, height }));
+      this.store.say('New project.');
+    });
+  }
+
+  /** Open a `.turbocut` file (picked, or the one given). The media is asked for afterwards. */
+  openProject(file?: File): void {
+    this.guardUnsaved(() => void this.loadProjectFile(file));
+  }
+
+  private async loadProjectFile(file?: File): Promise<void> {
+    const { store } = this;
+    const f = file ?? (await pickFiles('.turbocut,.json,application/json'))[0];
+    if (!f) return;
+    try {
+      store.loadProject(parseProject(await f.text()));
+    } catch (e) {
+      store.say(`Could not open ${f.name}: ${e instanceof Error ? e.message : e}`);
+      return;
+    }
+    const missing = store.missingAssets();
+    store.say(missing.length ? `Opened ${f.name}. ${missing.length} media file${missing.length === 1 ? '' : 's'} to find.` : `Opened ${f.name}.`);
+    if (missing.length) this.relinkDialog();
+  }
+
+  /** Give media entries without a file their files again, matched by name (and size). Returns how many were found. */
+  async relinkMedia(files: File[]): Promise<number> {
+    const { store } = this;
+    const missing = store.missingAssets();
+    const found = matchMedia(missing, files);
+    let n = 0;
+    for (const [id, i] of found) {
+      const file = files[i]!;
+      try {
+        await store.lib.relink(id, file, file.name);
+        const a = store.project.assets[id]!;
+        if (a.size === undefined) a.size = file.size;
+        n++;
+      } catch (e) {
+        store.say(`Could not open ${file.name}: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    if (n) store.emit('project');
+    return n;
+  }
+
+  /** Lists the media a loaded project is missing and lets the person pick the files. */
+  relinkDialog(): void {
+    const { store } = this;
+    const list = h('ul', { class: 'relink-list' });
+    const note = h('p', { class: 'hint' });
+    const draw = () => {
+      const missing = store.missingAssets();
+      list.replaceChildren(...missing.map((a) => h('li', {}, a.name)));
+      note.textContent = missing.length ? 'Pick the files from wherever they are now; they are matched by file name. You can also drop them on the window.' : 'All the media is back.';
+      return missing.length;
+    };
+    draw();
+    const pick = h('button', { class: 'btn btn-accent' }, 'Choose files…');
+    const dlg = dialog('Find the media', h('div', { class: 'stack' }, h('p', {}, 'A project file holds the edit, not the video. These files are needed:'), list, note), [pick, h('button', { class: 'btn btn-ghost', onclick: () => dlg.close() }, 'Later')]);
+    pick.addEventListener('click', async () => {
+      const files = await pickFiles('video/*,audio/*,.mkv,.webm,.mov', true);
+      if (!files.length) return;
+      const n = await this.relinkMedia(files);
+      store.say(n ? `Found ${n} file${n === 1 ? '' : 's'}.` : 'None of those files match. They are matched by file name.');
+      if (draw() === 0) dlg.close();
+    });
+  }
+
+  /** Files dropped on the window: a project opens, media that a loaded project is missing goes back, the rest is imported. */
+  async dropFiles(files: File[]): Promise<void> {
+    const project = files.find((f) => /\.turbocut$/i.test(f.name));
+    if (project) return this.openProject(project);
+    const missing = this.store.missingAssets();
+    const matched = new Set(missing.length ? [...matchMedia(missing, files).values()] : []);
+    if (matched.size) {
+      await this.relinkMedia(files);
+      this.store.say(`Found ${matched.size} file${matched.size === 1 ? '' : 's'} for the project.`);
+    }
+    const rest = files.filter((_, i) => !matched.has(i));
+    if (rest.length) await this.importMedia(rest);
   }
 
   /**

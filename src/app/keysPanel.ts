@@ -3,6 +3,7 @@ import { removeKeyframe, setKeyframe } from '../core/keyframes.ts';
 import { findClip } from '../core/timeline.ts';
 import type { Clip, Easing, Keyframe } from '../core/types.ts';
 import { h } from './dom.ts';
+import { icon } from './icons.ts';
 import type { Store } from './store.ts';
 
 const LABEL_W = 78;
@@ -16,6 +17,12 @@ const EASINGS: [Easing, string][] = [['inOut', 'Smooth'], ['linear', 'Linear'], 
 export class KeysPanel {
   readonly el = h('section', { class: 'keys card bt-panel' });
   private sel: { param: string; t: number } | null = null;
+  /** The fold is open (kept between clips; a clip that already has keyframes opens it anyway). */
+  private open = false;
+  private fold: HTMLDetailsElement | null = null;
+  private body: HTMLElement | null = null;
+  /** The next `toggle` event comes from the code, not the person. */
+  private quiet = false;
   private dragging = false;
   private grid: HTMLElement | null = null;
   private ppf = 1;
@@ -24,7 +31,15 @@ export class KeysPanel {
     store.on('selection', () => ((this.sel = null), this.render()));
     store.on('project', () => !this.dragging && this.render());
     store.on('playhead', () => this.movePlayhead());
-    new ResizeObserver(() => !this.dragging && this.render()).observe(this.el);
+    // Only a change of WIDTH matters (the diamonds are laid out across it), and rebuilding changes the height: redrawing from inside the
+    // observer callback would loop, so wait for the next frame.
+    let lastW = 0;
+    new ResizeObserver(() => {
+      const w = this.el.clientWidth;
+      if (w === lastW || this.dragging) return;
+      lastW = w;
+      requestAnimationFrame(() => this.render());
+    }).observe(this.el);
     this.render();
   }
 
@@ -68,11 +83,11 @@ export class KeysPanel {
 
   private build(): void {
     const clip = this.clip();
-    this.el.replaceChildren();
     this.grid = null;
     if (!clip) {
+      this.el.replaceChildren();
+      this.fold = null;
       return; // the Clip tab above already says to select a clip
-
     }
     const fps = this.store.project.fps;
     const D = Math.max(1, clip.duration);
@@ -103,7 +118,31 @@ export class KeysPanel {
     }
     grid.append(h('div', { class: 'ks-ph' }));
     this.grid = grid;
-    this.el.append(h('h2', { class: 'bt-panel-title' }, 'Keyframes'), nav, grid, this.details());
+    // Folded away until wanted: the sliders above already set a value and add a key; this is for moving keys in time.
+    // One fold for as long as a clip is selected: only what is inside it is redrawn. A new <details> element would replay the
+    // fold's opening animation (and flicker) every time a keyframe is added, moved or removed.
+    if (!this.fold?.isConnected) {
+      const body = h('div', { class: 'ks-body' });
+      const fold = h('details', { class: 'ks-fold' }, h('summary', {}, 'Keyframes', icon('chevron', 14)), body);
+      fold.addEventListener('toggle', () => {
+        if (this.quiet) return void (this.quiet = false); // opened or closed by the code below, not by the person
+        this.open = fold.open;
+        if (fold.open) {
+          body.classList.remove('tk-expand');
+          void body.offsetWidth;
+          body.classList.add('tk-expand'); // the animation belongs to the person's click, nothing else
+        }
+      });
+      this.fold = fold;
+      this.body = body;
+      this.el.replaceChildren(fold);
+    }
+    const want = this.open || Object.values(clip.keys).some((k) => k?.length);
+    if (this.fold.open !== want) {
+      this.quiet = true;
+      this.fold.open = want;
+    }
+    this.body!.replaceChildren(nav, grid, this.details());
     this.movePlayhead();
   }
 

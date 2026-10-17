@@ -1,5 +1,6 @@
 import 'turbothemes/base.css';
 import './styles.css';
+import './motion.css';
 import { start } from 'turbothemes';
 import { projectDuration } from '../core/timeline.ts';
 import { exportProject } from '../export/exporter.ts';
@@ -9,14 +10,14 @@ import { VideoSampleSink } from 'mediabunny';
 import { Actions } from './actions.ts';
 import { BinPanel } from './binPanel.ts';
 import { CaptionsPanel } from './captionsPanel.ts';
-import { fmtTime, h, panel } from './dom.ts';
+import { fmtTime, h, panel, popupMenu } from './dom.ts';
 import { importFont, loadStoredFonts } from './fonts.ts';
 import { Hotkeys, type HotkeyAction } from './hotkeys.ts';
-import { icon, setIcon } from './icons.ts';
 import { openHome } from './home.ts';
 import { Inspector } from './inspector.ts';
 import { applyLayout, findLayout, type TabName } from './layout.ts';
 import { KeysPanel } from './keysPanel.ts';
+import { icon, setIcon, type IconName } from './icons.ts';
 import { pickFiles, platform } from './platform.ts';
 import { Player } from './player.ts';
 import { openSettings, capturingKey, type SettingsTab } from './settingsDialog.ts';
@@ -78,6 +79,9 @@ hotkeys.register([
   act('Timeline', 'zoomIn', 'Zoom the timeline in', ['+', '='], () => store.setZoom(store.zoom * 1.25)),
   act('Timeline', 'zoomOut', 'Zoom the timeline out', ['-', '_'], () => store.setZoom(store.zoom / 1.25)),
   act('File', 'import', 'Import media', ['Ctrl+I'], () => void importFiles()),
+  act('File', 'save', 'Save the project as a file', ['Ctrl+S'], () => void actions.saveProject()),
+  act('File', 'open', 'Open a project file', ['Ctrl+O'], () => actions.openProject()),
+  act('File', 'new', 'New project', ['Ctrl+N'], () => actions.newProject()),
   act('File', 'export', 'Export', ['Ctrl+E'], () => void actions.runExport()),
   act('App', 'settings', 'Open Settings', ['Ctrl+,'], () => settings()),
   act('App', 'shortcuts', 'Show the shortcut list', ['?'], () => settings('Keys')),
@@ -105,6 +109,13 @@ function showTab(name: string, userTap = false): void {
   activeTab = name;
   for (const b of tabBar.children) (b as HTMLElement).setAttribute('aria-selected', String(b.textContent === name));
   if (tabBody.firstChild !== tabs[name]) tabBody.replaceChildren(tabs[name]!); // putting the same panel back would restart whatever animation its look gives a new element
+  if (userTap) swap(tabs[name]!);
+}
+/** Replay the swap animation on an element (a class that is already there does nothing until it is removed and the page has laid out). */
+function swap(el: HTMLElement, cls = 'tk-swap'): void {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
 }
 showTab('Clip');
 /** Draw the chosen layout: panel side and size, timeline height, control size and which panel tabs show. */
@@ -135,55 +146,89 @@ store.on('selection', () => {
 });
 
 function projectPanel(): HTMLElement {
-  const name = h('input', { class: 'input', value: store.project.name, 'aria-label': 'Project name' });
-  name.addEventListener('change', () => (store.project.name = name.value.trim() || 'TurboCut'));
+  const name = h('input', { class: 'input', 'aria-label': 'Project name' });
+  name.addEventListener('change', () => store.edit((p) => (p.name = name.value.trim() || 'Untitled')));
   const aspects: [string, number, number][] = [['Vertical 9:16 (1080×1920)', 1080, 1920], ['Landscape 16:9 (1920×1080)', 1920, 1080], ['Portrait 4:5 (1080×1350)', 1080, 1350], ['Square 1:1 (1080×1080)', 1080, 1080]];
-  const aspect = h('select', { class: 'input', 'aria-label': 'Aspect ratio' }, ...aspects.map(([l, w, hh]) => h('option', { value: `${w}x${hh}` }, l)));
+  const aspect = h('select', { class: 'input', 'aria-label': 'Aspect ratio' }, ...aspects.map(([l, w, hh]) => h('option', { value: `${w}x${hh}` }, l)), h('option', { value: 'custom', hidden: true }, 'Custom size'));
   aspect.addEventListener('change', () => {
     const [w, hh] = aspect.value.split('x').map(Number) as [number, number];
     store.edit((p) => ((p.width = w), (p.height = hh)));
   });
-  return panel('Project', name, aspect, h('p', { class: 'hint' }, `Frame rate is ${store.project.fps} fps.`), h('button', { class: 'btn', onclick: () => settings() }, 'Settings…'));
+  const rate = h('p', { class: 'hint' });
+  const missing = h('button', { class: 'btn', onclick: () => actions.relinkDialog() }, 'Find missing media…');
+  const sync = () => {
+    const p = store.project;
+    if (document.activeElement !== name) name.value = p.name;
+    aspect.value = aspects.some(([, w, hh]) => w === p.width && hh === p.height) ? `${p.width}x${p.height}` : 'custom';
+    rate.textContent = `Frame rate is ${p.fps} fps.`;
+    missing.hidden = store.missingAssets().length === 0;
+  };
+  store.on('project', sync);
+  sync();
+  return panel(
+    'Project',
+    name,
+    aspect,
+    rate,
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => void actions.saveProject() }, 'Save…'), h('button', { class: 'btn', onclick: () => actions.openProject() }, 'Open…'), h('button', { class: 'btn', onclick: () => actions.newProject() }, 'New')),
+    missing,
+    h('p', { class: 'hint' }, 'A project file holds the edit, not the video. Keep the media files next to it.'),
+    h('button', { class: 'btn', onclick: () => settings() }, 'Settings…'),
+  );
 }
 
+const iconBtn = (name: IconName, label: string, run: () => void, extra = '') => h('button', { class: `btn btn-ghost icon-btn ${extra}`.trim(), 'aria-label': label, title: label, onclick: run }, icon(name));
+const fileMenu = h('button', { class: 'btn btn-ghost', 'aria-haspopup': 'menu' }, 'File', icon('chevron', 14));
+fileMenu.addEventListener('click', () =>
+  popupMenu(fileMenu, [
+    { label: 'New project', run: () => actions.newProject() },
+    { label: 'Open project…', run: () => actions.openProject() },
+    { label: 'Save project', run: () => void actions.saveProject() },
+    { label: 'Import media…', run: () => void importFiles() },
+    { label: 'Find missing media…', run: () => actions.relinkDialog(), disabled: store.missingAssets().length === 0 },
+  ]),
+);
 const header = h('header', { class: 'bt-top top' },
+  h('img', { class: 'logo-mark', src: `${import.meta.env.BASE_URL}favicon.svg`, alt: '', width: 22, height: 22 }),
   h('strong', { class: 'logo' }, 'TurboCut'),
-  h('button', { class: 'btn', 'aria-label': 'Home', title: 'Home', onclick: () => showHome() }, icon('home')),
-  h('button', { class: 'btn', onclick: () => void importFiles() }, 'Import'),
-  h('button', { class: 'btn', 'aria-label': 'Undo', title: 'Undo (Ctrl+Z)', onclick: () => store.undo() }, icon('undo')),
-  h('button', { class: 'btn', 'aria-label': 'Redo', title: 'Redo (Ctrl+Shift+Z)', onclick: () => store.redo() }, icon('redo')),
+  iconBtn('home', 'Home', () => showHome()),
+  fileMenu,
   h('span', { class: 'spacer' }),
-  h('button', { class: 'btn', 'aria-label': 'Settings', title: 'Settings (Ctrl+,)', onclick: () => settings() }, icon('settings')),
+  iconBtn('undo', 'Undo (Ctrl+Z)', () => store.undo()),
+  iconBtn('redo', 'Redo (Ctrl+Shift+Z)', () => store.redo()),
+  iconBtn('settings', 'Settings (Ctrl+,)', () => settings()),
   h('button', { class: 'btn btn-accent', onclick: () => void actions.runExport() }, 'Export'),
 );
 
 const transport = h('div', { class: 'transport' },
-  h('button', { class: 'btn', 'aria-label': 'Start', onclick: () => store.seek(0) }, icon('skipStart')),
+  iconBtn('skipBack', 'Go to the start', () => store.seek(0)),
   playBtn,
-  h('button', { class: 'btn', 'aria-label': 'End', onclick: () => store.seek(projectDuration(store.project)) }, icon('skipEnd')),
+  iconBtn('skipForward', 'Go to the end', () => store.seek(projectDuration(store.project))),
   time,
 );
 
 // Edit actions live in one bar right under the timeline, in thumb reach on a phone.
-const snapBtn = h('button', { class: 'btn', 'aria-label': 'Snapping', title: 'Snapping (N)', onclick: () => actions.toggleSnapping() });
-setIcon(snapBtn, 'magnet'); // drawn in the text colour (an emoji ignores the theme)
+const snapBtn = h('button', { class: 'btn btn-ghost tool', 'aria-label': 'Snapping', title: 'Snapping (N)', onclick: () => actions.toggleSnapping() }, icon('magnet'));
 const syncSnap = () => {
   snapBtn.setAttribute('aria-pressed', String(store.settings.snapping));
   snapBtn.classList.toggle('on', store.settings.snapping);
 };
 store.on('settings', syncSnap);
 syncSnap();
+/** A tool: an icon, with its name beside it on a wide screen (the label hides on a phone, the tooltip and aria-label stay). */
+const tool = (name: IconName, label: string, tip: string, run: () => void, cls = 'btn-ghost') => h('button', { class: `btn ${cls} tool`, 'aria-label': label, title: tip, onclick: run }, icon(name), h('span', { class: 'tool-l' }, label));
 const editBar = h('div', { class: 'edit-bar' },
-  h('button', { class: 'btn btn-accent', onclick: () => actions.split(), title: 'Split at the playhead (S)' }, 'Split'),
-  h('button', { class: 'btn', onclick: () => actions.trimToPlayhead('start'), title: 'Cut the start of the selected clip to the playhead ([)' }, 'Trim start'),
-  h('button', { class: 'btn', onclick: () => actions.trimToPlayhead('end'), title: 'Cut the end of the selected clip to the playhead (])' }, 'Trim end'),
-  h('button', { class: 'btn', onclick: () => actions.remove(false), title: 'Delete the selection' }, 'Delete'),
-  h('button', { class: 'btn', onclick: () => actions.addText(), title: 'Add a text layer (T)' }, 'Text'),
+  tool('split', 'Split', 'Split at the playhead (S)', () => actions.split(), 'btn-accent'),
+  tool('trimStart', 'Trim start', 'Cut the start of the selected clip to the playhead ([)', () => actions.trimToPlayhead('start')),
+  tool('trimEnd', 'Trim end', 'Cut the end of the selected clip to the playhead (])', () => actions.trimToPlayhead('end')),
+  tool('trash', 'Delete', 'Delete the selection', () => actions.remove(false)),
+  tool('text', 'Text', 'Add a text layer (T)', () => actions.addText()),
   snapBtn,
   h('span', { class: 'spacer' }),
-  h('button', { class: 'btn', 'aria-label': 'Zoom out timeline', onclick: () => store.setZoom(store.zoom / 1.5) }, '−'),
-  zoom,
-  h('button', { class: 'btn', 'aria-label': 'Zoom in timeline', onclick: () => store.setZoom(store.zoom * 1.5) }, '+'),
+  h('span', { class: 'zoom-box' },
+    iconBtn('minus', 'Zoom out timeline', () => store.setZoom(store.zoom / 1.5)),
+    zoom,
+    iconBtn('plus', 'Zoom in timeline', () => store.setZoom(store.zoom * 1.5))),
 );
 
 player.canvas.addEventListener('click', () => player.toggle());
@@ -197,7 +242,7 @@ let homeOpen = false;
 function showHome(): void {
   if (homeOpen) return;
   homeOpen = true;
-  openHome({ store, importFiles, openSettings: (tab) => settings(tab), onClose: () => (homeOpen = false) });
+  openHome({ store, importFiles, openProject: () => actions.openProject(), openSettings: (tab) => settings(tab), onClose: () => (homeOpen = false) });
 }
 if (store.settings.showHome && projectDuration(store.project) === 0) showHome();
 
@@ -208,7 +253,13 @@ const tick = () => {
 store.on('playhead', tick);
 store.on('project', tick);
 store.on('play', () => setIcon(playBtn, store.playing ? 'pause' : 'play'));
-store.on('status', () => (status.textContent = store.status));
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+store.on('status', () => {
+  status.textContent = store.status;
+  status.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => status.classList.remove('show'), 4500);
+});
 tick();
 store.say('Import a clip to start. Press ? for shortcuts.');
 
@@ -224,8 +275,8 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => {
   e.preventDefault();
-  const files = [...(e.dataTransfer?.files ?? [])].filter((f) => /^(video|audio)\//.test(f.type) || /\.(mkv|mov|webm|mp4|m4a|mp3|wav|ogg)$/i.test(f.name));
-  if (files.length) void actions.importMedia(files);
+  const files = [...(e.dataTransfer?.files ?? [])].filter((f) => /^(video|audio)\//.test(f.type) || /\.(mkv|mov|webm|mp4|m4a|mp3|wav|ogg|turbocut)$/i.test(f.name));
+  if (files.length) void actions.dropFiles(files);
 });
 
 // ---------------------------------------------------------------- update check on start (at most every 6 hours, never blocks)
