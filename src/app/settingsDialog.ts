@@ -11,7 +11,8 @@ import { pickFiles, platform, saveFile } from './platform.ts';
 import { DEFAULT_SETTINGS, exportSettings, importSettings, type CounterMode } from './settings.ts';
 import type { Store } from './store.ts';
 import { MODELS, type Compute } from '../transcribe/local.ts';
-import { assetFor, checkForUpdate, desktopUpdater, openApk, type UpdateStatus } from './updater.ts';
+import { desktopWindow } from './windowFrame.ts';
+import { assetFor, checkForUpdate, apkUpdater, desktopUpdater, openApk, type UpdateStatus } from './updater.ts';
 import { APP_VERSION } from './version.ts';
 
 export type SettingsTab = 'General' | 'Look' | 'Layout' | 'Fonts' | 'Guides' | 'Keys' | 'Captions' | 'Updates' | 'Device' | 'About';
@@ -347,7 +348,28 @@ function updates({ store }: SettingsDeps): HTMLElement {
       }
       rows.push(h('p', { class: 'hint' }, can.reason ?? 'This copy cannot update itself.'));
     }
-    if (platform === 'android' && asset) rows.push(h('button', { class: 'btn btn-accent', onclick: () => openApk(asset.url) }, 'Download the update (APK)'), h('p', { class: 'hint' }, 'Open the downloaded file to install it over the current version.'));
+    if (platform === 'android' && asset && apkUpdater) {
+      const apk = apkUpdater;
+      const go = h('button', { class: 'btn btn-accent' }, 'Download and install');
+      go.addEventListener('click', async () => {
+        go.disabled = true;
+        progress.style.display = '';
+        note.replaceChildren();
+        const sub = await apk.addListener('progress', (e) => (progress.value = Math.max(0, e.percent)));
+        try {
+          await apk.download({ url: asset.url });
+          const r = await apk.install();
+          note.replaceChildren(h('p', { class: 'hint' }, r && r.needsPermission ? 'Allow TurboCut to install apps on the page that just opened, come back and press the button again.' : 'Android will ask you to confirm the install.'));
+        } catch (e) {
+          note.replaceChildren(h('p', {}, `Update failed: ${e instanceof Error ? e.message : e}`));
+        } finally {
+          go.disabled = false;
+          void sub.remove();
+        }
+      });
+      return [...rows, go, progress, note];
+    }
+    if (platform === 'android' && asset) rows.push(h('button', { class: 'btn btn-accent', onclick: () => openApk(asset.url) }, 'Download the update (APK)'));
     else if (platform === 'web') rows.push(h('button', { class: 'btn btn-accent', onclick: () => location.reload() }, 'Reload to get it'), h('p', { class: 'hint' }, 'The web version is always the newest one.'));
     else if (asset) rows.push(h('a', { class: 'btn btn-accent', href: asset.url, target: '_blank', rel: 'noreferrer' }, `Download ${asset.name}`));
     rows.push(h('a', { class: 'btn', href: st.latest.pageUrl, target: '_blank', rel: 'noreferrer' }, 'Release page'));
@@ -362,7 +384,13 @@ function device({ store }: SettingsDeps): HTMLElement {
   const pre = h('pre', { class: 'report' }, 'Checking this device…');
   const copy = h('button', { class: 'btn btn-accent', onclick: () => navigator.clipboard?.writeText(pre.textContent ?? '').then(() => store.say('Report copied.')) }, 'Copy report');
   void deviceCheck(store.project.width, store.project.height).then((r) => (pre.textContent = r.text));
-  return h('div', { class: 'stack' }, h('p', { class: 'hint' }, 'What this device can encode and how fast. Copy it into a bug report.'), pre, copy);
+  const w = desktopWindow;
+  const frame = w
+    ? panel('Window',
+        h('label', { class: 'setting' }, Object.assign(h('input', { type: 'checkbox', checked: w.customFrame }), { onchange: (e: Event) => void w.setCustomFrame((e.target as HTMLInputElement).checked) }), h('span', {}, 'Draw the window title bar from the theme (applies after a restart).')),
+        h('p', { class: 'hint' }, 'Turn this off to use your desktop\'s own title bar. macOS always uses its own.'))
+    : h('span');
+  return h('div', { class: 'stack' }, frame, h('p', { class: 'hint' }, 'What this device can encode and how fast. Copy it into a bug report.'), pre, copy);
 }
 
 function about(): HTMLElement {

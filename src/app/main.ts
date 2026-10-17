@@ -18,6 +18,7 @@ import { Inspector } from './inspector.ts';
 import { applyLayout, LIMITS, normalizeSizes, type TabName } from './layout.ts';
 import { activeLayout, editLayout } from './layoutStore.ts';
 import { Dock } from './dock.ts';
+import { windowFrame } from './windowFrame.ts';
 import { PanelHost } from './panelHost.ts';
 import { splitter } from './splitter.ts';
 import { icon, setIcon, type IconName } from './icons.ts';
@@ -257,6 +258,8 @@ const editBar = h('div', { class: 'edit-bar' },
 player.canvas.addEventListener('click', () => player.toggle());
 const stage = h('section', { class: 'stage' }, h('div', { class: 'preview' }, player.canvas), transport);
 const app = document.getElementById('app')!;
+const frameBar = windowFrame();
+if (frameBar) app.before(frameBar);
 // The bar between the preview and the timeline: drag to give the timeline more or less of the window.
 let tlStart = 0;
 const timelineBar = splitter({

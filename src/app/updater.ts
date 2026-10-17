@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { platform } from './platform.ts';
 import { APP_VERSION, compareVersions, isCalVer } from './version.ts';
 
@@ -79,12 +79,19 @@ export const desktopUpdater: DesktopUpdater | undefined = (globalThis as any).tu
 /**
  * What "update" means on each platform:
  *  - desktop app (installer or AppImage): the app downloads the new version itself and restarts into it;
- *  - Android: the APK is opened for download; Android then asks to install it over the current one;
+ *  - Android: the app downloads the APK itself (`ApkUpdater` plugin, progress events) and opens Android's installer over it;
  *  - web: reload, the hosted page is always the newest version.
  */
+export interface ApkUpdater {
+  download(o: { url: string }): Promise<void>;
+  install(): Promise<{ needsPermission?: boolean } | void>;
+  addListener(event: 'progress', fn: (e: { percent: number }) => void): Promise<{ remove(): Promise<void> }>;
+}
+
+/** The native Android updater, or undefined outside the Android app. */
+export const apkUpdater: ApkUpdater | undefined = Capacitor.isNativePlatform() ? registerPlugin<ApkUpdater>('ApkUpdater') : undefined;
+
+/** Outside the Android app (no plugin) the file is simply opened for download. */
 export async function openApk(url: string): Promise<void> {
-  if (Capacitor.isNativePlatform()) {
-    const { Browser } = await import('@capacitor/browser');
-    await Browser.open({ url });
-  } else window.open(url, '_blank');
+  window.open(url, '_blank');
 }

@@ -478,3 +478,8 @@ body.resizing-y, body.resizing-y * { cursor: row-resize !important; }
   .home-starts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-quicks, .home-cols { grid-template-columns: 1fr; }
 }
+
+/* Drawn window frame (desktop app): the title bar sits above #app, which takes the rest of the height. */
+body.has-frame { display: flex; flex-direction: column; }
+body.has-frame #app { height: auto; flex: 1 1 0; min-height: 0; }
+body.has-frame .bt-wf { flex: none; }
