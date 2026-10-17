@@ -15,7 +15,7 @@ export class BinPanel {
   /** Folders the person has closed (open is the default, so a new folder shows what is in it). */
   private closed = new Set<string>();
 
-  constructor(private store: Store, private actions: Actions, private timeline: TimelineView, private importFiles: (folder?: string) => void) {
+  constructor(private store: Store, private actions: Actions, private timeline: TimelineView, private importFiles: (folder?: string) => void, private importTwitch?: () => void) {
     store.on('project', () => this.render());
     this.render();
   }
@@ -134,7 +134,7 @@ export class BinPanel {
       ? 'Press Add to put a clip on the timeline at the playhead. With a mouse, drag a thumbnail onto a track (the small grips drag only the picture or only the sound) or onto a folder.'
       : 'Nothing here yet. Import video or audio files and they wait in this bin until you add them to the timeline.';
     this.el.replaceChildren(
-      h('div', { class: 'row' }, h('button', { class: 'btn btn-accent', onclick: () => this.importFiles() }, 'Import files…'), newFolder),
+      h('div', { class: 'row' }, h('button', { class: 'btn btn-accent', onclick: () => this.importFiles() }, 'Import files…'), ...(this.importTwitch ? [h('button', { class: 'btn', onclick: () => this.importTwitch!() }, 'Twitch clip…')] : []), newFolder),
       h('p', { class: 'hint' }, hint),
       ...folders.map((f) => this.folderBlock(f, assets.filter((a) => a.folder === f.id))),
       ...(folders.length && loose.length ? [h('div', { class: 'bin-root', 'data-drop-folder': '' }, h('h3', { class: 'bin-root-title' }, 'Not in a folder'), ...loose.map((a) => this.item(a)))] : loose.map((a) => this.item(a))),

@@ -7,7 +7,7 @@ A lightweight, cross-platform multi-track video editor with built-in automatic c
 
 ## Feature inventory
 - Multi-track video and audio timeline, linked picture and sound, media bin, snapping, waveforms, text layers, keyframes on every setting (including volume, blur, pixelate).
-- Captions: local Whisper on WebGPU or a GPU server on the LAN; presets (styles) with variants, bounce entrance that matches the original `ass_bounce.py`, filled letter holes by default, fonts bundled in style files.
+- Captions: local Whisper on WebGPU (no remote server any more); presets (styles) with variants, bounce entrance that matches the original `ass_bounce.py`, filled letter holes by default, fonts bundled in style files.
 - Touch-first: fixed centre playhead, big trim handles, pinch zoom.
 - Settings dialog, remappable shortcuts, editor layouts (panel side and size, control size, tabs), font manager, themes from turbothemes, guides, home screen.
 - Export to MP4 (H.264 + AAC) or WebM (VP9/AV1 + Opus) in the app, no upload.

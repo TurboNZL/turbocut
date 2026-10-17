@@ -2,7 +2,7 @@
 import { mkdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
-import { launch } from './browser.mjs';
+import { launch, pick } from './browser.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
 const out = `${root}e2e/.out/`;
@@ -40,13 +40,12 @@ try {
   await page.waitForSelector('.settings');
   const tabs = await page.$$eval('.settings-nav .tab', (els) => els.map((e) => e.textContent));
   assert.deepEqual(tabs, ['General', 'Look', 'Layout', 'Keys', 'Captions', 'Fonts', 'Updates', 'Device', 'Guides', 'About']);
-  const track = page.getByRole('combobox', { name: 'Track order' });
-  await track.selectOption('audio');
+  await pick(page, 'Track order', 'audio');
   assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.videoOnTop), false);
   const kinds = await page.$$eval('.tl-track', (els) => els.map((e) => (e.className.match(/tl-(video|audio|caption)/) ?? [])[1]));
   console.log('track order with audio on top:', kinds.join(','));
   assert.deepEqual(kinds, ['audio', 'video', 'caption'], 'audio tracks drawn above video when the setting says so');
-  await track.selectOption('video');
+  await pick(page, 'Track order', 'video');
   const kinds2 = await page.$$eval('.tl-track', (els) => els.map((e) => (e.className.match(/tl-(video|audio|caption)/) ?? [])[1]));
   assert.deepEqual(kinds2, ['video', 'audio', 'caption']);
   await page.screenshot({ path: `${out}settings-general.png` });
@@ -157,6 +156,37 @@ try {
   assert.ok(await page.getByRole('button', { name: 'Reload to get it' }).count(), 'web build offers a reload');
   await page.screenshot({ path: `${out}settings-updates.png` });
   await page.evaluate(() => document.querySelector('.dlg-backdrop')?.remove());
+
+  // ---- changing a shortcut keeps you where you were in the list, and the drop-downs are the theme's own lists
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await page.locator('.settings-nav').getByRole('tab', { name: 'Keys', exact: true }).click();
+  const body = page.locator('.settings-body');
+  await body.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  const before = await body.evaluate((el) => el.scrollTop);
+  assert.ok(before > 200, `the shortcut list is long enough to scroll (${before})`);
+  const rows = page.locator('.key-row');
+  await rows.last().getByRole('button', { name: 'Add' }).click();
+  await page.keyboard.press('F9');
+  await page.waitForFunction(() => /added/.test(document.querySelector('.settings-body')?.textContent ?? ''));
+  const after = await body.evaluate((el) => el.scrollTop);
+  assert.ok(Math.abs(after - before) < 60, `adding a shortcut did not scroll the list to the top (${before} -> ${after})`);
+  await rows.last().getByRole('button', { name: 'Reset' }).click();
+  assert.ok((await body.evaluate((el) => el.scrollTop)) > 100, 'nor did resetting one');
+  await page.locator('.settings-nav').getByRole('tab', { name: 'General', exact: true }).click();
+  await page.locator('button.themed-select[aria-label="Track order"]').click();
+  const menu = page.locator('.themed-select-menu');
+  assert.ok(await menu.isVisible(), 'the list is drawn by the theme (a bt-menu), not by the system');
+  assert.ok(await menu.evaluate((el) => el.classList.contains('bt-menu')));
+  assert.equal(await menu.locator('.ts-option').count(), 2);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.videoOnTop), false, 'the keyboard chooses a row');
+  assert.equal(await menu.count(), 0, 'and the list closes');
+  await pick(page, 'Track order', 'video');
+  await page.locator('.dlg .bt-close').click();
+  // every drop-down in the editor is upgraded: no visible native select anywhere
+  const native = await page.evaluate(() => [...document.querySelectorAll('select')].filter((s) => !s.classList.contains('ts-native') && getComputedStyle(s).display !== 'none').map((s) => s.getAttribute('aria-label') ?? s.className));
+  assert.deepEqual(native, [], 'no native drop-down is left in the page');
 
   assert.deepEqual(errors, [], 'no page errors');
   console.log('settings e2e passed');

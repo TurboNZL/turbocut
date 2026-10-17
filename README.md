@@ -7,7 +7,7 @@ One web codebase; Electron wraps it for Windows and Ubuntu, Capacitor wraps it f
 
 - Multi-track video and audio timeline, 60 fps by default, with keyframes on every setting (Clip tab).
 - Projects save to a small `.turbocut` file and reopen later (the media is found again by name).
-- Automatic captions (local Whisper or a GPU server), caption styles and fonts.
+- Automatic captions (local Whisper), caption styles and fonts.
 - Exports MP4 or WebM in the app; runs on Windows, Ubuntu, Android and the web.
 
 ## Get it

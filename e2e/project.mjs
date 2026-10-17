@@ -47,7 +47,7 @@ try {
 
   // ---- a fresh browser: open it from the File menu
   const b = await newPage();
-  await b.getByRole('button', { name: 'File' }).click();
+  await b.getByRole('button', { name: 'File', exact: true }).click();
   const [chooser] = await Promise.all([b.waitForEvent('filechooser'), b.getByRole('menuitem', { name: 'Open project…' }).click()]);
   await chooser.setFiles(file);
   await b.getByRole('dialog', { name: 'Find the media' }).waitFor();
@@ -76,18 +76,18 @@ try {
 
   // ---- unsaved work is not thrown away silently
   await b.evaluate(() => window.turbocutApp.store.edit((p) => (p.name = 'Changed')));
-  await b.getByRole('button', { name: 'File' }).click();
+  await b.getByRole('button', { name: 'File', exact: true }).click();
   await b.getByRole('menuitem', { name: 'New project' }).click();
   await b.getByRole('dialog', { name: 'Unsaved changes' }).waitFor();
   await b.getByRole('button', { name: 'Cancel' }).click();
   assert.equal(await b.evaluate(() => window.turbocutApp.store.project.name), 'Changed', 'Cancel keeps the project');
-  await b.getByRole('button', { name: 'File' }).click();
+  await b.getByRole('button', { name: 'File', exact: true }).click();
   await b.getByRole('menuitem', { name: 'New project' }).click();
   await b.getByRole('button', { name: 'Discard them' }).click();
   assert.equal(await b.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((t) => t.clips).length), 0, 'a new project is empty');
 
   // ---- a file that is not a project says so and changes nothing
-  await b.getByRole('button', { name: 'File' }).click();
+  await b.getByRole('button', { name: 'File', exact: true }).click();
   const [c3] = await Promise.all([b.waitForEvent('filechooser'), b.getByRole('menuitem', { name: 'Open project…' }).click()]);
   await c3.setFiles({ name: 'notes.turbocut', mimeType: 'application/json', buffer: Buffer.from('{"hello":1}') });
   await b.waitForFunction(() => /not a TurboCut project/.test(window.turbocutApp.store.status));

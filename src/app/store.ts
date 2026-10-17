@@ -200,6 +200,18 @@ export class Store {
     this.emit('selection');
   }
 
+  /** Select exactly these clips (a drag-selected box). The first is the one the panel shows. */
+  selectMany(ids: string[]): void {
+    this.selectedCue = null;
+    this.selected = ids[0] ?? null;
+    this.selectedMore = new Set(ids.slice(1));
+    if (this.selected) {
+      const t = this.project.tracks.find((x) => x.clips.some((c) => c.id === this.selected));
+      if (t) this.activeTrack = t.id;
+    }
+    this.emit('selection');
+  }
+
   /** Select every clip of every track. */
   selectAllClips(): void {
     const ids = this.project.tracks.flatMap((t) => t.clips.map((c) => c.id));

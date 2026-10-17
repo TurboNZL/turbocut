@@ -2,7 +2,7 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
-import { launch } from './browser.mjs';
+import { launch, pick as pickOption } from './browser.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
 const out = `${root}e2e/.out/`;
@@ -66,19 +66,19 @@ try {
   await page.evaluate(() => window.turbocutApp.store.edit((p) => p.captions.push({ id: 'c1', start: 0, end: 30, text: 'Hi', style: 'Default' })));
   await page.getByRole('button', { name: 'Add variant' }).click();
   assert.equal(await page.evaluate(() => window.turbocutApp.store.preset.styles.length), 6);
-  await page.getByLabel('Variant', { exact: true }).selectOption('0');
+  await pickOption(page, 'Variant', '0');
   await page.getByLabel('Variant name').fill('Hero');
   await page.getByLabel('Variant name').press('Enter');
   await page.getByLabel('Variant name').blur();
   assert.equal(await page.evaluate(() => window.turbocutApp.store.project.captions[0].style), 'Hero', 'caption followed the rename');
-  await page.getByLabel('Variant', { exact: true }).selectOption('5');
+  await pickOption(page, 'Variant', '5');
   await page.getByRole('button', { name: 'Remove variant' }).click();
   assert.equal(await page.evaluate(() => window.turbocutApp.store.preset.styles.length), 5);
 
   // ---- 4. animation
-  await page.getByLabel('Entrance').selectOption('none');
+  await pickOption(page, 'Entrance', 'none');
   assert.equal(await page.evaluate(() => window.turbocutApp.store.preset.animation.type), 'none');
-  await page.getByLabel('Entrance').selectOption('bounce');
+  await pickOption(page, 'Entrance', 'bounce');
   await page.getByLabel('Length (frames)').fill('10');
   await page.getByLabel('Length (frames)').blur();
   assert.equal(await page.evaluate(() => window.turbocutApp.store.preset.animation.frames), 10);
@@ -88,7 +88,7 @@ try {
   assert.equal(await page.evaluate(() => window.turbocutApp.store.presets[0].styles[0].fontname), 'Turbo Test Font');
 
   // ---- 6. export bundles the font by default, and leaves it out when asked
-  await page.getByLabel('Variant', { exact: true }).selectOption('0');
+  await pickOption(page, 'Variant', '0');
   await page.getByLabel('Font', { exact: true }).fill('Turbo Test Font');
   await page.getByLabel('Font', { exact: true }).blur();
   const doExport = async (include) => {

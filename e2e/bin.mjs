@@ -53,6 +53,7 @@ try {
   t = await tracks();
   assert.deepEqual(t.filter((x) => x.kind === 'video').map((x) => x.name), ['V1', 'V2']);
   assert.ok(await page.locator('.tl-track.active', { hasText: 'V2' }).count(), 'the new track is the active one');
+  await page.locator('.bin-item', { hasText: 'picture-only' }).scrollIntoViewIfNeeded(); // the bin is taller than the panel: bring the item into view before pressing it
   const thumb = await page.locator('.bin-item', { hasText: 'picture-only' }).locator('.bin-thumb').boundingBox();
   const v2 = await page.locator('.tl-track[data-track]', { hasText: 'V2' }).boundingBox();
   const dropX = v2.x + 56 + 100 * 3; // frame 100 at zoom 3
@@ -74,10 +75,10 @@ try {
   });
   const frameSig = async () => { await page.waitForTimeout(700); return app(() => { const cv = window.turbocutApp.player.canvas; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let sum = 0; for (let i = 0; i < d.length; i += 40) sum = (sum * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) >>> 0; return sum; }); };
   const withV2 = await frameSig();
-  await page.locator('.tl-head', { hasText: 'V2' }).click();
+  await page.locator('.tl-head', { hasText: 'V2' }).click({ button: 'right' }); // the track menu opens on a right click, at the pointer
   await page.getByRole('menuitem', { name: 'Hide this track' }).click();
   const hidden = await frameSig();
-  await page.locator('.tl-head', { hasText: 'V2' }).click();
+  await page.locator('.tl-head', { hasText: 'V2' }).click({ button: 'right' }); // the track menu opens on a right click, at the pointer
   await page.getByRole('menuitem', { name: 'Show this track' }).click();
   const shown = await frameSig();
   console.log('picture signature visible/hidden/visible:', withV2, hidden, shown);
@@ -94,18 +95,18 @@ try {
     return Number(/max_volume: (-?[\d.]+) dB/.exec(log)?.[1] ?? -999);
   };
   const loud = await exportLevel('loud');
-  await page.locator('.tl-head', { hasText: 'A1' }).click();
+  await page.locator('.tl-head', { hasText: 'A1' }).click({ button: 'right' }); // the track menu opens on a right click, at the pointer
   await page.getByRole('menuitem', { name: 'Mute this track' }).click();
   const quiet = await exportLevel('muted');
   console.log(`export peak with A1 audible ${loud} dB, muted ${quiet} dB`);
   assert.ok(loud > -30, 'the audio is there when the track is not muted');
   assert.ok(quiet < -60, 'a muted audio track is silent in the export');
-  await page.locator('.tl-head', { hasText: 'A1' }).click();
+  await page.locator('.tl-head', { hasText: 'A1' }).click({ button: 'right' }); // the track menu opens on a right click, at the pointer
   await page.getByRole('menuitem', { name: 'Unmute this track' }).click();
 
   // ---- 7. a locked track cannot be edited
   const v1Clip = await app(() => window.turbocutApp.store.project.tracks.find((x) => x.name === 'V1').clips[0].id);
-  await page.locator('.tl-head', { hasText: 'V1' }).click();
+  await page.locator('.tl-head', { hasText: 'V1' }).click({ button: 'right' }); // the track menu opens on a right click, at the pointer
   await page.getByRole('menuitem', { name: 'Lock this track' }).click();
   await app((id) => { window.turbocutApp.store.select(id); window.turbocutApp.store.seek(60); }, v1Clip);
   const before = JSON.stringify((await tracks()).find((x) => x.name === 'V1').clips);
@@ -115,7 +116,7 @@ try {
   const box = await page.locator('.tl-track.locked .tl-clip').first().boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.mouse.move(box.x + box.width / 2 + 90, box.y + box.height / 2, { steps: 5 }); await page.mouse.up();
   assert.equal(JSON.stringify((await tracks()).find((x) => x.name === 'V1').clips), before, 'dragging does nothing either');
-  await page.locator('.tl-head', { hasText: 'V1' }).click();
+  await page.locator('.tl-head', { hasText: 'V1' }).click({ button: 'right' }); // the track menu opens on a right click, at the pointer
   await page.getByRole('menuitem', { name: 'Unlock this track' }).click();
 
   // ---- 8. waveforms: on by default on desktop, gone when switched off
@@ -126,12 +127,12 @@ try {
   await app(() => window.turbocutApp.store.updateSettings({ waveforms: true }));
 
   // ---- 9. only an empty, spare track can be deleted
-  await page.locator('.tl-head', { hasText: 'V1' }).click();
+  await page.locator('.tl-head', { hasText: 'V1' }).click({ button: 'right' }); // the track menu opens on a right click, at the pointer
   assert.ok(await page.getByRole('menuitem', { name: 'Delete this track' }).isDisabled(), 'V1 has clips');
   await page.keyboard.press('Escape');
   await app(() => { const s = window.turbocutApp.store; s.select(s.project.tracks.find((x) => x.name === 'V2').clips[0].id); });
   await page.keyboard.press('Delete');
-  await page.locator('.tl-head', { hasText: 'V2' }).click();
+  await page.locator('.tl-head', { hasText: 'V2' }).click({ button: 'right' }); // the track menu opens on a right click, at the pointer
   await page.getByRole('menuitem', { name: 'Delete this track' }).click();
   assert.deepEqual((await tracks()).filter((x) => x.kind === 'video').map((x) => x.name), ['V1'], 'the empty spare track is gone');
 
@@ -140,7 +141,7 @@ try {
   p2.on('pageerror', (e) => errors.push(e.message));
   await p2.goto('http://localhost:5203/');
   await p2.waitForFunction(() => window.turbocutApp);
-  await p2.getByRole('button', { name: 'File' }).click();
+  await p2.getByRole('button', { name: 'File', exact: true }).click();
   const [chooser] = await Promise.all([p2.waitForEvent('filechooser'), p2.getByRole('menuitem', { name: 'Import media…' }).click()]);
   await chooser.setFiles(`${root}e2e/.media/src.webm`);
   await p2.waitForSelector('.bin-item');

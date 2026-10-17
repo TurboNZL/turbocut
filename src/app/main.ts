@@ -12,12 +12,13 @@ import { BinPanel } from './binPanel.ts';
 import { CaptionsPanel } from './captionsPanel.ts';
 import { fmtTime, h, panel, popupMenu } from './dom.ts';
 import { importFont, loadStoredFonts } from './fonts.ts';
-import { Hotkeys, type HotkeyAction } from './hotkeys.ts';
+import { Hotkeys, prettyCombo, type HotkeyAction } from './hotkeys.ts';
+import { rememberProject } from './recent.ts';
 import { openHome } from './home.ts';
 import { Inspector } from './inspector.ts';
-import { applyLayout, LIMITS, normalizeSizes, type TabName } from './layout.ts';
+import { applyLayout, LIMITS, type Side, type TabName } from './layout.ts';
 import { activeLayout, editLayout } from './layoutStore.ts';
-import { Dock } from './dock.ts';
+import { Dock, type View } from './dock.ts';
 import { windowFrame } from './windowFrame.ts';
 import { PanelHost } from './panelHost.ts';
 import { splitter } from './splitter.ts';
@@ -29,10 +30,14 @@ import { Store, ZOOM_MAX, ZOOM_MIN } from './store.ts';
 import { detectSystemFonts, fontPermission } from './systemFonts.ts';
 import { TimelineView } from './timelineView.ts';
 import { checkForUpdate } from './updater.ts';
+import { enhanceSelects } from './themedSelect.ts';
+import { openTwitchImport } from './twitchDialog.ts';
+import { openSendDialog, startSharing } from './share.ts';
 
 // Phones and some webviews cannot do the Liquid Glass lens; everything else about the look still applies.
 const themes = start({ persist: true, picker: true, lens: platform === 'web' || platform === 'electron', appearance: { theme: 'auto', ui: 'auto' } });
 void loadStoredFonts();
+enhanceSelects(); // every drop-down is drawn by the theme, never the system's own list
 // Installed fonts: the desktop app lists them straight away (no prompt in Electron); a browser only if the person already allowed it.
 void (async () => {
   if (platform === 'electron' || (await fontPermission()) === 'granted') await detectSystemFonts();
@@ -50,22 +55,23 @@ const inspector = new Inspector(store);
 const captions = new CaptionsPanel(store);
 const hotkeys = new Hotkeys(() => store.settings.hotkeys, (o) => store.updateSettings({ hotkeys: o }));
 const touch = timeline.touch;
-/** Settings: in the panel when the layout has a Settings tab (the dock layout does), otherwise a window. */
+
+/** Settings: a page of its own with the bottom dock, otherwise a window. */
 const settings = (tab?: SettingsTab) => {
-  if (host.shown.includes('Settings')) {
-    ensureSettings().show(tab ?? 'General');
-    host.show('Settings', true);
-  } else openSettings({ store, hotkeys, touch }, tab);
+  if (store.settings.dock) setView('settings', tab);
+  else openSettings({ store, hotkeys, touch }, tab);
 };
 captions.openEngineSettings = () => settings('Captions');
 
-const importFiles = async (folder?: string) => {
+/** Pick media into the bin. Resolves true when files were chosen (a cancelled picker is false, so a screen that asked is not left). */
+const importFiles = async (folder?: string): Promise<boolean> => {
   const files = await pickFiles('video/*,audio/*,.mkv,.webm,.mov', true);
-  if (!files.length) return;
+  if (!files.length) return false;
   await actions.importMedia(files, false, folder);
   showTab('Media'); // imported files wait in the bin: show it, so it is clear where they went
+  return true;
 };
-const bin = new BinPanel(store, actions, timeline, (folder) => void importFiles(folder));
+const bin = new BinPanel(store, actions, timeline, (folder) => void importFiles(folder), () => openTwitchImport(actions));
 
 // ---------------------------------------------------------------- shortcuts (the person can change all of these in Settings)
 const act = (group: string, id: string, label: string, keys: string[], run: HotkeyAction['run']): HotkeyAction => ({ id, label, group, keys, run });
@@ -97,16 +103,33 @@ hotkeys.register([
   act('Timeline', 'zoomOut', 'Zoom the timeline out', ['-', '_'], () => store.setZoom(store.zoom / 1.25)),
   act('File', 'import', 'Import media', ['Ctrl+I'], () => void importFiles()),
   act('File', 'save', 'Save the project as a file', ['Ctrl+S'], () => void actions.saveProject()),
-  act('File', 'open', 'Open a project file', ['Ctrl+O'], () => actions.openProject()),
-  act('File', 'new', 'New project', ['Ctrl+N'], () => actions.newProject()),
+  act('File', 'open', 'Open a project file', ['Ctrl+O'], () => void actions.openProject()),
+  act('File', 'new', 'New project', ['Ctrl+N'], () => void actions.newProject()),
   act('File', 'export', 'Export', ['Ctrl+E'], () => void actions.runExport()),
   act('App', 'settings', 'Open Settings', ['Ctrl+,'], () => settings()),
   act('App', 'shortcuts', 'Show the shortcut list', ['?'], () => settings('Keys')),
 ]);
 
+/**
+ * Tooltips that show the shortcut in force right now, not the default: a button's title is its name plus whatever keys the
+ * person has set (and it is rewritten whenever the shortcuts change).
+ */
+const tips: { el: HTMLElement; text: string; id: string }[] = [];
+const writeTip = (t: { el: HTMLElement; text: string; id: string }) => {
+  const keys = hotkeys.keysFor(t.id).slice(0, 2).map(prettyCombo);
+  t.el.title = keys.length ? `${t.text} (${keys.join(' or ')})` : t.text;
+};
+function keyTip<T extends HTMLElement>(el: T, text: string, id: string): T {
+  const t = { el, text, id };
+  tips.push(t);
+  writeTip(t);
+  return el;
+}
+store.on('settings', () => tips.forEach(writeTip));
+
 // ---------------------------------------------------------------- layout
 const time = h('span', { class: 'time mono' });
-const playBtn = h('button', { class: 'btn btn-accent', 'aria-label': 'Play or pause', onclick: () => player.toggle() }, icon('play'));
+const playBtn = keyTip(h('button', { class: 'btn btn-accent', 'aria-label': 'Play or pause', onclick: () => player.toggle() }, icon('play')), 'Play or pause', 'play');
 const lnMin = Math.log(ZOOM_MIN);
 const lnMax = Math.log(ZOOM_MAX);
 const zoom = h('input', { type: 'range', class: 'bt-range zoom', min: lnMin, max: lnMax, step: 0.01, value: Math.log(store.zoom), 'aria-label': 'Timeline zoom' });
@@ -115,56 +138,66 @@ store.on('view', () => (zoom.value = String(Math.log(store.zoom))));
 const status = h('div', { class: 'status', role: 'status' });
 
 // The panel's tabs are built once; the panel host moves them between panes as the layout says.
-const settingsHolder = h('div', { class: 'settings-tab' });
-let settingsPage: ReturnType<typeof settingsView> | null = null;
-const ensureSettings = () => {
-  if (!settingsPage) {
-    settingsPage = settingsView({ store, hotkeys, touch });
-    settingsHolder.append(settingsPage.el);
-  }
-  return settingsPage;
-};
-const tabs: Record<TabName, HTMLElement> = { Clip: h('div', { class: 'clip-tab' }, inspector.el), Media: bin.el, Captions: captions.el, Project: projectPanel(), Settings: settingsHolder };
-const dock = new Dock((t) => host.show(t, true));
-const host: PanelHost = new PanelHost(tabs, {
-  getWidth: () => parseFloat(app.style.getPropertyValue('--panel-w')) || activeLayout(store).panelWidth,
-  setWidth: (px, commit) => {
-    app.style.setProperty('--panel-w', `${px}px`);
-    if (commit) editLayout(store, { panelWidth: px });
+const tabs: Record<TabName, HTMLElement> = { Clip: h('div', { class: 'clip-tab' }, inspector.el), Media: bin.el, Captions: captions.el, Project: projectPanel() };
+const dock = new Dock((v) => setView(v));
+const colVar = (side: Side) => (side === 'left' ? '--left-w' : '--right-w');
+const host: PanelHost = new PanelHost(
+  tabs,
+  {
+    getWidth: (side) => parseFloat(app.style.getPropertyValue(colVar(side))) || (side === 'left' ? activeLayout(store).leftWidth : activeLayout(store).panelWidth),
+    setWidth: (side, px, commit) => {
+      app.style.setProperty(colVar(side), `${px}px`);
+      if (commit) editLayout(store, side === 'left' ? { leftWidth: px } : { panelWidth: px });
+    },
+    setSizes: (side, sizes, commit) => {
+      if (!commit) return;
+      const divisions = activeLayout(store).divisions.map((d) => ({ ...d, tabs: [...d.tabs] }));
+      divisions.filter((d) => d.side === side).forEach((d, i) => (d.size = sizes[i] ?? d.size));
+      editLayout(store, { divisions });
+    },
+    resetSizes: () => editLayout(store, { panelWidth: 340, leftWidth: 300, divisions: activeLayout(store).divisions.map((d) => ({ ...d, tabs: [...d.tabs], size: 0 })) }),
   },
-  setPaneSizes: (sizes, commit) => commit && editLayout(store, { paneSizes: sizes }),
-  resetSizes: () => editLayout(store, { panelWidth: 340, paneSizes: normalizeSizes(null, activeLayout(store).panes.length) }),
-});
-host.onShow = (name) => {
-  if (name === 'Settings') ensureSettings();
-  dock.render(app.dataset.dock === 'on', host.shown, name);
-};
-const side = host.el;
+  store.settings.openTab,
+);
+host.onShow = () => {};
 const showTab = (name: TabName, userTap = false) => host.show(name, userTap);
-/** Draw the chosen layout: panel side and size, panes, timeline height, tool bar place, control size, dock. */
+/** Draw the chosen layout: panel columns and sizes, timeline height, where the tools go, control size, the dock. */
 const narrowQuery = matchMedia('(max-width: 820px)');
 const touchQuery = matchMedia('(pointer: coarse)');
 function drawLayout(): void {
   const l = applyLayout(activeLayout(store), narrowQuery.matches, touchQuery.matches);
-  app.dataset.panel = l.panel;
+  app.dataset.panel = l.mode === 'sheet' ? 'sheet' : l.right.length && !l.left.length ? 'right' : l.left.length && !l.right.length ? 'left' : 'both';
   app.dataset.density = l.density;
-  app.dataset.tools = l.tools; // above the timeline with a mouse, under it for thumbs (or as the layout says)
-  app.dataset.dock = l.dock ? 'on' : 'off';
-  app.style.setProperty('--panel-w', `${l.panelWidth}px`);
+  app.dataset.tools = l.tools; // inline with the play button, a row under it, under the timeline, or floating
+  app.dataset.dock = store.settings.dock ? 'on' : 'off';
+  app.style.setProperty('--left-w', `${l.left.length ? l.leftWidth : 0}px`);
+  app.style.setProperty('--right-w', `${l.right.length ? l.panelWidth : 0}px`);
+  app.style.setProperty('--left-on', l.left.length ? '1' : '0');
+  app.style.setProperty('--right-on', l.right.length ? '1' : '0');
   app.style.setProperty('--tl-h', `${l.timelineHeight}%`);
+  host.setStart(store.settings.openTab);
   host.apply(l);
-  dock.render(l.dock, host.shown, host.current);
+  placeTools(l.tools);
+  if (!store.settings.dock && view !== 'edit') {
+    // The dock was switched off while a dock page was open: leave that page (Settings becomes its window).
+    const was = view;
+    setView('edit');
+    if (was === 'settings') openSettings({ store, hotkeys, touch }, 'Look');
+  }
+  dock.render(store.settings.dock, view);
 }
 store.on('settings', drawLayout);
 narrowQuery.addEventListener('change', drawLayout);
 touchQuery.addEventListener('change', drawLayout);
 // Switch panels only when a DIFFERENT clip or caption gets selected. Undo, redo and picking a track also announce a
-// selection change; they must not pull the person out of the panel they are working in.
+// selection change; they must not pull the person out of the panel they are working in. (Settings can turn this off.)
 let lastSelected: string | null = null;
 let lastCue: string | null = null;
 store.on('selection', () => {
-  if (store.selected && store.selected !== lastSelected) showTab('Clip');
-  if (store.selectedCue && store.selectedCue !== lastCue) showTab('Captions');
+  if (store.settings.autoSwitch) {
+    if (store.selected && store.selected !== lastSelected) showTab('Clip');
+    if (store.selectedCue && store.selectedCue !== lastCue) showTab('Captions');
+  }
   lastSelected = store.selected;
   lastCue = store.selectedCue;
 });
@@ -191,48 +224,57 @@ function projectPanel(): HTMLElement {
   sync();
   return panel(
     'Project',
-    name,
-    aspect,
-    rate,
-    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => void actions.saveProject() }, 'Save…'), h('button', { class: 'btn', onclick: () => actions.openProject() }, 'Open…'), h('button', { class: 'btn', onclick: () => actions.newProject() }, 'New')),
-    missing,
-    h('p', { class: 'hint' }, 'A project file holds the edit, not the video. Keep the media files next to it.'),
-    h('button', { class: 'btn', onclick: () => settings() }, 'Settings…'),
+    h('div', { class: 'proj' },
+      h('label', { class: 'proj-field' }, h('span', { class: 'prop-l' }, 'Name'), name),
+      h('label', { class: 'proj-field' }, h('span', { class: 'prop-l' }, 'Shape'), aspect),
+      rate,
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => void actions.saveProject() }, 'Save…'), h('button', { class: 'btn', onclick: () => void actions.openProject() }, 'Open…'), h('button', { class: 'btn', onclick: () => void actions.newProject() }, 'New')),
+      missing,
+      h('p', { class: 'hint' }, 'A project file holds the edit, not the video. Keep the media files next to it.'),
+      h('button', { class: 'btn', onclick: () => openSendDialog(store) }, 'Send to another device…'),
+      h('button', { class: 'btn', onclick: () => settings() }, 'Settings…')),
   );
 }
 
-const iconBtn = (name: IconName, label: string, run: () => void, extra = '') => h('button', { class: `btn btn-ghost icon-btn ${extra}`.trim(), 'aria-label': label, title: label, onclick: run }, icon(name));
+const iconBtn = (name: IconName, label: string, run: () => void, extra = '', hotkey?: string) => {
+  const b = h('button', { class: `btn btn-ghost icon-btn ${extra}`.trim(), 'aria-label': label, title: label, onclick: run }, icon(name));
+  return hotkey ? keyTip(b, label, hotkey) : b;
+};
 const fileMenu = h('button', { class: 'btn btn-ghost', 'aria-haspopup': 'menu' }, 'File', icon('chevron', 14));
 fileMenu.addEventListener('click', () =>
   popupMenu(fileMenu, [
-    { label: 'New project', run: () => actions.newProject() },
-    { label: 'Open project…', run: () => actions.openProject() },
+    { label: 'New project', run: () => void actions.newProject() },
+    { label: 'Open project…', run: () => void actions.openProject() },
     { label: 'Save project', run: () => void actions.saveProject() },
     { label: 'Import media…', run: () => void importFiles() },
+    { label: 'Import a Twitch clip…', run: () => openTwitchImport(actions) },
+    { label: 'Send to another device…', run: () => openSendDialog(store) },
     { label: 'Find missing media…', run: () => actions.relinkDialog(), disabled: store.missingAssets().length === 0 },
   ]),
 );
 const header = h('header', { class: 'bt-top top' },
   h('img', { class: 'logo-mark', src: `${import.meta.env.BASE_URL}icon.svg`, alt: '', width: 28, height: 28 }),
   h('strong', { class: 'logo' }, 'TurboCut'),
-  iconBtn('home', 'Home', () => showHome()),
+  iconBtn('home', 'Home', () => (store.settings.dock ? setView('home') : showHome()), 'hdr-home'),
   fileMenu,
   h('span', { class: 'spacer' }),
-  iconBtn('undo', 'Undo (Ctrl+Z)', () => store.undo()),
-  iconBtn('redo', 'Redo (Ctrl+Shift+Z)', () => store.redo()),
-  iconBtn('settings', 'Settings (Ctrl+,)', () => settings()),
-  h('button', { class: 'btn btn-accent', onclick: () => void actions.runExport() }, 'Export'),
+  iconBtn('undo', 'Undo', () => store.undo(), '', 'undo'),
+  iconBtn('redo', 'Redo', () => store.redo(), '', 'redo'),
+  iconBtn('settings', 'Settings', () => settings(), '', 'settings'),
+  keyTip(h('button', { class: 'btn btn-accent', onclick: () => void actions.runExport() }, 'Export'), 'Export', 'export'),
 );
 
-const transport = h('div', { class: 'transport' },
-  iconBtn('skipBack', 'Go to the start', () => store.seek(0)),
+const transportMain = h('div', { class: 'transport-main' },
+  iconBtn('skipBack', 'Go to the start', () => store.seek(0), '', 'toStart'),
   playBtn,
-  iconBtn('skipForward', 'Go to the end', () => store.seek(projectDuration(store.project))),
+  iconBtn('skipForward', 'Go to the end', () => store.seek(projectDuration(store.project)), '', 'toEnd'),
   time,
 );
+const transport = h('div', { class: 'transport' }, transportMain);
 
-// Edit actions live in one bar right under the timeline, in thumb reach on a phone.
-const snapBtn = h('button', { class: 'btn btn-ghost tool', 'aria-label': 'Snapping', title: 'Snapping (N)', onclick: () => actions.toggleSnapping() }, icon('magnet'));
+// The editing tools. One bar, moved to where the layout wants it (see `placeTools`): in line with the play button, a row under it,
+// under the timeline, or as round buttons floating at the bottom right.
+const snapBtn = keyTip(h('button', { class: 'btn btn-ghost tool', 'aria-label': 'Snapping', onclick: () => actions.toggleSnapping() }, icon('magnet')), 'Snapping', 'snap');
 const syncSnap = () => {
   snapBtn.setAttribute('aria-pressed', String(store.settings.snapping));
   snapBtn.classList.toggle('on', store.settings.snapping);
@@ -240,20 +282,34 @@ const syncSnap = () => {
 store.on('settings', syncSnap);
 syncSnap();
 /** A tool: an icon, with its name beside it on a wide screen (the label hides on a phone, the tooltip and aria-label stay). */
-const tool = (name: IconName, label: string, tip: string, run: () => void, cls = 'btn-ghost') => h('button', { class: `btn ${cls} tool`, 'aria-label': label, title: tip, onclick: run }, icon(name), h('span', { class: 'tool-l' }, label));
-const editBar = h('div', { class: 'edit-bar' },
-  tool('split', 'Split', 'Split at the playhead (S)', () => actions.split(), 'btn-accent'),
-  tool('trimStart', 'Trim start', 'Cut the start of the selected clip to the playhead ([)', () => actions.trimToPlayhead('start')),
-  tool('trimEnd', 'Trim end', 'Cut the end of the selected clip to the playhead (])', () => actions.trimToPlayhead('end')),
-  tool('trash', 'Delete', 'Delete the selection', () => actions.remove(false)),
-  tool('text', 'Text', 'Add a text layer (T)', () => actions.addText()),
+const tool = (name: IconName, label: string, tip: string, id: string, run: () => void, cls = 'btn-ghost') => keyTip(h('button', { class: `btn ${cls} tool`, 'aria-label': label, onclick: run }, icon(name), h('span', { class: 'tool-l' }, label)), tip, id);
+const fabToggle = h('button', { class: 'btn btn-accent tool fab-toggle', 'aria-label': 'Show or hide the editing tools', 'aria-expanded': 'true', title: 'Show or hide the editing tools' }, icon('more'));
+const editBar = h('div', { class: 'edit-bar', 'data-open': '' },
+  fabToggle,
+  // Split sits between the two trim buttons: trim the start, cut here, trim the end.
+  tool('trimStart', 'Trim start', 'Cut the start of the selected clip to the playhead', 'trimStart', () => actions.trimToPlayhead('start')),
+  tool('split', 'Split', 'Split at the playhead', 'split', () => actions.split(), 'btn-accent'),
+  tool('trimEnd', 'Trim end', 'Cut the end of the selected clip to the playhead', 'trimEnd', () => actions.trimToPlayhead('end')),
+  tool('trash', 'Delete', 'Delete the selection', 'delete', () => actions.remove(false)),
+  tool('text', 'Text', 'Add a text layer', 'addText', () => actions.addText()),
   snapBtn,
   h('span', { class: 'spacer' }),
   h('span', { class: 'zoom-box' },
-    iconBtn('minus', 'Zoom out timeline', () => store.setZoom(store.zoom / 1.5)),
+    iconBtn('minus', 'Zoom out timeline', () => store.setZoom(store.zoom / 1.5), '', 'zoomOut'),
     zoom,
-    iconBtn('plus', 'Zoom in timeline', () => store.setZoom(store.zoom * 1.5))),
+    iconBtn('plus', 'Zoom in timeline', () => store.setZoom(store.zoom * 1.5), '', 'zoomIn')),
 );
+fabToggle.addEventListener('click', () => {
+  const open = editBar.hasAttribute('data-open');
+  if (open) editBar.removeAttribute('data-open');
+  else editBar.setAttribute('data-open', '');
+  fabToggle.setAttribute('aria-expanded', String(!open));
+});
+/** Put the tool bar where the layout wants it. Moving the same element keeps its listeners and state. */
+function placeTools(where: 'inline' | 'stage' | 'bottom' | 'float'): void {
+  const dest = where === 'inline' ? transport : where === 'stage' ? stage : app;
+  if (editBar.parentElement !== dest) dest.append(editBar);
+}
 
 player.canvas.addEventListener('click', () => player.toggle());
 const stage = h('section', { class: 'stage' }, h('div', { class: 'preview' }, player.canvas), transport);
@@ -272,8 +328,40 @@ const timelineBar = splitter({
   onReset: () => editLayout(store, { timelineHeight: 34 }),
 });
 const bottomEl = h('section', { class: 'bottom' }, timelineBar, timeline.el);
-app.append(header, h('main', { class: 'main' }, stage, side), bottomEl, editBar, dock.el, status);
-drawLayout();
+const [leftSide, rightSide] = host.els as [HTMLElement, HTMLElement];
+app.append(header, h('main', { class: 'main' }, leftSide, stage, rightSide), bottomEl, dock.el, status);
+
+// ---------------------------------------------------------------- the three places of the bottom dock: Home, Edit and Settings
+let view: View = 'edit';
+let homeEl: HTMLElement | null = null;
+let settingsLayer: HTMLElement | null = null;
+let settingsPage: ReturnType<typeof settingsView> | null = null;
+function leaveHome(): void {
+  homeEl?.remove();
+  homeEl = null;
+}
+function leaveSettings(): void {
+  settingsLayer?.remove();
+  settingsLayer = null;
+  settingsPage = null;
+}
+/** Go to a page of the dock (with the dock on). Edit is the editor itself; Home and Settings are pages above it, above the dock. */
+function setView(next: View, tab?: SettingsTab): void {
+  if (next !== 'home') leaveHome();
+  if (next !== 'settings') leaveSettings();
+  view = next;
+  if (next === 'home' && !homeEl) showHome();
+  if (next === 'settings') {
+    if (!settingsLayer) {
+      settingsPage = settingsView({ store, hotkeys, touch }, tab ?? 'General');
+      settingsLayer = h('div', { class: 'view-layer', 'aria-label': 'Settings' }, settingsPage.el);
+      document.body.append(settingsLayer);
+    } else if (tab) settingsPage?.show(tab);
+    settingsPage?.focusSearch();
+  }
+  dock.render(store.settings.dock, view);
+  if (next === 'edit') bootAnimation();
+}
 /** The parts of the editor arrive one after another when it opens (and again when the home screen is closed). */
 function bootAnimation(): void {
   app.classList.add('booting');
@@ -281,14 +369,38 @@ function bootAnimation(): void {
 }
 
 /** The home screen: shown when the app starts with nothing in the project (unless switched off), and from the Home button. */
-let homeOpen = false;
 function showHome(): void {
-  if (homeOpen) return;
-  homeOpen = true;
-  openHome({ store, importFiles, openProject: () => actions.openProject(), openSettings: (tab) => settings(tab), onClose: () => ((homeOpen = false), bootAnimation()) });
+  if (homeEl) return;
+  const docked = store.settings.dock;
+  if (docked) view = 'home';
+  const handle = openHome({
+    store,
+    importFiles: () => importFiles(),
+    openProject: () => actions.openProject(),
+    openRecent: (key) => actions.openRecent(key),
+    openSettings: (tab) => settings(tab),
+    docked,
+    onClose: () => {
+      homeEl = null;
+      if (store.settings.dock) setView('edit');
+      else bootAnimation();
+    },
+  });
+  homeEl = handle.el;
+  dock.render(store.settings.dock, view);
 }
+drawLayout();
+startSharing(store, actions); // desktop app: be found by other TurboCut apps and accept what they send (each time, with an Accept)
 if (store.settings.showHome && projectDuration(store.project) === 0) showHome();
 else bootAnimation();
+
+// Work is kept in the recent list a few seconds after the last change, so a project that was never saved to a file is still one tap away.
+let keepTimer: ReturnType<typeof setTimeout> | undefined;
+store.on('project', () => {
+  clearTimeout(keepTimer);
+  keepTimer = setTimeout(() => void rememberProject(store.project), 4000);
+});
+window.addEventListener('pagehide', () => void rememberProject(store.project));
 
 const tick = () => {
   const p = store.project;

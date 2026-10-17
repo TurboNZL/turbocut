@@ -1,69 +1,76 @@
 /**
- * Editor layouts: where the side panel sits, how big it and the timeline are, how large the controls are, and which
- * panel tabs show and in what order. A few ship built in; people save their own, and share them as small JSON files.
- * Pure data and validation here; `main.ts` applies the result to the page.
+ * Editor layouts: where the panels sit, how big they and the timeline are, how large the controls are, and where the editing
+ * tools go. A layout is a list of named **divisions** (panels): each one is its own box with its own name and tabs, on the left or
+ * the right of the preview, stacked in a column when several share a side. A few ship built in; people save their own and share
+ * them as small JSON files. Pure data and validation here; `main.ts` applies the result to the page.
  */
-export const TAB_NAMES = ['Clip', 'Media', 'Captions', 'Project', 'Settings'] as const;
+export const TAB_NAMES = ['Clip', 'Media', 'Captions', 'Project'] as const;
 export type TabName = (typeof TAB_NAMES)[number];
-/** The tabs every layout offered before Settings could be a tab: a saved layout without a pane for Settings still opens the Settings window. */
-const CORE_TABS: TabName[] = ['Clip', 'Media', 'Captions', 'Project'];
 
-export type PanelPlacement = 'auto' | 'right' | 'left' | 'sheet';
+/** `auto` is a side panel on a wide screen and a bottom sheet on a phone or narrow window; `sheet` always uses the sheet. */
+export type PanelPlacement = 'auto' | 'sheet';
 export type Density = 'auto' | 'compact' | 'normal' | 'large';
-/** Where Split, Trim and the other editing tools sit: above the timeline, under it, or by device (above with a mouse, under on a phone). */
-export type ToolsPlacement = 'auto' | 'top' | 'bottom';
+/**
+ * Where Split, Trim and the other editing tools sit. `auto`: in line with the play button on a computer, under the timeline on a
+ * phone. `top`: in line with the play button, or on a phone in a row just under it (above the panel). `bottom`: under the timeline.
+ * `float`: round buttons floating at the bottom right of the screen.
+ */
+export type ToolsPlacement = 'auto' | 'top' | 'bottom' | 'float';
+export type Side = 'left' | 'right';
 
-export const MAX_PANES = 3;
+export const MAX_DIVISIONS = 6;
+
+export interface Division {
+  /** What the person calls this panel. */
+  name: string;
+  side: Side;
+  tabs: TabName[];
+  /** Height in percent of its column (the divisions of one side add up to 100). */
+  size: number;
+}
 
 export interface Layout {
   name: string;
-  /** auto: a right-hand panel on a wide mouse screen, a bottom sheet on a phone or narrow window. */
   panel: PanelPlacement;
-  /** Width of a side panel in pixels. */
+  /** Width of the right-hand column in pixels. */
   panelWidth: number;
+  /** Width of the left-hand column in pixels. */
+  leftWidth: number;
   /** Share of the window height given to the timeline, in percent. */
   timelineHeight: number;
   /** auto: large touch targets on a phone, normal elsewhere. */
   density: Density;
-  /** The side panel as one to three panes, top to bottom; each pane lists its own tabs in order. A tab in no pane is hidden. */
-  panes: TabName[][];
-  /** Height of each pane in percent of the panel (sums to 100). */
-  paneSizes: number[];
+  divisions: Division[];
   tools: ToolsPlacement;
-  /** The tabs are in a dock along the bottom of the window (like the bottom dock of TurboKeep) instead of a strip on each pane. */
-  dock: boolean;
 }
 
 export const AUTO_LAYOUT = 'Automatic';
 
+const div = (name: string, side: Side, tabs: TabName[], size = 100): Division => ({ name, side, tabs, size });
+
 const base = (over: Partial<Layout> & { name: string }): Layout => ({
   panel: 'auto',
   panelWidth: 340,
+  leftWidth: 300,
   timelineHeight: 34,
   density: 'auto',
-  panes: [[...CORE_TABS]],
-  paneSizes: [100],
+  divisions: [div('Panel', 'right', [...TAB_NAMES])],
   tools: 'auto',
-  dock: false,
   ...over,
 });
 
+/** Four presets. Anything else is made by changing one of them: the change is saved as the person's own layout. */
 export const BUILTIN_LAYOUTS: Layout[] = [
   base({ name: AUTO_LAYOUT }),
-  base({ name: 'Panel on the left', panel: 'left' }),
-  base({ name: 'Tall timeline', panel: 'right', timelineHeight: 50 }),
+  base({ name: 'Library and editor', divisions: [div('Library', 'left', ['Media', 'Project']), div('Editor', 'right', ['Clip', 'Captions'])] }),
+  base({ name: 'Stacked panels', panelWidth: 360, divisions: [div('Editor', 'right', ['Clip', 'Captions'], 55), div('Library', 'right', ['Media', 'Project'], 45)] }),
   base({ name: 'Bottom sheet', panel: 'sheet' }),
-  base({ name: 'Compact', panel: 'right', panelWidth: 280, timelineHeight: 30, density: 'compact' }),
-  base({ name: 'Large controls', panelWidth: 380, timelineHeight: 38, density: 'large' }),
-  base({ name: 'Two panels', panel: 'right', panelWidth: 360, panes: [['Clip'], ['Media', 'Captions', 'Project']], paneSizes: [50, 50] }),
-  base({ name: 'Three panels', panel: 'right', panelWidth: 360, panes: [['Clip'], ['Media'], ['Captions', 'Project']], paneSizes: [34, 33, 33] }),
-  base({ name: 'Bottom dock', panel: 'right', panes: [[...CORE_TABS, 'Settings']], dock: true }),
 ];
 
-export const LIMITS = { panelWidth: [240, 640], timelineHeight: [20, 70], paneSize: [15, 70] } as const;
+export const LIMITS = { panelWidth: [240, 640], timelineHeight: [20, 70], paneSize: [15, 85] } as const;
 const clamp = (v: number, [lo, hi]: readonly [number, number] | readonly number[]) => Math.min(hi!, Math.max(lo!, Math.round(v)));
 
-/** Panes of equal height, or the given sizes made to add up to 100 (and none below the minimum). */
+/** Heights that add up to 100 and none below the minimum; equal heights when the given ones do not fit. */
 export function normalizeSizes(sizes: unknown, n: number): number[] {
   const given = Array.isArray(sizes) && sizes.length === n && sizes.every((x) => typeof x === 'number' && Number.isFinite(x) && x > 0) ? (sizes as number[]) : null;
   if (!given) {
@@ -73,78 +80,106 @@ export function normalizeSizes(sizes: unknown, n: number): number[] {
   const total = given.reduce((a, b) => a + b, 0);
   let out = given.map((x) => Math.max(LIMITS.paneSize[0], Math.round((x / total) * 100)));
   const diff = 100 - out.reduce((a, b) => a + b, 0);
-  out[out.length - 1]! += diff; // rounding goes to the last pane
+  out[out.length - 1]! += diff; // rounding goes to the last one
   if (out.some((x) => x < LIMITS.paneSize[0])) out = normalizeSizes(null, n);
   return out;
 }
 
-/** Every tab a layout shows, in order. */
-export const layoutTabs = (l: Layout): TabName[] => l.panes.flat();
+/** The divisions of one side, top to bottom. */
+export const column = (l: { divisions: Division[] }, side: Side): Division[] => l.divisions.filter((d) => d.side === side);
+
+/** Every tab a layout shows, in order (left column first). */
+export const layoutTabs = (l: { divisions: Division[] }): TabName[] => [...column(l, 'left'), ...column(l, 'right')].flatMap((d) => d.tabs);
+
+/** Make each side's sizes add up to 100. */
+function fixSizes(divs: Division[]): Division[] {
+  for (const side of ['left', 'right'] as const) {
+    const col = divs.filter((d) => d.side === side);
+    if (!col.length) continue;
+    const sizes = normalizeSizes(col.map((d) => d.size), col.length);
+    col.forEach((d, i) => (d.size = sizes[i]!));
+  }
+  return divs;
+}
+
+export function uniqueDivisionName(wanted: string, divs: Division[], except?: Division): string {
+  const taken = new Set(divs.filter((d) => d !== except).map((d) => d.name.toLowerCase()));
+  const name = wanted.trim().slice(0, 24) || 'Panel';
+  if (!taken.has(name.toLowerCase())) return name;
+  for (let i = 2; ; i++) if (!taken.has(`${name} ${i}`.toLowerCase())) return `${name} ${i}`;
+}
 
 /** A usable layout from anything: wrong types and out-of-range numbers are repaired, unknown tabs dropped, at least one tab kept. */
 export function cleanLayout(raw: unknown, fallback: Layout = BUILTIN_LAYOUTS[0]!): Layout | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.name !== 'string' || !r.name.trim()) return null;
-  const panel: PanelPlacement = r.panel === 'right' || r.panel === 'left' || r.panel === 'sheet' || r.panel === 'auto' ? r.panel : fallback.panel;
+  const legacySide: Side = r.panel === 'left' ? 'left' : 'right';
+  const panel: PanelPlacement = r.panel === 'sheet' ? 'sheet' : r.panel === 'auto' ? 'auto' : r.panel === 'left' || r.panel === 'right' ? 'auto' : fallback.panel;
   const density: Density = r.density === 'compact' || r.density === 'normal' || r.density === 'large' || r.density === 'auto' ? r.density : fallback.density;
-  const tools: ToolsPlacement = r.tools === 'top' || r.tools === 'bottom' || r.tools === 'auto' ? r.tools : fallback.tools;
+  const tools: ToolsPlacement = r.tools === 'top' || r.tools === 'bottom' || r.tools === 'float' || r.tools === 'auto' ? r.tools : fallback.tools;
   const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
   const seen = new Set<string>();
-  // The Keys tab was merged into Clip: a saved layout that still lists it keeps its place as Clip.
   const known = (t: unknown): t is TabName => (TAB_NAMES as readonly string[]).includes(t as string) && !seen.has(t as string) && !!seen.add(t as string);
-  // Older layouts have one flat list of tabs: that is one pane.
-  const rawPanes: unknown[] = Array.isArray(r.panes) ? r.panes : Array.isArray(r.tabs) ? [r.tabs] : [];
-  const panes = rawPanes
-    .map((p) => (Array.isArray(p) ? p.map((t) => (t === 'Keys' ? 'Clip' : t)).filter(known) : []))
-    .filter((p) => p.length > 0)
-    .slice(0, MAX_PANES);
-  const useFallback = panes.length === 0;
-  const finalPanes = useFallback ? fallback.panes.map((p) => [...p]) : panes;
+  // Layouts saved before divisions: `panes` (lists of tabs, all on one side) or a flat `tabs` list. The old Keys tab became Clip; Settings is no longer a tab.
+  const oldPanes: unknown[] = Array.isArray(r.panes) ? r.panes : Array.isArray(r.tabs) ? [r.tabs] : [];
+  const rawDivs: { name: unknown; side: unknown; tabs: unknown; size: unknown }[] = Array.isArray(r.divisions)
+    ? (r.divisions as any[]).filter((d) => d && typeof d === 'object')
+    : oldPanes.map((p, i) => ({ name: oldPanes.length > 1 ? `Panel ${i + 1}` : 'Panel', side: legacySide, tabs: p, size: Array.isArray(r.paneSizes) ? (r.paneSizes as unknown[])[i] : undefined }));
+  const divisions: Division[] = [];
+  for (const d of rawDivs) {
+    const tabs = (Array.isArray(d.tabs) ? d.tabs : []).map((t) => (t === 'Keys' ? 'Clip' : t)).filter(known);
+    if (!tabs.length || divisions.length >= MAX_DIVISIONS) continue;
+    const side: Side = d.side === 'left' ? 'left' : 'right';
+    divisions.push({ name: uniqueDivisionName(typeof d.name === 'string' ? d.name : 'Panel', divisions), side, tabs, size: num(d.size, 0) });
+  }
+  const useFallback = divisions.length === 0;
+  const finalDivs = fixSizes(useFallback ? structuredClone(fallback.divisions) : divisions);
   return {
     name: r.name.trim().slice(0, 40),
     panel,
     panelWidth: clamp(num(r.panelWidth, fallback.panelWidth), LIMITS.panelWidth),
+    leftWidth: clamp(num(r.leftWidth, fallback.leftWidth), LIMITS.panelWidth),
     timelineHeight: clamp(num(r.timelineHeight, fallback.timelineHeight), LIMITS.timelineHeight),
     density,
-    panes: finalPanes,
-    paneSizes: normalizeSizes(useFallback ? fallback.paneSizes : r.paneSizes, finalPanes.length),
+    divisions: finalDivs,
     tools,
-    dock: typeof r.dock === 'boolean' ? r.dock : fallback.dock,
   };
 }
 
 /** What the page needs to draw a layout on this screen. */
 export interface AppliedLayout {
-  panel: 'right' | 'left' | 'sheet';
+  /** `side`: columns beside the preview; `sheet`: one panel under the timeline. */
+  mode: 'side' | 'sheet';
   panelWidth: number;
+  leftWidth: number;
   timelineHeight: number;
   density: 'compact' | 'normal' | 'large';
-  panes: TabName[][];
-  paneSizes: number[];
-  tools: 'top' | 'bottom';
-  dock: boolean;
+  left: Division[];
+  right: Division[];
+  /** `inline`: in the transport row; `stage`: a row under it; `bottom`: under the timeline; `float`: round buttons at the bottom right. */
+  tools: 'inline' | 'stage' | 'bottom' | 'float';
 }
 
 export function applyLayout(l: Layout, narrow: boolean, touch: boolean): AppliedLayout {
-  // A side panel cannot work on a narrow screen: the preview would be crushed, so it becomes the sheet (and its panes become one).
-  const wanted = l.panel === 'auto' ? 'right' : l.panel;
-  const panel = narrow || l.panel === 'sheet' ? 'sheet' : wanted;
-  const flat = panel === 'sheet';
+  // Side panels cannot work on a narrow screen: the preview would be crushed, so everything becomes one sheet.
+  const sheet = narrow || l.panel === 'sheet';
+  const phone = narrow || touch;
+  const flat: Division = { name: 'Panel', side: 'right', tabs: layoutTabs(l), size: 100 };
   return {
-    panel,
+    mode: sheet ? 'sheet' : 'side',
     panelWidth: l.panelWidth,
+    leftWidth: l.leftWidth,
     timelineHeight: l.timelineHeight,
     density: l.density === 'auto' ? (touch ? 'large' : 'normal') : l.density,
-    panes: flat ? [layoutTabs(l)] : l.panes,
-    paneSizes: flat ? [100] : l.paneSizes,
-    tools: l.tools === 'auto' ? (touch || narrow ? 'bottom' : 'top') : l.tools,
-    dock: l.dock,
+    left: sheet ? [] : column(l, 'left'),
+    right: sheet ? [flat] : column(l, 'right'),
+    tools: l.tools === 'bottom' ? 'bottom' : l.tools === 'float' ? 'float' : l.tools === 'top' ? (phone ? 'stage' : 'inline') : phone ? 'bottom' : 'inline',
   };
 }
 
 export function exportLayout(l: Layout): string {
-  return JSON.stringify({ format: 'turbocut.layout', version: 2, layout: l }, null, 2);
+  return JSON.stringify({ format: 'turbocut.layout', version: 3, layout: l }, null, 2);
 }
 
 export function importLayout(json: string): Layout {

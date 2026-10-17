@@ -16,6 +16,7 @@ interface Opened {
 /** Opens media files and hands out decoded frames and audio. Same code on every platform: it only needs a Blob. */
 export class MediaLibrary implements FrameSource {
   private opened = new Map<string, Opened>();
+  private files = new Map<string, Blob>();
   private peakCache = new Map<string, Promise<Float32Array>>();
   private thumbCache = new Map<string, Promise<HTMLCanvasElement | null>>();
 
@@ -44,6 +45,7 @@ export class MediaLibrary implements FrameSource {
     if (video) o.videoSink = new VideoSampleSink(video);
     if (audio) o.audioSink = new AudioBufferSink(audio);
     this.opened.set(id, o);
+    this.files.set(id, file);
     return o;
   }
 
@@ -54,6 +56,11 @@ export class MediaLibrary implements FrameSource {
     this.thumbCache.delete(id);
   }
 
+  /** The file an asset was opened from (to send it to another device), or undefined when it is not open. */
+  fileFor(id: string): Blob | undefined {
+    return this.files.get(id);
+  }
+
   /** True when the media for this asset is open (a project loaded from a file starts with none). */
   has(id: string): boolean {
     return this.opened.has(id);
@@ -62,6 +69,7 @@ export class MediaLibrary implements FrameSource {
   /** Forget every file (a different project is being loaded). */
   clear(): void {
     this.opened.clear();
+    this.files.clear();
     this.peakCache.clear();
     this.thumbCache.clear();
   }
@@ -79,8 +87,8 @@ export class MediaLibrary implements FrameSource {
    * A frame source for export: each clip gets one pipelined decoder that is pulled strictly in frame order.
    * Measured on a software-only machine: 15 ms/frame this way against 154 ms with `getFrame`.
    */
-  sequential(p: Project, startFrame: Frame = 0): FrameSource {
-    return new SequentialFrames(this, p, startFrame);
+  sequential(p: Project, startFrame: Frame = 0, stride = 1): FrameSource {
+    return new SequentialFrames(this, p, startFrame, stride);
   }
 
   /** Waveform peaks for an asset, computed once in the background. */
@@ -144,7 +152,8 @@ function samplePicture(sample: VideoSample, owned: boolean): Picture {
 class SequentialFrames implements FrameSource {
   private feeds = new Map<string, { it: AsyncGenerator<VideoSample | null>; next: Frame; last: VideoSample | null }>();
 
-  constructor(private lib: MediaLibrary, private p: Project, private startFrame: Frame) {}
+  /** `stride` > 1 is the preview playing at a lower frame rate: only every stride-th frame is asked for, and only those are decoded. */
+  constructor(private lib: MediaLibrary, private p: Project, private startFrame: Frame, private stride = 1) {}
 
   async getFrame(clip: Clip, frame: Frame): Promise<Picture | null> {
     let feed = this.feeds.get(clip.id);
@@ -152,15 +161,16 @@ class SequentialFrames implements FrameSource {
       const sink = this.lib.videoSinkFor(clip.assetId);
       if (!sink) return null;
       const p = this.p;
-      const from = Math.max(clip.start, this.startFrame);
+      const from = Math.max(clip.start, this.startFrame, this.stride > 1 ? frame : 0);
+      const stride = this.stride;
       const times = (function* () {
-        for (let f = from; f < clipEnd(clip); f++) yield Math.max(0, sourceSeconds(p, clip, f));
+        for (let f = from; f < clipEnd(clip); f += stride) yield Math.max(0, sourceSeconds(p, clip, f));
       })();
       feed = { it: sink.samplesAtTimestamps(times), next: from, last: null };
       this.feeds.set(clip.id, feed);
     }
     if (frame !== feed.next) throw new Error('Sequential source must be read in frame order');
-    feed.next++;
+    feed.next += this.stride;
     const r = await feed.it.next();
     // Past the end of the source media the decoder yields nothing: hold the last picture. Only one frame is ever held.
     if (!r.done && r.value) {
@@ -168,7 +178,7 @@ class SequentialFrames implements FrameSource {
       feed.last = r.value;
     }
     const last = feed.last;
-    if (frame === clipEnd(clip) - 1) {
+    if (frame + this.stride >= clipEnd(clip)) {
       this.feeds.delete(clip.id);
       void feed.it.return(undefined);
       // The compositor draws this picture after we return, so it is closed by the next call or by dispose.

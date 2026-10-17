@@ -1,48 +1,89 @@
 import { describe, expect, it } from 'vitest';
-import { AUTO_LAYOUT, BUILTIN_LAYOUTS, applyLayout, cleanLayout, exportLayout, findLayout, importLayout, layoutTabs, normalizeSizes, uniqueLayoutName } from '../src/app/layout.ts';
+import { AUTO_LAYOUT, BUILTIN_LAYOUTS, applyLayout, cleanLayout, column, exportLayout, findLayout, importLayout, layoutTabs, normalizeSizes, uniqueDivisionName, uniqueLayoutName } from '../src/app/layout.ts';
 import { DEFAULT_SETTINGS, mergeSettings } from '../src/app/settings.ts';
 
 describe('layouts', () => {
   const auto = BUILTIN_LAYOUTS[0]!;
+  const byName = (n: string) => BUILTIN_LAYOUTS.find((l) => l.name === n)!;
+
+  it('there are four presets, not a dozen that barely differ', () => {
+    expect(BUILTIN_LAYOUTS.map((l) => l.name)).toEqual([AUTO_LAYOUT, 'Library and editor', 'Stacked panels', 'Bottom sheet']);
+  });
 
   it('automatic is a right panel on a wide screen and a sheet on a narrow one', () => {
-    expect(applyLayout(auto, false, false).panel).toBe('right');
-    expect(applyLayout(auto, true, true).panel).toBe('sheet');
+    const wide = applyLayout(auto, false, false);
+    expect(wide.mode).toBe('side');
+    expect(wide.right).toHaveLength(1);
+    expect(wide.left).toHaveLength(0);
+    expect(applyLayout(auto, true, true).mode).toBe('sheet');
     expect(applyLayout(auto, false, true).density).toBe('large');
     expect(applyLayout(auto, false, false).density).toBe('normal');
   });
 
-  it('a side panel never crushes a narrow screen', () => {
-    const left = BUILTIN_LAYOUTS.find((l) => l.name === 'Panel on the left')!;
-    expect(applyLayout(left, false, false).panel).toBe('left');
-    expect(applyLayout(left, true, false).panel).toBe('sheet');
+  it('two sides at once: separate panels left and right of the preview, one sheet on a narrow screen', () => {
+    const two = byName('Library and editor');
+    const wide = applyLayout(two, false, false);
+    expect(wide.left.map((d) => d.name)).toEqual(['Library']);
+    expect(wide.right.map((d) => d.name)).toEqual(['Editor']);
+    const narrow = applyLayout(two, true, false);
+    expect(narrow.mode).toBe('sheet');
+    expect(narrow.left).toHaveLength(0);
+    expect(narrow.right).toHaveLength(1);
+    expect(narrow.right[0]!.tabs.sort()).toEqual(['Captions', 'Clip', 'Media', 'Project']);
+  });
+
+  it('panels on one side are stacked and their sizes add up to 100', () => {
+    const stacked = byName('Stacked panels');
+    const right = column(stacked, 'right');
+    expect(right.map((d) => d.name)).toEqual(['Editor', 'Library']);
+    expect(right.reduce((a, d) => a + d.size, 0)).toBe(100);
+    expect(normalizeSizes(null, 3)).toEqual([33, 33, 34]);
+    expect(normalizeSizes([10, 90], 2).reduce((a, b) => a + b, 0)).toBe(100);
+    expect(normalizeSizes([50, 50, 50], 2)).toEqual([50, 50]); // wrong length: equal shares
   });
 
   it('repairs wrong values and keeps at least one tab', () => {
     const l = cleanLayout({ name: ' Mine ', panel: 'top', panelWidth: 9999, timelineHeight: -4, density: 'huge', tabs: ['Keys', 'Nope', 'Keys', 'Clip'] })!;
-    expect(l).toEqual({ name: 'Mine', panel: 'auto', panelWidth: 640, timelineHeight: 20, density: 'auto', panes: [['Clip']], paneSizes: [100], tools: 'auto', dock: false });
+    expect(l.name).toBe('Mine');
+    expect(l.panel).toBe('auto');
+    expect(l.panelWidth).toBe(640);
+    expect(l.timelineHeight).toBe(20);
+    expect(l.density).toBe('auto');
+    expect(l.divisions).toEqual([{ name: 'Panel', side: 'right', tabs: ['Clip'], size: 100 }]);
     expect(layoutTabs(cleanLayout({ name: 'x', tabs: [] })!)).toHaveLength(4);
     expect(cleanLayout({ panel: 'left' })).toBeNull();
     expect(cleanLayout('nope')).toBeNull();
   });
 
-  it('moves the old Keys tab into Clip', () => {
+  it('a tab can only be in one panel, empty panels vanish, and there are at most six', () => {
+    const l = cleanLayout({ name: 'x', divisions: [{ name: 'A', side: 'left', tabs: ['Clip', 'Clip'] }, { name: 'B', side: 'right', tabs: [] }, { name: 'C', side: 'right', tabs: ['Clip', 'Media'] }] })!;
+    expect(l.divisions.map((d) => [d.name, d.side, d.tabs])).toEqual([['A', 'left', ['Clip']], ['C', 'right', ['Media']]]);
+    expect(uniqueDivisionName('A', l.divisions)).toBe('A 2');
+    const many = cleanLayout({ name: 'm', divisions: ['Clip', 'Media', 'Captions', 'Project'].map((t, i) => ({ name: `P${i}`, side: 'right', tabs: [t] })) })!;
+    expect(many.divisions).toHaveLength(4);
+  });
+
+  it('old layouts are carried over: panes become panels on their side, Keys becomes Clip, Settings is dropped', () => {
     expect(layoutTabs(cleanLayout({ name: 'Old', tabs: ['Media', 'Keys', 'Captions'] })!)).toEqual(['Media', 'Clip', 'Captions']);
+    const old = cleanLayout({ name: 'Old2', panel: 'left', panes: [['Clip'], ['Media', 'Settings']], paneSizes: [60, 40], dock: true })!;
+    expect(old.panel).toBe('auto');
+    expect(old.divisions.map((d) => [d.name, d.side, d.tabs, d.size])).toEqual([['Panel 1', 'left', ['Clip'], 60], ['Panel 2', 'left', ['Media'], 40]]);
   });
 
   it('round-trips through a file and rejects other files', () => {
-    const l = { ...auto, name: 'Wide', panel: 'left' as const, panes: [['Media' as const], ['Clip' as const]], paneSizes: [60, 40] };
+    const l = { ...auto, name: 'Wide', divisions: [{ name: 'Left', side: 'left' as const, tabs: ['Media' as const], size: 100 }, { name: 'Right', side: 'right' as const, tabs: ['Clip' as const, 'Captions' as const], size: 100 }] };
     expect(importLayout(exportLayout(l))).toEqual(l);
     expect(() => importLayout('{"format":"other"}')).toThrow(/Not a TurboCut layout/);
     expect(() => importLayout('nope')).toThrow();
   });
 
-  it('finds layouts by name and falls back to automatic', () => {
+  it('finds layouts by name and falls back to automatic (a preset that was removed too)', () => {
     const mine = { ...auto, name: 'Mine' };
     expect(findLayout('Mine', [mine])).toBe(mine);
-    expect(findLayout('Compact', []).name).toBe('Compact');
+    expect(findLayout('Stacked panels', []).name).toBe('Stacked panels');
+    expect(findLayout('Compact', []).name).toBe(AUTO_LAYOUT);
     expect(findLayout('Gone', []).name).toBe(AUTO_LAYOUT);
-    expect(uniqueLayoutName('Compact', [mine])).toBe('Compact 2');
+    expect(uniqueLayoutName('Bottom sheet', [mine])).toBe('Bottom sheet 2');
     expect(uniqueLayoutName('Mine', [mine])).toBe('Mine 2');
   });
 
@@ -53,29 +94,36 @@ describe('layouts', () => {
     expect(s.layouts[0]!.panelWidth).toBe(640);
   });
 
-  it('splits the panel into panes, keeps their sizes whole, and flattens them on a narrow screen', () => {
-    const two = BUILTIN_LAYOUTS.find((l) => l.name === 'Two panels')!;
-    expect(applyLayout(two, false, false).panes).toEqual([['Clip'], ['Media', 'Captions', 'Project']]);
-    expect(applyLayout(two, true, false).panes).toEqual([['Clip', 'Media', 'Captions', 'Project']]);
-    expect(applyLayout(two, true, false).paneSizes).toEqual([100]);
-    expect(normalizeSizes(null, 3)).toEqual([33, 33, 34]);
-    expect(normalizeSizes([10, 90], 2).reduce((a, b) => a + b, 0)).toBe(100);
-    expect(normalizeSizes([50, 50, 50], 2)).toEqual([50, 50]); // wrong length: equal panes
-    const l = cleanLayout({ name: 'x', panes: [['Clip', 'Clip'], [], ['Media'], ['Captions'], ['Project']], paneSizes: [30, 30, 40] })!;
-    expect(l.panes).toEqual([['Clip'], ['Media'], ['Captions']]);
-    expect(l.paneSizes).toHaveLength(3);
-  });
-
-  it('tools sit above the timeline with a mouse and below on a phone, unless the layout says', () => {
-    expect(applyLayout(auto, false, false).tools).toBe('top');
+  it('tools: in line with the play button with a mouse, under the timeline on a phone, unless the layout says', () => {
+    expect(applyLayout(auto, false, false).tools).toBe('inline');
     expect(applyLayout(auto, false, true).tools).toBe('bottom');
     expect(applyLayout({ ...auto, tools: 'bottom' }, false, false).tools).toBe('bottom');
+    expect(applyLayout({ ...auto, tools: 'float' }, false, true).tools).toBe('float');
+    // "top" is in line on a computer, and a row just under the play bar (above the panel) on a phone
+    expect(applyLayout({ ...auto, tools: 'top' }, false, false).tools).toBe('inline');
+    expect(applyLayout({ ...auto, tools: 'top' }, true, true).tools).toBe('stage');
+  });
+});
+
+describe('settings that used to be layout parts', () => {
+  it('the dock is a setting, off by default; a stored "Bottom dock" layout turns it on once', () => {
+    expect(DEFAULT_SETTINGS(false).dock).toBe(false);
+    expect(mergeSettings({ layout: 'Bottom dock' }, DEFAULT_SETTINGS(false)).dock).toBe(true);
+    expect(mergeSettings({ layout: 'Mine', layouts: [{ name: 'Mine', dock: true, tabs: ['Clip'] }] }, DEFAULT_SETTINGS(false)).dock).toBe(true);
+    expect(mergeSettings({ layout: 'Bottom dock', dock: false }, DEFAULT_SETTINGS(false)).dock).toBe(false);
   });
 
-  it('the dock layout has Settings as a tab; the others do not', () => {
-    const dock = BUILTIN_LAYOUTS.find((l) => l.name === 'Bottom dock')!;
-    expect(applyLayout(dock, false, false).dock).toBe(true);
-    expect(layoutTabs(dock)).toContain('Settings');
-    expect(layoutTabs(auto)).not.toContain('Settings');
+  it('the first tab is Media unless the person changed it', () => {
+    expect(DEFAULT_SETTINGS(false).openTab).toBe('Media');
+    expect(mergeSettings({ openTab: 'Captions' }, DEFAULT_SETTINGS(false)).openTab).toBe('Captions');
+    expect(mergeSettings({ openTab: 'Nope' }, DEFAULT_SETTINGS(false)).openTab).toBe('Media');
+    expect(mergeSettings({ autoSwitch: false }, DEFAULT_SETTINGS(false)).autoSwitch).toBe(false);
+  });
+
+  it('preview scale and rate are validated', () => {
+    const s = mergeSettings({ previewScale: 50, previewFps: 'half' }, DEFAULT_SETTINGS(false));
+    expect([s.previewScale, s.previewFps]).toEqual([50, 'half']);
+    const bad = mergeSettings({ previewScale: 333, previewFps: 'turbo' }, DEFAULT_SETTINGS(false));
+    expect([bad.previewScale, bad.previewFps]).toEqual(['auto', 'full']);
   });
 });

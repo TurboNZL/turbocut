@@ -1,10 +1,9 @@
 # Automatic captions
 
-Captions tab → *Generate captions* turns the speech in your timeline into timed captions. Pick the engine in Settings → Captions.
+Captions tab → *Generate captions* turns the speech in your timeline into timed captions. Pick the model and language in Settings → Captions.
 
-## Engines
-- **On this device**: a Whisper model runs in the browser (WebGPU where available, otherwise slower WebAssembly). The model is downloaded once and kept. Nothing leaves the device.
-- **A server on my network**: a computer with a graphics card does the work and the phone only sends audio. Enter its address (and token if it has one). Good for long videos and weak phones.
+## Where the speech is recognised
+A Whisper model runs **on this device** (WebGPU where available, otherwise slower WebAssembly). The model is downloaded once and kept. Nothing leaves the device. (There used to be a "server on my network" choice; it is gone. To move work between devices, send the project, see [Saving and opening projects](PROJECTS.md).) **Cancel** stops generating at once, whether TurboCut is still preparing the audio, downloading the model or listening.
 
 ## Settings that matter
 - **Language** is English by default. Automatic detection on a multilingual model sometimes chose the wrong language and invented text; set the language you speak.

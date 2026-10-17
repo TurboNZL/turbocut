@@ -28,6 +28,24 @@ try {
   assert.equal(fr.custom && fr.bar && fr.btns === 3, true, 'the drawn title bar is present with three buttons');
   assert.equal(fr.appTop >= fr.h - 1, true, 'the editor sits below the title bar');
 
+  // The shell also offers Twitch downloads and finding other TurboCut apps; the page must not be able to reach anything else.
+  const api = await win.evaluate(() => ({ twitch: typeof window.turbocut.twitch?.download, share: Object.keys(window.turbocut.share ?? {}).sort().join(), top: Object.keys(window.turbocut).sort().join() }));
+  console.log('shell api:', JSON.stringify(api));
+  assert.equal(api.twitch, 'function');
+  assert.match(api.share, /configure/);
+  assert.equal(api.top, 'platform,share,twitch,updater,version,window', 'only the documented bridges are exposed');
+  // The window was shown only once it had painted: nothing white at the edges (the window background and the page agree).
+  const edge = await win.evaluate(() => ({ html: getComputedStyle(document.documentElement).backgroundColor, body: getComputedStyle(document.body).backgroundColor }));
+  assert.notEqual(edge.html, 'rgba(0, 0, 0, 0)', 'the page paints its own background');
+  // With the drawn title bar the home page and everything else start under it.
+  await win.evaluate(() => window.turbocutApp.store.updateSettings({ dock: true }));
+  await win.locator('.dock .bt-tab', { hasText: 'Home' }).click();
+  await win.locator('.home.docked').waitFor();
+  const homeTop = await win.evaluate(() => [document.querySelector('.home').getBoundingClientRect().top, document.querySelector('.bt-wf').getBoundingClientRect().bottom]);
+  assert.ok(homeTop[0] >= homeTop[1] - 0.5, `the home page starts under the title bar (${homeTop})`);
+  await win.locator('.dock .bt-tab', { hasText: 'Edit' }).click();
+  await win.evaluate(() => window.turbocutApp.store.updateSettings({ dock: false }));
+
   // The desktop shell exposes the self-updater. An unpackaged run cannot update, and must say so instead of throwing.
   const upd = await win.evaluate(() => window.turbocut.updater.check());
   console.log('updater in an unpackaged run:', JSON.stringify(upd));

@@ -3,7 +3,7 @@
 import { mkdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
-import { launch } from './browser.mjs';
+import { launch, pick } from './browser.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
 mkdirSync(`${root}e2e/.out/`, { recursive: true });
@@ -19,7 +19,7 @@ try {
     page.on('console', (m) => m.type() === 'error' && !ignorable(m.text()) && errors.push(m.text()));
     await page.goto('http://localhost:5211/');
     await page.waitForFunction(() => window.turbocutApp);
-    await page.getByRole('button', { name: 'File' }).click();
+    await page.getByRole('button', { name: 'File', exact: true }).click();
     const [ch] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('menuitem', { name: 'Import media…' }).click()]);
     await ch.setFiles(`${root}e2e/.media/src.webm`);
     await page.waitForFunction(() => Object.keys(window.turbocutApp.store.project.assets).length === 1);
@@ -260,14 +260,14 @@ try {
     return page.evaluate(() => { const c = window.turbocutApp.player.canvas, d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 600) n++; return n; });
   };
   const textStart = await page.evaluate(() => window.turbocutApp.store.project.tracks[0].clips.find((c) => c.text)?.start ?? 0);
-  assert.equal(await page.getByLabel('Entrance animation').inputValue(), 'bounce', 'a new text layer pops in like captions');
+  assert.equal(await page.locator('select[aria-label="Entrance animation"]').inputValue(), 'bounce', 'a new text layer pops in like captions');
   const popFirst = await bright(textStart);
-  await page.getByLabel('Entrance animation').selectOption('none');
+  await pick(page, 'Entrance animation', 'none');
   assert.equal(await page.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((t) => t.clips).find((c) => c.text).text.animation.type), 'none');
   const stillFirst = await bright(textStart);
   console.log('text pixels on its first frame: bounce', popFirst, ' none', stillFirst);
   assert.ok(stillFirst > 300 && popFirst < 50, 'static text is fully there on its first frame; the bounce starts from nothing');
-  await page.getByLabel('Entrance animation').selectOption('bounce');
+  await pick(page, 'Entrance animation', 'bounce');
   assert.equal(await page.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((t) => t.clips).find((c) => c.text).text.animation.type), 'bounce');
   await page.close();
 
@@ -340,6 +340,99 @@ try {
   await noHand('media');
   await page.getByRole('tab', { name: 'Captions', exact: true }).click();
   await noHand('captions');
+  await page.close();
+
+  // ============================================================ 10. drag a box to select, captions do not move the playhead, the track menu is a right click, cancelling captions
+  page = await fresh();
+  await page.evaluate(() => { window.turbocutApp.store.seek(90); window.turbocutApp.split(); window.turbocutApp.store.clearSelection(); });
+  const clipBoxes = () => page.$$eval('.tl-clip[data-clip]', (els) => els.map((e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, track: e.closest('.tl-track').className }; }));
+  let cb = await clipBoxes();
+  assert.equal(cb.length, 4, 'two clips on each of V1 and A1 after the split');
+  const v1 = cb.filter((c) => /tl-video/.test(c.track));
+  const a1 = cb.filter((c) => /tl-audio/.test(c.track));
+  const farRight = Math.max(...cb.map((c) => c.x + c.w)) + 60;
+  // a box over V1 only
+  await page.mouse.move(farRight, v1[0].y + v1[0].h / 2);
+  await page.mouse.down();
+  await page.mouse.move(farRight - 200, v1[0].y + v1[0].h / 2, { steps: 4 });
+  await page.mouse.move(100, v1[0].y + v1[0].h / 2 + 4, { steps: 6 });
+  assert.equal(await page.locator('.tl-marquee').count(), 1, 'a box is drawn while dragging');
+  await page.mouse.up();
+  assert.equal(await page.locator('.tl-marquee').count(), 0, 'and goes away');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedIds.length), 2, 'the two clips of V1 are selected');
+  // a box over both tracks
+  await page.mouse.move(farRight, v1[0].y + 6);
+  await page.mouse.down();
+  await page.mouse.move(farRight - 120, v1[0].y + 20, { steps: 4 });
+  await page.mouse.move(100, a1[0].y + a1[0].h - 4, { steps: 8 });
+  await page.mouse.up();
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedIds.length), 4, 'dragging across both tracks selects all four');
+  // a plain click on the empty part still lets go of the selection and moves the playhead
+  await page.mouse.click(farRight, v1[0].y + v1[0].h / 2);
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedIds.length), 0, 'a click on empty space deselects');
+  // Delete removes everything in the box
+  await page.mouse.move(farRight, v1[0].y + 6);
+  await page.mouse.down();
+  await page.mouse.move(farRight - 100, v1[0].y + 20, { steps: 3 });
+  await page.mouse.move(100, a1[0].y + a1[0].h - 4, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.press('Delete');
+  assert.equal((await clipBoxes()).length, 0, 'the selected box of clips is deleted together');
+  await page.close();
+
+  page = await fresh();
+  await page.evaluate(() => window.turbocutApp.store.edit((p) => (p.captions = [{ id: 'q1', start: 40, end: 100, text: 'Hello there', style: 'Default', words: [] }])));
+  await page.evaluate(() => window.turbocutApp.store.seek(130));
+  await page.locator('.tl-cue', { hasText: 'Hello there' }).click();
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedCue), 'q1', 'the caption is selected');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.playhead), 130, 'and the playhead stayed where it was');
+  // the track menu: a right click, at the pointer; a left click only picks the track
+  const headBox = await page.locator('.tl-head', { hasText: 'V1' }).boundingBox();
+  await page.locator('.tl-head', { hasText: 'V1' }).click();
+  assert.equal(await page.locator('.popup-menu').count(), 0, 'a left click opens no menu');
+  assert.ok(await page.locator('.tl-track.active', { hasText: 'V1' }).count(), 'but picks the track');
+  await page.mouse.click(headBox.x + 20, headBox.y + 20, { button: 'right' });
+  const menu = await page.locator('.popup-menu').boundingBox();
+  assert.ok(Math.abs(menu.x - (headBox.x + 20)) < 40 && Math.abs(menu.y - (headBox.y + 20)) < 40, `the menu opens at the pointer (${menu.x},${menu.y} for a click at ${headBox.x + 20},${headBox.y + 20})`);
+  await page.keyboard.press('Escape');
+  await page.close();
+
+  // cancelling captions answers at once, whatever stage the work is in (the speech model is never reachable here, so it is always "still working")
+  page = await fresh();
+  await page.evaluate(() => window.turbocutApp.store.updateSettings((s) => (s.transcribe.modelChosen = true)));
+  await page.getByRole('tab', { name: 'Captions', exact: true }).click();
+  await page.getByRole('button', { name: 'Generate captions' }).click();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Generate captions' }).isDisabled(), true, 'busy while working');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('.caps .btn-accent')?.disabled, null, { timeout: 2000 });
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.status), 'Cancelled.');
+  assert.equal(await page.getByRole('button', { name: 'Cancel', exact: true }).count() === 0 || !(await page.getByRole('button', { name: 'Cancel', exact: true }).isVisible()), true, 'the Cancel button goes away');
+  await page.close();
+
+  // ============================================================ 11. preview size and rate are settings
+  page = await fresh();
+  const size = () => page.evaluate(() => [window.turbocutApp.player.canvas.width, window.turbocutApp.player.canvas.height]);
+  const [w0] = await size();
+  await page.evaluate(() => window.turbocutApp.store.updateSettings({ previewScale: 25 }));
+  const [w25] = await size();
+  assert.equal(w25, 270, `a quarter-size preview is 270 px wide for a 1080 px project (automatic was ${w0})`);
+  await page.evaluate(() => window.turbocutApp.store.updateSettings({ previewScale: 100 }));
+  assert.equal((await size())[1] <= 1920 && (await size())[0], 1080, 'full size is the project size');
+  await page.evaluate(() => window.turbocutApp.store.updateSettings({ previewScale: 'auto' }));
+  // half rate: only every second frame is drawn while playing
+  const drawn = async (rate) => {
+    await page.evaluate((r) => { const a = window.turbocutApp; a.store.updateSettings({ previewFps: r }); a.store.seek(0); a.__frames = []; if (!a.__watch) { a.__watch = true; a.store.on('playhead', () => a.store.playing && a.__frames.push(a.store.playhead)); } }, rate);
+    await page.evaluate(() => window.turbocutApp.player.play());
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => window.turbocutApp.player.pause());
+    return page.evaluate(() => window.turbocutApp.__frames.slice());
+  };
+  const full = await drawn('full');
+  const half = await drawn('half');
+  const steps = (xs) => xs.slice(1).map((x, i) => x - xs[i]);
+  assert.ok(half.length > 3 && steps(half).every((d) => d >= 2), `at half rate the preview jumps two frames at a time (${steps(half).slice(0, 8)})`);
+  assert.ok(full.length > 3 && steps(full).some((d) => d === 1), 'at full rate it can draw every frame');
   await page.close();
 
   assert.deepEqual(errors, [], 'no page errors');

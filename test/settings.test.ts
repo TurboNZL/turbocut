@@ -88,12 +88,12 @@ describe('settings', () => {
     expect(DEFAULT_SETTINGS(true).waveforms).toBe(false);
     expect(defaults.transcribe.lang).toBe('english');
   });
-  it('exports without the access token and imports back', () => {
+  it('exports and imports back; old stored server settings are ignored', () => {
     const s = structuredClone(defaults);
-    s.transcribe.token = 'secret';
     s.snapping = false;
     const text = exportSettings(s);
-    expect(text).not.toContain('secret');
+    expect(text).not.toContain('token');
+    expect(mergeSettings({ transcribe: { mode: 'remote', url: 'http://x', token: 'secret', lang: 'german' } }, defaults).transcribe).not.toHaveProperty('url');
     expect(importSettings(text, defaults).snapping).toBe(false);
     expect(() => importSettings('{"format":"nope"}', defaults)).toThrow('Not a TurboCut settings file');
   });
