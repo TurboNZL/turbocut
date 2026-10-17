@@ -27,7 +27,7 @@ Download the file, open it, allow "install unknown apps" for the app that opened
 
 ## 2. `release-pipeline` additions
 - **One workflow** can build APK, desktop installers and a web bundle in parallel jobs, hand them over as artifacts (retention 1 day) and have one final job create the release with every file attached (`gh release create vX files/*`). Pick the version in the first job from the existing release tags (`gh release list --json tagName`), so every push gets the next number.
-- Branch builds publish **pre-releases**; main publishes normal ones. The updater must list `/releases` (not `/releases/latest`) so pre-releases count.
+- Superseded: branch builds used to publish pre-releases. Now only main publishes, and a PR's build is reused on merge (engine module `prebuilt-release`).
 - Lowercase asset names: set `artifactName` in electron-builder, name the APK in the copy step.
 - Keep the newest N releases and delete the rest with `--cleanup-tag`.
 - Do not use `paths-ignore` for docs if the docs are bundled into the app (TurboCut bundles `docs/guides`, so a guide edit should release; its current `paths-ignore: ['docs/**', '*.md']` is a known trade-off, say so in the app's notes).
@@ -74,3 +74,9 @@ The vanilla CommonJS .deb updater (`electron/updater.cjs`, `electron/debInstall.
 - `src/app/motion.css` is the engine's `motion.css` classes for a non-React app, plus `tk-fade`; replaying an animation needs `classList.remove; void el.offsetWidth; classList.add`. Gotcha: a `ResizeObserver` callback that rebuilds DOM and changes the observer's own height logs "ResizeObserver loop completed with undelivered notifications"; compare the width and rebuild in `requestAnimationFrame`.
 - A project-file format (`format` + `version`, validate every part, media referenced by name and size, relink dialog) could become a shared module for apps that edit documents on top of media.
 - One global rule gives every pressable element `cursor: pointer` (and `not-allowed` when disabled); the theme's `.btn` did not. It could live in turbothemes `base.css`.
+
+## 2026-10-17 contributions (added to the engine)
+- `prebuilt-release`: PR builds reused on merge (tree hash + next version check), tested with a fake gh/git.
+- `updaters`: Capacitor `ApkUpdaterPlugin.java` (in-app APK download with progress).
+- `system-fonts` (earlier, merged).
+- Ideas not yet in the engine: the dock layout and layout presets with an automatic Custom copy (`layout.ts`, `layoutStore.ts`, `dock.ts`), a themed font picker (`fontPicker.ts`), per-setting keyframe lanes (`inspector.ts`), settings search (`settingsDialog.ts` `filterPage`).
