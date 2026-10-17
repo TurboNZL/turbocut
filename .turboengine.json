@@ -9,7 +9,8 @@
     "appearance",
     "guides-and-docs",
     "logos",
-    "system-fonts"
+    "system-fonts",
+    "motion"
   ],
   "themes": "on",
   "moved": {
@@ -17,8 +18,9 @@
     "updaters": "src/app/updater.ts, electron/main.cjs, electron/updater.cjs, electron/debInstall.cjs (vanilla variant: engine modules/updaters/variants/vanilla-electron), electron/preload.cjs",
     "appearance": "src/app/main.ts (engine start-up), src/app/styles.css, src/app/settingsDialog.ts (picker), src/app/styles.css (floating side panel for Liquid Glass, Spotify and One UI: the panel carries `bt-shell`)",
     "guides-and-docs": "src/app/guides.ts, src/app/markdown.ts, docs/guides/",
-    "logos": "branding/logo.json, scripts/gen-icons.mjs, scripts/logo/, generated: public/icon*.svg|png, build/icon.png, android mipmaps and drawables",
-    "system-fonts": "src/app/systemFonts.ts (engine modules/system-fonts, source of the module), test/systemFonts.test.ts"
+    "logos": "branding/logo.json (symbol-only favicons per the newest schema), scripts/gen-icons.mjs, scripts/logo/, generated: public/icon*.svg|png, public/favicon*, build/icon.png, android mipmaps and drawables",
+    "system-fonts": "src/app/systemFonts.ts (engine modules/system-fonts, source of the module), test/systemFonts.test.ts",
+    "motion": "src/app/motion.css (the engine's tk-* classes, vanilla; no React hooks), replayed from code with a class toggle (swap() in main.ts)"
   },
   "notes": "TurboCut is a vanilla TypeScript app (no React, no Tailwind), so the engine's React files are followed as conventions, not copied: hook classes, tab recipe, dialog structure, panel cards, asset naming, version scheme, docs layout, guides inside Settings. Differences on purpose: (1) builds also run for claude/** branches and publish pre-releases, because the owner tests every branch on a phone; (2) no auto-pr.yml, the owner does not want pull requests unless asked; (3) check.yml is ci.yml and runs on every push; (4) turbothemes is installed from turboengine#path:/themes (the lockfile resolves it to a codeload tarball); (5) editions, window-frame, settings-shell and android-shell are not used: TurboCut has one edition, a native-looking window, and a plain Capacitor Android shell. (6) Brought closer to the engine on 2026-10-17: pin moved to c795082, icons are inline SVG in currentColor (src/app/icons.ts, no emoji or symbol characters), the side panel is a `bt-shell`, system-fonts adopted."
 }

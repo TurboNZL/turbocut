@@ -29,11 +29,11 @@ export const fmtTime = (frames: number, fps: number): string => {
 
 /** Show a themed dialog (uses the turbothemes `.bt-window` hooks). Resolves nothing; call `close()`. */
 export function dialog(title: string, body: Node, buttons: HTMLElement[] = [], extraClass = ''): { close: () => void; el: HTMLElement } {
-  const backdrop = h('div', { class: 'bt-backdrop dlg-backdrop' });
+  const backdrop = h('div', { class: 'bt-backdrop dlg-backdrop tk-fade' });
   const close = () => backdrop.remove();
   const win = h(
     'div',
-    { class: `bt-window dlg ${extraClass}`.trim(), role: 'dialog', 'aria-label': title },
+    { class: `bt-window dlg tk-pop ${extraClass}`.trim(), role: 'dialog', 'aria-label': title },
     h('div', { class: 'bt-titlebar flex-titlebar' }, h('h2', {}, title), h('button', { class: 'bt-close', 'aria-label': 'Close', onclick: close }, '×')),
     h('div', { class: 'bt-body' }, body),
     buttons.length ? h('div', { class: 'bt-footer' }, buttons) : null,
@@ -60,7 +60,7 @@ export interface MenuItem {
 /** A small themed pop-up menu next to `anchor`. Closes on a choice, an outside press or Escape. */
 export function popupMenu(anchor: HTMLElement, items: MenuItem[]): { close: () => void } {
   document.querySelector('.popup-menu')?.remove();
-  const menu = h('div', { class: 'bt-menu popup-menu', role: 'menu' });
+  const menu = h('div', { class: 'bt-menu popup-menu tk-pop', role: 'menu' });
   const close = () => {
     menu.remove();
     window.removeEventListener('pointerdown', away, true);
@@ -82,8 +82,10 @@ export function popupMenu(anchor: HTMLElement, items: MenuItem[]): { close: () =
   document.body.append(menu);
   const w = menu.offsetWidth || 200;
   const hgt = menu.offsetHeight || 160;
-  menu.style.left = `${Math.max(4, Math.min(r.right + 4, window.innerWidth - w - 4))}px`;
-  menu.style.top = `${Math.max(4, Math.min(r.top, window.innerHeight - hgt - 4))}px`;
+  // Under the button when there is room, else above it; lined up with its left edge.
+  const below = r.bottom + 4 + hgt <= window.innerHeight;
+  menu.style.left = `${Math.max(4, Math.min(r.left, window.innerWidth - w - 4))}px`;
+  menu.style.top = `${Math.max(4, below ? r.bottom + 4 : r.top - hgt - 4)}px`;
   setTimeout(() => window.addEventListener('pointerdown', away, true), 0);
   window.addEventListener('keydown', esc, true);
   return { close };

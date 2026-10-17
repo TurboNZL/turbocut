@@ -11,6 +11,8 @@ export interface HomeDeps {
   store: Store;
   /** Pick video files and put them in the project. */
   importFiles: () => Promise<void>;
+  /** Pick a `.turbocut` project file and open it. */
+  openProject: () => void;
   openSettings: (tab?: 'Updates' | 'Layout' | 'Fonts') => void;
   onClose?: () => void;
 }
@@ -104,6 +106,7 @@ export function openHome(deps: HomeDeps): { close: () => void } {
           startCard('Square', '1:1, 1080×1080', 1080, 1080)),
         h('div', { class: 'row' },
           h('button', { class: 'btn btn-accent', onclick: () => { close(); void deps.importFiles(); } }, 'Import video…'),
+          h('button', { class: 'btn', onclick: () => { close(); deps.openProject(); } }, 'Open project…'),
           h('button', { class: 'btn', onclick: close }, 'Start editing'))),
       panel('Updates', updateLine, h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => deps.openSettings('Updates') }, 'Update settings'))),
       panel('Get TurboCut on other devices',

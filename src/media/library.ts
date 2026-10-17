@@ -20,26 +20,50 @@ export class MediaLibrary implements FrameSource {
   private thumbCache = new Map<string, Promise<HTMLCanvasElement | null>>();
 
   async importFile(file: Blob, name: string, fps: number): Promise<Asset> {
-    const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
-    const video = (await input.getPrimaryVideoTrack()) ?? undefined;
-    const audio = (await input.getPrimaryAudioTrack()) ?? undefined;
-    if (!video && !audio) throw new Error(`${name}: no audio or video track found`);
     const id = newId('a');
-    const seconds = await input.computeDuration();
-    const o: Opened = { input, video, audio };
-    if (video) o.videoSink = new VideoSampleSink(video);
-    if (audio) o.audioSink = new AudioBufferSink(audio);
-    this.opened.set(id, o);
+    const o = await this.open(id, file, name);
     return {
       id,
       name,
       ref: name,
-      hasVideo: !!video,
-      hasAudio: !!audio,
-      duration: Math.floor(seconds * fps),
-      width: video ? await video.getDisplayWidth() : 0,
-      height: video ? await video.getDisplayHeight() : 0,
+      hasVideo: !!o.video,
+      hasAudio: !!o.audio,
+      size: file.size,
+      duration: Math.floor((await o.input.computeDuration()) * fps),
+      width: o.video ? await o.video.getDisplayWidth() : 0,
+      height: o.video ? await o.video.getDisplayHeight() : 0,
     };
+  }
+
+  private async open(id: string, file: Blob, name: string): Promise<Opened> {
+    const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+    const video = (await input.getPrimaryVideoTrack()) ?? undefined;
+    const audio = (await input.getPrimaryAudioTrack()) ?? undefined;
+    if (!video && !audio) throw new Error(`${name}: no audio or video track found`);
+    const o: Opened = { input, video, audio };
+    if (video) o.videoSink = new VideoSampleSink(video);
+    if (audio) o.audioSink = new AudioBufferSink(audio);
+    this.opened.set(id, o);
+    return o;
+  }
+
+  /** Give a media entry of a saved project its file again. Drops anything cached from the old file. */
+  async relink(id: string, file: Blob, name: string): Promise<void> {
+    await this.open(id, file, name);
+    this.peakCache.delete(id);
+    this.thumbCache.delete(id);
+  }
+
+  /** True when the media for this asset is open (a project loaded from a file starts with none). */
+  has(id: string): boolean {
+    return this.opened.has(id);
+  }
+
+  /** Forget every file (a different project is being loaded). */
+  clear(): void {
+    this.opened.clear();
+    this.peakCache.clear();
+    this.thumbCache.clear();
   }
 
   /** Random access: right for scrubbing and single frames, but about 10x slower per frame than `sequential` for playback and export. */

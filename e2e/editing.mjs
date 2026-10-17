@@ -19,7 +19,8 @@ try {
     page.on('console', (m) => m.type() === 'error' && !ignorable(m.text()) && errors.push(m.text()));
     await page.goto('http://localhost:5211/');
     await page.waitForFunction(() => window.turbocutApp);
-    const [ch] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Import' }).first().click()]);
+    await page.getByRole('button', { name: 'File' }).click();
+    const [ch] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('menuitem', { name: 'Import media…' }).click()]);
     await ch.setFiles(`${root}e2e/.media/src.webm`);
     await page.waitForFunction(() => window.turbocutApp.store.project.tracks[0].clips.length === 1);
     return page;
@@ -66,6 +67,22 @@ try {
   await page.keyboard.up('Shift');
   await page.waitForTimeout(100);
   assert.ok((await page.$eval('.tl-scroll', (e) => e.scrollTop)) > 0, 'Shift + wheel scrolls the tracks vertically');
+  await page.close();
+
+  // ============================================================ 1b. adding a keyframe does not replay the panel's opening animation
+  page = await fresh();
+  await page.evaluate(() => { const s = window.turbocutApp.store; s.select(s.project.tracks[0].clips[0].id); });
+  await page.locator('.ks-fold > summary').click(); // the person opens the fold: this one may animate
+  await page.waitForTimeout(500);
+  await page.evaluate(() => { window.__fold = document.querySelector('.ks-fold'); window.__seen = new Set(); window.__t = setInterval(() => { for (const a of document.getAnimations()) { const t = a.effect?.target; if (t && t.closest?.('.ks-fold, .insp')) window.__seen.add(`${t.className}:${a.animationName ?? a.transitionProperty}`); } }, 8); });
+  await page.getByRole('button', { name: 'Keyframe X', exact: true }).click(); // from the inspector
+  await page.locator('.ks-label').getByText('Y', { exact: true }).click(); // from the dopesheet
+  await page.keyboard.press('k');
+  await page.waitForTimeout(700);
+  const kf = await page.evaluate(() => { clearInterval(window.__t); return { sameFold: window.__fold === document.querySelector('.ks-fold'), open: document.querySelector('.ks-fold').open, anims: [...window.__seen].filter((a) => /tk-|ks-/.test(a) && !/transition|background|opacity$|box-shadow|border|color/.test(a.split(':')[1] ?? '')) }; });
+  console.log('keyframe added, fold:', JSON.stringify(kf));
+  assert.ok(kf.sameFold && kf.open, 'the fold is the same element and stays open');
+  assert.deepEqual(kf.anims, [], 'no panel animation runs when a keyframe is added');
   await page.close();
 
   // ============================================================ 2. the add-track button is in the corner, and works

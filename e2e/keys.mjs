@@ -12,6 +12,12 @@ const server = await createServer({ root, server: { port: 5204, strictPort: true
 await server.listen();
 const browser = await launch();
 const errors = [];
+/** The keyframe section is folded until wanted (it opens by itself for a clip that already has keys). */
+const openFold = async (page) => {
+  const open = await page.locator('.ks-fold').evaluate((d) => d.open);
+  if (!open) await page.locator('.ks-fold > summary').click();
+  await page.locator('.ks-row').first().waitFor();
+};
 try {
   const newPage = async () => {
     const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
@@ -60,7 +66,8 @@ try {
   await page.screenshot({ path: `${out}text-layer.png` });
 
   // ---- keyframe editor: X moves the text across the frame
-  await page.getByRole('tab', { name: 'Clip', exact: true }).click(); // keyframes now sit under the Clip settings
+  await page.getByRole('tab', { name: 'Clip', exact: true }).click(); // keyframes now sit under the Clip settings, in a fold
+  await openFold(page);
   assert.equal(await page.locator('.ks-row').count(), 7, 'a video layer shows its 7 animatable settings');
   const xRow = page.locator('.ks-row[data-param="x"]');
   await page.evaluate(() => window.turbocutApp.store.seek(0));
@@ -131,7 +138,8 @@ try {
   });
   const clipIds = await page.evaluate(() => window.turbocutApp.store.project.tracks.map((t) => t.clips[0].id));
   await page.evaluate((id) => window.turbocutApp.store.select(id), clipIds[0]);
-  await page.getByRole('tab', { name: 'Clip', exact: true }).click(); // keyframes now sit under the Clip settings
+  await page.getByRole('tab', { name: 'Clip', exact: true }).click(); // keyframes now sit under the Clip settings, in a fold
+  await openFold(page);
   const blurRow = page.locator('.ks-row[data-param="blur"]');
   await page.evaluate(() => window.turbocutApp.store.seek(0));
   await blurRow.getByRole('button').first().click();
