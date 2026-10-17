@@ -3,10 +3,12 @@ import { mixWindow } from '../export/audio.ts';
 import { drawCaption } from '../render/captions.ts';
 import { drawVideo, type FrameSource } from '../render/compose.ts';
 import { keepAwake } from './platform.ts';
+import type { PreviewFps } from './settings.ts';
 import type { Store } from './store.ts';
 
-/** Longest edge of the preview canvas. Smaller than the project to keep editing light; export is always full size. */
+/** Longest edge of the preview canvas when the size is left on automatic. Smaller than the project to keep editing light; export is always full size. */
 const PREVIEW_MAX = 960;
+const STRIDE: Record<PreviewFps, number> = { full: 1, half: 2, third: 3, quarter: 4 };
 const AUDIO_WINDOW = 6; // seconds mixed ahead of the playhead
 
 /**
@@ -31,15 +33,35 @@ export class Player {
       this.request(store.playhead);
     });
     store.on('preset', () => this.request(store.playhead, true));
+    // Preview sharpness and frame rate are settings: redraw at the new size at once.
+    let sig = this.previewSig();
+    store.on('settings', () => {
+      const now = this.previewSig();
+      if (now === sig) return;
+      sig = now;
+      this.layout();
+      this.request(store.playhead, true);
+    });
     this.layout();
+  }
+
+  private previewSig(): string {
+    return `${this.store.settings.previewScale}`;
+  }
+
+  /** The share of the project's size the preview is drawn at (1 = full): automatic caps the long edge, a number is a percentage. */
+  scale(): number {
+    const { width, height } = this.store.project;
+    const choice = this.store.settings.previewScale;
+    return choice === 'auto' ? Math.min(1, PREVIEW_MAX / Math.max(width, height)) : choice / 100;
   }
 
   /** Match the canvas to the project's aspect ratio at preview size. */
   layout(): void {
     const { width, height } = this.store.project;
-    const s = Math.min(1, PREVIEW_MAX / Math.max(width, height));
-    const w = Math.round(width * s);
-    const h = Math.round(height * s);
+    const s = this.scale();
+    const w = Math.max(2, Math.round(width * s));
+    const h = Math.max(2, Math.round(height * s));
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
       this.canvas.height = h;
@@ -97,21 +119,22 @@ export class Player {
     const now = () => startSec + (performance.now() - wall0) / 1000 - latency;
     void this.scheduleAudio(ac, token, startSec, clockStart);
 
-    let feed = store.lib.sequential(p, startFrame);
+    const step = STRIDE[store.settings.previewFps] ?? 1; // a lower preview rate draws and decodes only every step-th frame
+    let feed = store.lib.sequential(p, startFrame, step);
     let next = startFrame; // next frame the feed will deliver
     while (this.run === token) {
       const target = Math.min(total - 1, Math.floor(now() * p.fps));
-      if (target - next > 8) {
+      if (target - next > 8 * step) {
         // Too far behind: restart the decoders at the target instead of grinding through every frame.
         feed.dispose?.();
-        feed = store.lib.sequential(p, target);
+        feed = store.lib.sequential(p, target, step);
         next = target;
       }
       if (next <= target) {
         await this.draw(next, feed);
         store.playhead = next;
         store.emit('playhead');
-        next++;
+        next += step;
       } else {
         await new Promise((r) => requestAnimationFrame(r));
       }

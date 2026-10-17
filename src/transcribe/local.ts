@@ -56,6 +56,7 @@ export class LocalTranscriber implements Transcriber {
   constructor(private model: string = DEFAULT_MODEL, private compute: Compute = 'auto') {}
 
   async transcribe(audio: Pcm16k, opts: TranscribeOptions = {}): Promise<TimedWord[]> {
+    opts.signal?.throwIfAborted();
     const device = this.compute === 'auto' ? ((await hasWebGpu()) ? 'webgpu' : 'wasm') : this.compute;
     this.worker ??= new Worker(new URL('./whisper.worker.ts', import.meta.url), { type: 'module' });
     const worker = this.worker;
@@ -71,6 +72,7 @@ export class LocalTranscriber implements Transcriber {
         this.worker = null;
         reject(new DOMException('Cancelled', 'AbortError'));
       };
+      if (opts.signal?.aborted) return onAbort(); // already cancelled: an 'abort' event would never come
       opts.signal?.addEventListener('abort', onAbort);
       worker.onmessage = (e) => {
         const m = e.data;

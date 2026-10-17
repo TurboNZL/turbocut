@@ -149,11 +149,18 @@ export class TimelineView {
   private trackRow(track: Track): HTMLElement {
     const { selected } = this.store;
     const badges = [track.hidden ? icon('hidden', 12) : null, track.muted ? icon('mute', 12) : null, track.locked ? icon('lock', 12) : null].filter((b): b is HTMLSpanElement => !!b);
-    const head = h('button', { class: 'tl-head', 'aria-label': `Track ${track.name} options`, title: 'Track options' }, track.name, badges.length ? h('small', { class: 'tl-badges' }, ...badges) : null);
+    const head = h('button', { class: 'tl-head', 'aria-label': `Track ${track.name} options`, title: 'Select this track. Right-click for its options.' }, track.name, badges.length ? h('small', { class: 'tl-badges' }, ...badges) : null);
+    // A click picks the track; the options menu opens at the pointer on a right click (a long press on a touch screen).
     head.addEventListener('click', (e) => {
       e.stopPropagation();
       this.store.setActiveTrack(track.id);
-      this.trackMenu(track, head);
+      if (this.touch) this.trackMenu(track, head);
+    });
+    head.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.store.setActiveTrack(track.id);
+      this.trackMenu(track, { x: e.clientX, y: e.clientY });
     });
     const state = [track.id === this.store.activeTrack ? 'active' : '', track.locked ? 'locked' : '', track.hidden ? 'off' : '', track.muted ? 'off' : ''].filter(Boolean).join(' ');
     const row = h('div', { class: `tl-track tl-${track.kind} ${state}`.trim(), 'data-track': track.id }, head);
@@ -164,7 +171,7 @@ export class TimelineView {
       if (clip.id === selected) selectedClip = clip;
       const el = h(
         'div',
-        { class: `tl-clip${isSel ? ' sel' : ''}${clip.muted ? ' muted' : ''}${clip.text ? ' tl-text' : ''}`, 'data-start': clip.start, 'data-dur': clip.duration, style: { left: `${this.pad + this.px(clip.start)}px`, width: `${Math.max(2, this.px(clip.duration))}px` }, title: asset?.name },
+        { class: `tl-clip${isSel ? ' sel' : ''}${clip.muted ? ' muted' : ''}${clip.text ? ' tl-text' : ''}`, 'data-clip': clip.id, 'data-start': clip.start, 'data-dur': clip.duration, style: { left: `${this.pad + this.px(clip.start)}px`, width: `${Math.max(2, this.px(clip.duration))}px` }, title: asset?.name },
         h('span', { class: 'tl-name' }, clip.text ? `T  ${clip.text.content}` : (asset?.name ?? '')),
         clip.effects.length ? h('span', { class: 'tl-fx' }, 'fx') : null,
         Object.values(clip.keys).some((k) => k?.length) ? h('span', { class: 'tl-fx' }, '◆') : null,
@@ -195,12 +202,63 @@ export class TimelineView {
     });
     if (!this.touch) {
       row.addEventListener('pointerdown', (e) => {
-        if (e.target !== row) return;
-        this.store.clearSelection();
-        this.scrub(e);
+        if (e.target !== row || e.button !== 0) return;
+        this.emptyPress(e);
       });
     }
     return row;
+  }
+
+  /**
+   * A press on the empty part of a track. A click puts the playhead there and lets go of the selection; dragging draws a box and
+   * selects the clips it touches (Shift or Ctrl/Cmd adds them to what is selected).
+   */
+  private emptyPress(e: PointerEvent): void {
+    const store = this.store;
+    if (store.playing) return;
+    const add = e.shiftKey || e.ctrlKey || e.metaKey;
+    const base = add ? store.selectedIds : [];
+    if (!add) store.clearSelection();
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const frameAt = (cx: number) => Math.max(0, Math.round((cx - this.content.getBoundingClientRect().left - this.pad) / store.zoom));
+    store.seek(frameAt(x0));
+    let box: HTMLElement | null = null;
+    let last = '';
+    const move = (ev: PointerEvent) => {
+      if (!box) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
+        box = h('div', { class: 'tl-marquee' });
+        document.body.append(box);
+        document.body.classList.add('resizing');
+      }
+      const l = Math.min(x0, ev.clientX);
+      const t = Math.min(y0, ev.clientY);
+      const r = Math.max(x0, ev.clientX);
+      const b = Math.max(y0, ev.clientY);
+      Object.assign(box.style, { left: `${l}px`, top: `${t}px`, width: `${r - l}px`, height: `${b - t}px` });
+      const hit = [...this.content.querySelectorAll<HTMLElement>('.tl-clip[data-clip]')]
+        .filter((c) => {
+          const q = c.getBoundingClientRect();
+          return q.right >= l && q.left <= r && q.bottom >= t && q.top <= b;
+        })
+        .map((c) => c.dataset.clip!);
+      const ids = [...new Set([...base, ...hit])];
+      if (ids.join() !== last) {
+        last = ids.join();
+        store.selectMany(ids); // the timeline redraws; the box lives outside it, so it stays
+      }
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      box?.remove();
+      document.body.classList.remove('resizing');
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   }
 
   /** A low-detail waveform inside an audio clip, drawn from peaks that are computed once in the background. */
@@ -271,7 +329,7 @@ export class TimelineView {
   }
 
   /** Small pop-up with what can be done to a track. */
-  private trackMenu(track: Track, anchor: HTMLElement): void {
+  private trackMenu(track: Track, anchor: HTMLElement | { x: number; y: number }): void {
     const acts = this.opts.trackActions;
     if (!acts) return;
     const last = this.store.project.tracks.filter((t) => t.kind === track.kind).length <= 1;
@@ -305,8 +363,7 @@ export class TimelineView {
       if (!this.touch) el.addEventListener('contextmenu', (e) => this.cueMenu(e, cue.id));
       el.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.store.selectCue(cue.id);
-        this.store.seek(cue.start);
+        this.store.selectCue(cue.id); // selecting never moves the playhead: Split cuts at the playhead, wherever the person put it
       });
       row.append(el);
     }

@@ -45,3 +45,16 @@ export async function launch(args = []) {
   browser.newPage = async (options = {}) => (await browser.newContext(options)).newPage();
   return browser;
 }
+
+/**
+ * Choose an option of a drop-down the way a person does: open the themed list and press the row. Every `select.input` is drawn by
+ * the theme now (`themedSelect.ts`), so the native element is hidden and `selectOption` cannot reach it. `value` is the option's value;
+ * `within` narrows where to look (a dialog, say).
+ */
+export async function pick(page, label, value, within = page) {
+  const sel = within.locator(`select[aria-label="${label}"]`).first();
+  const text = await sel.evaluate((s, v) => [...s.options].find((o) => o.value === v)?.textContent, value);
+  if (text == null) throw new Error(`"${label}" has no option with the value ${value}`);
+  await within.locator(`button.themed-select[aria-label="${label}"]`).first().click();
+  await page.locator('.themed-select-menu .ts-option', { hasText: text }).first().click();
+}

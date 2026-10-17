@@ -7,6 +7,7 @@ import { exportProject } from '../export/exporter.ts';
 import { dialog, h } from './dom.ts';
 import { keepAwake, pickFiles, saveFile } from './platform.ts';
 import type { Player } from './player.ts';
+import { loadRecent, rememberProject } from './recent.ts';
 import { CAPTION_TRACK, type Store } from './store.ts';
 
 /** Everything the person can do to the project, as plain functions the buttons, shortcuts and tests all call. */
@@ -41,45 +42,107 @@ export class Actions {
     const name = projectFileName(store.project.name);
     await saveFile(serializeProject(store.project), name, 'application/json');
     store.dirty = false;
+    void rememberProject(store.project);
     store.say(`Saved ${name}. It holds the edit, not the video: keep the media files too.`);
+  }
+
+  /** Ask before throwing away unsaved work. Resolves true to go on (saved, or discarded), false when the person backs out. */
+  confirmDiscard(): Promise<boolean> {
+    if (!this.store.dirty) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v: boolean) => {
+        if (done) return;
+        done = true;
+        watch.disconnect();
+        dlg.close();
+        resolve(v);
+      };
+      const dlg = dialog('Unsaved changes', h('p', {}, 'This project has changes that are not saved to a file.'), [
+        h('button', { class: 'btn btn-accent', onclick: () => void this.saveProject().then(() => finish(true)) }, 'Save, then continue'),
+        h('button', { class: 'btn', onclick: () => finish(true) }, 'Discard them'),
+        h('button', { class: 'btn btn-ghost', onclick: () => finish(false) }, 'Cancel'),
+      ]);
+      // closed with the X or a press outside: that is a cancel too
+      const watch = new MutationObserver(() => dlg.el.isConnected || finish(false));
+      watch.observe(document.body, { childList: true });
+    });
   }
 
   /** Ask before throwing away unsaved work, then run `go`. */
   guardUnsaved(go: () => void): void {
-    if (!this.store.dirty) return go();
-    const dlg = dialog('Unsaved changes', h('p', {}, 'This project has changes that are not saved to a file.'), [
-      h('button', { class: 'btn btn-accent', onclick: () => void this.saveProject().then(() => (dlg.close(), go())) }, 'Save, then continue'),
-      h('button', { class: 'btn', onclick: () => (dlg.close(), go()) }, 'Discard them'),
-      h('button', { class: 'btn btn-ghost', onclick: () => dlg.close() }, 'Cancel'),
-    ]);
+    void this.confirmDiscard().then((ok) => ok && go());
   }
 
-  /** A fresh project at the same size. */
-  newProject(): void {
-    this.guardUnsaved(() => {
-      const { width, height } = this.store.project;
-      this.store.loadProject(createProject({ name: 'Untitled', width, height }));
-      this.store.say('New project.');
-    });
+  /** A fresh project at the same size. Resolves true when it was made. */
+  async newProject(): Promise<boolean> {
+    if (!(await this.confirmDiscard())) return false;
+    void rememberProject(this.store.project); // what was being edited stays on the home screen's list
+    const { width, height } = this.store.project;
+    this.store.loadProject(createProject({ name: 'Untitled', width, height }));
+    this.store.say('New project.');
+    return true;
   }
 
-  /** Open a `.turbocut` file (picked, or the one given). The media is asked for afterwards. */
-  openProject(file?: File): void {
-    this.guardUnsaved(() => void this.loadProjectFile(file));
+  /** Open a `.turbocut` file (picked, or the one given). The media is asked for afterwards. Resolves true only when a project was opened: a cancelled file picker or a bad file is false. */
+  async openProject(file?: File): Promise<boolean> {
+    if (!(await this.confirmDiscard())) return false;
+    return this.loadProjectFile(file);
   }
 
-  private async loadProjectFile(file?: File): Promise<void> {
+  /** Open a project from the recent list on the home screen. */
+  async openRecent(key: string): Promise<boolean> {
+    if (!(await this.confirmDiscard())) return false;
+    const p = await loadRecent(key);
+    if (!p) {
+      this.store.say('That project is no longer in the recent list.');
+      return false;
+    }
+    void rememberProject(this.store.project);
+    this.store.loadProject(p);
+    this.afterOpen(p.name);
+    return true;
+  }
+
+  /**
+   * A project another TurboCut app sent: open it like a file, then give it the media that came with it (matched by name).
+   * Fonts and the caption style that came along are added to this device first.
+   */
+  async openReceived(json: string, files: File[], from: string): Promise<boolean> {
+    let project;
+    try {
+      project = parseProject(json);
+    } catch (e) {
+      this.store.say(`What ${from} sent is not a usable project: ${e instanceof Error ? e.message : e}`);
+      return false;
+    }
+    if (!(await this.confirmDiscard())) return false;
+    void rememberProject(this.store.project);
+    this.store.loadProject(project);
+    if (files.length) await this.relinkMedia(files);
+    this.afterOpen(`${project.name} from ${from}`);
+    return true;
+  }
+
+  private async loadProjectFile(file?: File): Promise<boolean> {
     const { store } = this;
     const f = file ?? (await pickFiles('.turbocut,.json,application/json'))[0];
-    if (!f) return;
+    if (!f) return false;
     try {
       store.loadProject(parseProject(await f.text()));
     } catch (e) {
       store.say(`Could not open ${f.name}: ${e instanceof Error ? e.message : e}`);
-      return;
+      return false;
     }
+    this.afterOpen(f.name);
+    return true;
+  }
+
+  private afterOpen(label: string): void {
+    const { store } = this;
+    void rememberProject(store.project);
     const missing = store.missingAssets();
-    store.say(missing.length ? `Opened ${f.name}. ${missing.length} media file${missing.length === 1 ? '' : 's'} to find.` : `Opened ${f.name}.`);
+    store.say(missing.length ? `Opened ${label}. ${missing.length} media file${missing.length === 1 ? '' : 's'} to find.` : `Opened ${label}.`);
     if (missing.length) this.relinkDialog();
   }
 
@@ -130,7 +193,7 @@ export class Actions {
   /** Files dropped on the window: a project opens, media that a loaded project is missing goes back, the rest is imported. */
   async dropFiles(files: File[]): Promise<void> {
     const project = files.find((f) => /\.turbocut$/i.test(f.name));
-    if (project) return this.openProject(project);
+    if (project) return void (await this.openProject(project));
     const missing = this.store.missingAssets();
     const matched = new Set(missing.length ? [...matchMedia(missing, files).values()] : []);
     if (matched.size) {

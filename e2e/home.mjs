@@ -51,14 +51,75 @@ try {
   await page.getByRole('button', { name: 'Home', exact: true }).click();
   await page.getByRole('button', { name: 'Home', exact: true }).click({ force: true }).catch(() => {});
   assert.equal(await page.locator('.home').count(), 1);
+  assert.equal(await page.getByRole('button', { name: 'Start editing' }).count(), 0, 'there is no loose "Start editing" button any more');
 
-  // "do not show" persists
-  await page.getByLabel('Do not show this at startup').check();
-  await page.getByRole('button', { name: 'Start editing' }).click();
+  // two screens: the first ends with the update line, everything after it (guides, other devices) is below the edge until you scroll
+  const vh = await page.evaluate(() => innerHeight);
+  const first = await page.locator('.home-first').boundingBox();
+  const more = await page.locator('.home-more').boundingBox();
+  assert.ok(first.height >= vh - 2, `the first screen fills the window (${first.height} of ${vh})`);
+  assert.ok(more.y >= vh - 2, `Learn and the downloads start below the first screen (${more.y})`);
+  const upd = await page.locator('.home-updates').boundingBox();
+  assert.ok(upd.y + upd.height <= vh, 'the update line is on the first screen');
+  assert.ok(await page.getByText('Get TurboCut on other devices').evaluate((el) => el.getBoundingClientRect().top > innerHeight), 'the downloads are off screen at first');
+  // scrolling a little finishes the scroll by itself (snap)
+  await page.locator('.home').evaluate((el) => el.scrollBy({ top: 120 }));
+  await page.waitForFunction(() => document.querySelector('.home').scrollTop >= innerHeight - 4, null, { timeout: 5000 });
+  assert.ok(await page.getByText('Get TurboCut on other devices').isVisible());
+  await page.locator('.home').evaluate((el) => el.scrollTo({ top: 0 }));
+
+  // the "show on startup" switch is in the top right, on by default
+  const sw = page.getByRole('switch', { name: 'Show this screen when TurboCut starts' });
+  const swBox = await sw.boundingBox();
+  assert.ok(swBox.x > 900 && swBox.y < 100, `the switch sits in the top right (${swBox.x}, ${swBox.y})`);
+  assert.equal(await sw.isChecked(), true);
+  await sw.uncheck();
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.showHome), false);
+  await page.getByRole('button', { name: /Vertical short/ }).click();
   await page.reload();
   await page.waitForFunction(() => window.turbocutApp);
   await page.waitForTimeout(400);
   assert.equal(await page.locator('.home').count(), 0, 'stays hidden after a restart');
+
+  // opening a project and backing out of the file picker does not drop you into the editor
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: /Open a project/ }).click()]);
+  await chooser.setFiles([]); // cancelled
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('.home').count(), 1, 'cancelling the picker leaves the home screen where it was');
+  const [chooser2] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: /Import video/ }).click()]);
+  await chooser2.setFiles([]);
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('.home').count(), 1, 'and so does cancelling an import');
+
+  // recent projects: nothing to list yet; after some work (kept a few seconds after the last change) it is one tap away on the next start
+  assert.equal(await page.locator('.home-recent').isVisible(), false, 'no recent list while there is nothing to list');
+  await page.getByRole('button', { name: /Vertical short/ }).click();
+  const media = (await import('node:fs')).readFileSync(`${root}e2e/.media/src.webm`).toString('base64');
+  await page.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    await window.turbocutApp.importMedia([new File([bytes], 'clip.webm', { type: 'video/webm' })], true);
+    window.turbocutApp.store.edit((p) => (p.name = 'My short'));
+  }, media);
+  await page.waitForTimeout(4600); // the copy is kept 4 s after the last change
+  await page.evaluate(() => window.turbocutApp.store.updateSettings({ showHome: true }));
+  await page.reload();
+  await page.waitForFunction(() => window.turbocutApp);
+  await page.locator('.home').waitFor(); // an empty project at start: the home screen shows by itself
+  const recent = page.locator('.home-recent-open', { hasText: 'My short' });
+  await recent.waitFor();
+  assert.match(await recent.textContent(), /1080×1920/);
+  await page.screenshot({ path: `${out}home-recent.png` });
+  await recent.click();
+  await page.waitForFunction(() => window.turbocutApp.store.project.name === 'My short');
+  assert.equal(await page.locator('.home').count(), 0, 'opening a recent project closes the home screen');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.missingAssets().length), 1, 'the media is asked for again, like opening a file');
+  await page.getByRole('dialog', { name: 'Find the media' }).waitFor();
+  await page.locator('.dlg .bt-close').click();
+  // it can be taken off the list
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByRole('button', { name: /Remove My short from the list/ }).click();
+  await page.waitForFunction(() => !document.querySelector('.home-recent-open'));
 
   // offline: no crash, a way to the releases page
   const offline = await open((route) => route.abort());

@@ -1,6 +1,6 @@
 import { dialogueToCues, parseAss, writeAss } from '../captions/ass.ts';
 import { entranceTags, styleByName } from '../captions/presets.ts';
-import { groupingFor, groupWords, RemoteTranscriber, type Transcriber } from '../transcribe/provider.ts';
+import { groupingFor, groupWords } from '../transcribe/provider.ts';
 import { LocalTranscriber, MODELS, type Compute } from '../transcribe/local.ts';
 import { cleanWords } from '../transcribe/post.ts';
 import { projectDuration } from '../core/timeline.ts';
@@ -50,7 +50,7 @@ export class CaptionsPanel {
     const describeEngine = () => {
       const t = this.store.settings.transcribe;
       const model = MODELS.find((m) => m.id === t.model)?.label ?? t.model;
-      summary.textContent = t.mode === 'remote' ? `Engine: server ${t.url || '(not set)'}, ${t.lang || 'language detected'}.` : `Engine: this device, ${model}, ${t.lang || 'language detected'}.`;
+      summary.textContent = `Engine: this device, ${model}, ${t.lang || 'language detected'}.`;
     };
     describeEngine();
     const change = h('button', { class: 'btn btn-ghost', onclick: () => this.openEngineSettings?.() }, 'Change…');
@@ -58,34 +58,52 @@ export class CaptionsPanel {
     const go = h('button', { class: 'btn btn-accent' }, 'Generate captions');
     this.goButton = go;
     const cancel = h('button', { class: 'btn', style: { display: 'none' } }, 'Cancel');
-    cancel.addEventListener('click', () => this.abort?.abort());
+    cancel.addEventListener('click', () => {
+      cancel.disabled = true;
+      cancel.textContent = 'Cancelling…';
+      this.abort?.abort();
+    });
     go.addEventListener('click', async () => {
       // First time on this device: ask which speech model to download before anything else happens.
       const t0 = this.store.settings.transcribe;
-      if (t0.mode === 'local' && !t0.modelChosen) {
+      if (!t0.modelChosen) {
         // Saving the choice redraws this panel (and this button), so start again from the new button once it is saved.
         if (await chooseModel(this.store, matchMedia('(pointer: coarse)').matches)) setTimeout(() => this.goButton?.click(), 0);
         return;
       }
       go.disabled = true;
+      cancel.disabled = false;
+      cancel.textContent = 'Cancel';
       cancel.style.display = '';
       progress.style.display = '';
       progress.removeAttribute('value');
-      this.abort = new AbortController();
-      try {
-        const t = this.store.settings.transcribe;
-        await this.generate(t.mode, t.url, t.token || undefined, t.lang || undefined, { model: t.model, compute: t.compute }, (label, f) => {
-          store.say(label);
-          if (f != null) progress.value = f;
-          else progress.removeAttribute('value');
-        });
-      } catch (e) {
-        store.say(e instanceof DOMException && e.name === 'AbortError' ? 'Cancelled.' : `Captions failed: ${e instanceof Error ? e.message : e}`);
-      } finally {
+      const abort = new AbortController();
+      this.abort = abort;
+      const reset = () => {
         go.disabled = false;
         cancel.style.display = 'none';
         progress.style.display = 'none';
-        this.abort = null;
+        if (this.abort === abort) this.abort = null;
+      };
+      // Cancel answers at once: the work (mixing audio, downloading the model, listening) is stopped at its next chance, but the
+      // person is not left waiting for it. A late result from a cancelled run is never applied.
+      const stopped = new Promise<never>((_, reject) => abort.signal.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true }));
+      stopped.catch(() => {});
+      try {
+        const t = this.store.settings.transcribe;
+        await Promise.race([
+          this.generate(t.lang || undefined, { model: t.model, compute: t.compute }, abort.signal, (label, f) => {
+            if (abort.signal.aborted) return;
+            store.say(label);
+            if (f != null) progress.value = f;
+            else progress.removeAttribute('value');
+          }),
+          stopped,
+        ]);
+      } catch (e) {
+        store.say(e instanceof DOMException && e.name === 'AbortError' ? 'Cancelled.' : `Captions failed: ${e instanceof Error ? e.message : e}`);
+      } finally {
+        reset();
       }
     });
 
@@ -151,30 +169,23 @@ export class CaptionsPanel {
   }
 
   private async generate(
-    mode: string,
-    url: string,
-    token: string | undefined,
     language: string | undefined,
     local: { model: string; compute: Compute },
+    signal: AbortSignal,
     say: (label: string, f?: number) => void,
   ): Promise<void> {
     const { project: p, lib } = this.store;
     if (!p.tracks.some((t) => t.kind === 'audio' && t.clips.length)) throw new Error('Add a clip with audio first');
-    let provider: Transcriber;
-    let localProvider: LocalTranscriber | undefined;
-    if (mode === 'remote') {
-      if (!url) throw new Error('Enter the server address');
-      provider = new RemoteTranscriber(url, token);
-    } else {
-      localProvider = new LocalTranscriber(local.model, local.compute);
-      localProvider.onStatus = (s) => say(s.phase === 'download' ? `Downloading speech model… ${Math.round((s.progress ?? 0) * 100)}%` : 'Listening…', s.phase === 'download' ? s.progress : undefined);
-      provider = localProvider;
-    }
+    const localProvider = new LocalTranscriber(local.model, local.compute);
+    localProvider.onStatus = (s) => say(s.phase === 'download' ? `Downloading speech model… ${Math.round((s.progress ?? 0) * 100)}%` : 'Listening…', s.phase === 'download' ? s.progress : undefined);
+    const provider = localProvider;
     say('Preparing audio…');
-    const pcm = await renderPcm16k(p, lib, (f) => say('Preparing audio…', f));
+    const pcm = await renderPcm16k(p, lib, (f) => say('Preparing audio…', f), signal);
+    signal.throwIfAborted();
     const seconds = projectDuration(p) / p.fps;
-    say(mode === 'remote' ? 'Sending to server…' : 'Loading model…');
-    const raw = await provider.transcribe(pcm, { language, signal: this.abort?.signal });
+    say('Loading model…');
+    const raw = await provider.transcribe(pcm, { language, signal });
+    signal.throwIfAborted();
     const { words, report } = cleanWords(raw, { durationSec: seconds, pcm: pcm.samples });
 
     let peak = 0;
@@ -183,7 +194,7 @@ export class CaptionsPanel {
     const info = localProvider?.lastInfo;
     this.report = [
       'TurboCut captions report',
-      `Engine: ${mode === 'remote' ? `server ${url}` : 'this device'}`,
+      'Engine: this device',
       info ? `Model: ${info.model}\nProcessor: ${info.device} (${info.dtype})\nLanguage: ${info.language}` : '',
       `Audio: ${seconds.toFixed(2)} s, peak level ${peak.toFixed(3)}`,
       `Words from the model: ${raw.length}; kept ${report.kept}; dropped: ${report.droppedPastEnd} after the end, ${report.droppedSilent} on silence, ${report.droppedRepeated} repeated, ${report.droppedEmpty} empty`,

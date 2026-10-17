@@ -1,13 +1,10 @@
 import type { Compute } from '../transcribe/local.ts';
 import { BALANCED_MODEL, MODELS, recommendedModel } from '../transcribe/local.ts';
-import { AUTO_LAYOUT, cleanLayout, type Layout } from './layout.ts';
+import { AUTO_LAYOUT, TAB_NAMES, cleanLayout, type Layout, type TabName } from './layout.ts';
 
 export type CounterMode = 'filled' | 'rim' | 'clear';
 
 export interface TranscribeSettings {
-  mode: 'local' | 'remote';
-  url: string;
-  token: string;
   /** Language name or code for Whisper, blank to detect. English by default: detection can pick the wrong language. */
   lang: string;
   model: string;
@@ -19,6 +16,13 @@ export interface TranscribeSettings {
 }
 
 export type CaptionGrouping = 'auto' | 'short' | 'sentence';
+
+/** How sharp the preview is drawn: a share of the project's size. `auto` follows the device (half on a phone, full elsewhere). */
+export type PreviewScale = 'auto' | 100 | 75 | 50 | 25;
+/** How many frames the preview draws a second while playing: a share of the project's rate. */
+export type PreviewFps = 'full' | 'half' | 'third' | 'quarter';
+export const PREVIEW_SCALES: PreviewScale[] = ['auto', 100, 75, 50, 25];
+export const PREVIEW_FPS: PreviewFps[] = ['full', 'half', 'third', 'quarter'];
 
 export interface Settings {
   /** 2: the letter-hole default became 'filled'; older stored 'rim' values came from the old default and are upgraded once. */
@@ -40,6 +44,18 @@ export interface Settings {
   autoCheckUpdates: boolean;
   /** Show the home screen when the app starts with an empty project. */
   showHome: boolean;
+  /** The bottom dock with Home, Edit and Settings (a window-level choice, not part of a layout). */
+  dock: boolean;
+  /** Let other TurboCut apps on the network find this one and send it projects (desktop apps; each transfer still needs an Accept). */
+  shareEnabled: boolean;
+  /** How this device is named to the others; blank is the computer's own name. */
+  deviceName: string;
+  /** The panel tab that opens first (Media unless changed). */
+  openTab: TabName;
+  /** Jump to the Clip tab when a clip is selected and to Captions when a caption is. */
+  autoSwitch: boolean;
+  previewScale: PreviewScale;
+  previewFps: PreviewFps;
   transcribe: TranscribeSettings;
   /** Shortcuts the person changed: action id to key combos. Anything not here uses the default. */
   hotkeys: Record<string, string[]>;
@@ -56,7 +72,14 @@ export const DEFAULT_SETTINGS = (touch: boolean): Settings => ({
   layouts: [],
   autoCheckUpdates: true,
   showHome: true,
-  transcribe: { mode: 'local', url: '', token: '', lang: 'english', model: recommendedModel(touch), compute: 'auto', modelChosen: false, grouping: 'auto' },
+  dock: false,
+  shareEnabled: true,
+  deviceName: '',
+  openTab: 'Media',
+  autoSwitch: true,
+  previewScale: 'auto',
+  previewFps: 'full',
+  transcribe: { lang: 'english', model: recommendedModel(touch), compute: 'auto', modelChosen: false, grouping: 'auto' },
   hotkeys: {},
 });
 
@@ -67,15 +90,20 @@ export function mergeSettings(stored: unknown, defaults: Settings): Settings {
   const out: Settings = structuredClone(defaults);
   if (!stored || typeof stored !== 'object') return out;
   const s = stored as Record<string, any>;
-  for (const k of ['snapping', 'waveforms', 'videoOnTop', 'autoCheckUpdates', 'showHome'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
+  for (const k of ['snapping', 'waveforms', 'videoOnTop', 'autoCheckUpdates', 'showHome', 'dock', 'autoSwitch', 'shareEnabled'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
   if (typeof s.defaultFont === 'string' && s.defaultFont.trim()) out.defaultFont = s.defaultFont.trim();
   if (s.counters === 'filled' || s.counters === 'rim' || s.counters === 'clear') out.counters = s.counters === 'rim' && s.settingsVersion !== 2 ? 'filled' : s.counters;
   if (Array.isArray(s.layouts)) out.layouts = s.layouts.map((l: unknown) => cleanLayout(l)).filter((l: Layout | null): l is Layout => !!l).slice(0, 30);
   if (typeof s.layout === 'string') out.layout = s.layout;
+  // The dock used to be a layout ("Bottom dock"); it is a setting now.
+  if (typeof s.dock !== 'boolean' && (s.layout === 'Bottom dock' || (Array.isArray(s.layouts) && s.layouts.some((l: any) => l?.name === s.layout && l?.dock === true)))) out.dock = true;
+  if (typeof s.deviceName === 'string') out.deviceName = s.deviceName.trim().slice(0, 60);
+  if ((TAB_NAMES as readonly string[]).includes(s.openTab)) out.openTab = s.openTab;
+  if (PREVIEW_SCALES.includes(s.previewScale)) out.previewScale = s.previewScale;
+  if (PREVIEW_FPS.includes(s.previewFps)) out.previewFps = s.previewFps;
   if (s.transcribe && typeof s.transcribe === 'object') {
     const t = s.transcribe;
-    if (t.mode === 'local' || t.mode === 'remote') out.transcribe.mode = t.mode;
-    for (const k of ['url', 'token', 'lang', 'model'] as const) if (typeof t[k] === 'string') out.transcribe[k] = t[k];
+    for (const k of ['lang', 'model'] as const) if (typeof t[k] === 'string') out.transcribe[k] = t[k];
     if (t.grouping === 'auto' || t.grouping === 'short' || t.grouping === 'sentence') out.transcribe.grouping = t.grouping;
     if (typeof t.modelChosen === 'boolean') out.transcribe.modelChosen = t.modelChosen;
     // Settings saved before the first-use window existed: a model other than the old default was a choice, the old default was not.
@@ -108,7 +136,6 @@ export function saveSettings(s: Settings): void {
 /** Settings as a shareable file (no access tokens). */
 export function exportSettings(s: Settings): string {
   const copy = structuredClone(s);
-  copy.transcribe.token = '';
   return JSON.stringify({ format: 'turbocut.settings', version: 1, settings: copy }, null, 2);
 }
 

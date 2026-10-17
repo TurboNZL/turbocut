@@ -8,10 +8,11 @@ import { deviceCheck } from './deviceCheck.ts';
 import { dialog, h, panel } from './dom.ts';
 import { comboFromEvent, prettyCombo, type Hotkeys } from './hotkeys.ts';
 import { pickFiles, platform, saveFile } from './platform.ts';
-import { DEFAULT_SETTINGS, exportSettings, importSettings, type CounterMode } from './settings.ts';
+import { DEFAULT_SETTINGS, PREVIEW_FPS, PREVIEW_SCALES, exportSettings, importSettings, type CounterMode, type PreviewFps, type PreviewScale } from './settings.ts';
 import type { Store } from './store.ts';
 import { MODELS, type Compute } from '../transcribe/local.ts';
 import { desktopWindow } from './windowFrame.ts';
+import { shareApi } from './share.ts';
 import { assetFor, checkForUpdate, apkUpdater, desktopUpdater, openApk, type UpdateStatus } from './updater.ts';
 import { APP_VERSION } from './version.ts';
 
@@ -48,7 +49,7 @@ const field = (label: string, control: HTMLElement) => h('label', { class: 'sett
  * a row when the space is narrow: it follows its own width, not the screen's) and the page. Typing in the search shows every
  * setting in every page that matches, grouped by page; clearing it goes back to the page you were on.
  */
-export function settingsView(deps: SettingsDeps, tab: SettingsTab = 'General'): { el: HTMLElement; show: (t: SettingsTab) => void } {
+export function settingsView(deps: SettingsDeps, tab: SettingsTab = 'General'): { el: HTMLElement; show: (t: SettingsTab) => void; focusSearch: () => void } {
   const { store } = deps;
   const body = h('div', { class: 'settings-body' });
   const nav = h('div', { class: 'settings-nav', role: 'tablist', 'aria-orientation': 'vertical' });
@@ -69,14 +70,20 @@ export function settingsView(deps: SettingsDeps, tab: SettingsTab = 'General'): 
     for (const t of tabs) nav.append(h('button', { class: 'tab', role: 'tab', 'data-tab': t, onclick: () => show(t) }, t));
   }
 
+  /** Draw the page again where the person was in it: a changed shortcut or a made copy must not throw them back to the top. */
+  const refresh = () => {
+    const top = body.scrollTop;
+    show(current);
+    body.scrollTop = top;
+  };
   const build = (t: SettingsTab): HTMLElement => {
     switch (t) {
-      case 'General': return general(deps, () => show(current));
-      case 'Look': return look();
-      case 'Layout': return layoutManager(store, () => show(current));
-      case 'Fonts': return fontsTab(deps, () => show(current));
+      case 'General': return general(deps, refresh);
+      case 'Look': return look(deps, refresh);
+      case 'Layout': return layoutManager(store, refresh);
+      case 'Fonts': return fontsTab(deps, refresh);
       case 'Guides': return guidesView();
-      case 'Keys': return keys(deps, () => show(current));
+      case 'Keys': return keys(deps, refresh);
       case 'Captions': return captionsEngine(deps);
       case 'Updates': return updates(deps);
       case 'Device': return device(deps);
@@ -111,7 +118,7 @@ export function settingsView(deps: SettingsDeps, tab: SettingsTab = 'General'): 
   const root = h('div', { class: 'settings-shell' }, h('div', { class: 'settings-top' }, h('span', { class: 'settings-search-icon' }, icon('search', 16)), search), h('div', { class: 'settings' }, nav, body));
   show(tab);
   void searching;
-  return { el: root, show };
+  return { el: root, show, focusSearch: () => search.focus({ preventScroll: true }) };
 }
 
 /** Hide what does not match in one page (rows, then whole panels). Returns how many rows or panels stay. */
@@ -147,7 +154,9 @@ function filterPage(page: HTMLElement, words: string[]): number {
 
 /** The settings window. */
 export function openSettings(deps: SettingsDeps, tab: SettingsTab = 'General'): void {
-  dialog('Settings', settingsView(deps, tab).el, [], 'dlg-wide dlg-settings');
+  const view = settingsView(deps, tab);
+  dialog('Settings', view.el, [], 'dlg-wide dlg-settings');
+  queueMicrotask(() => view.focusSearch()); // typing right away searches the settings
 }
 
 function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
@@ -157,6 +166,13 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
     h('option', { value: 'audio', selected: !s.videoOnTop }, 'Audio tracks on top, video below'));
   trackOrder.addEventListener('change', () => store.updateSettings({ videoOnTop: trackOrder.value === 'video' }));
 
+  const SCALE_LABEL: Record<string, string> = { auto: 'Automatic (up to 960 px on the long side)', '100': 'Full size of the project', '75': '75 %', '50': '50 %', '25': '25 %, draft' };
+  const previewScale = h('select', { class: 'input', 'aria-label': 'Preview sharpness' }, ...PREVIEW_SCALES.map((v) => h('option', { value: String(v), selected: s.previewScale === v }, SCALE_LABEL[String(v)]!)));
+  previewScale.addEventListener('change', () => store.updateSettings({ previewScale: (previewScale.value === 'auto' ? 'auto' : Number(previewScale.value)) as PreviewScale }));
+  const FPS_LABEL: Record<PreviewFps, string> = { full: 'Every frame', half: 'Half of the frames', third: 'A third of the frames', quarter: 'A quarter of the frames' };
+  const previewFps = h('select', { class: 'input', 'aria-label': 'Preview frame rate' }, ...PREVIEW_FPS.map((v) => h('option', { value: v, selected: s.previewFps === v }, FPS_LABEL[v])));
+  previewFps.addEventListener('change', () => store.updateSettings({ previewFps: previewFps.value as PreviewFps }));
+
   const exportBtn = h('button', { class: 'btn', onclick: () => saveFile(exportSettings(store.settings), 'turbocut-settings.json', 'application/json') }, 'Export settings');
   const importBtn = h('button', {
     class: 'btn',
@@ -165,7 +181,6 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
       if (!f) return;
       try {
         const next = importSettings(await f.text(), DEFAULT_SETTINGS(false));
-        next.transcribe.token = store.settings.transcribe.token;
         store.updateSettings(() => Object.assign(store.settings, next));
         store.say('Settings imported.');
         redraw();
@@ -180,16 +195,29 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
       check('Snap clips and edges to the playhead and to each other', s.snapping, (v) => store.updateSettings({ snapping: v }), 'Hotkey N toggles it.'),
       check('Show audio waveforms', s.waveforms, (v) => store.updateSettings({ waveforms: v }), 'Low detail. Uses a little more battery.'),
       field('Track order', trackOrder)),
+    panel('Preview',
+      h('p', { class: 'hint' }, 'How the picture is drawn while you edit. Exports are always full size and full rate. A lower setting keeps a slow phone smooth.'),
+      field('Sharpness', previewScale),
+      field('Frame rate while playing', previewFps)),
     panel('Start', check('Show the home screen when TurboCut starts with an empty project', s.showHome, (v) => store.updateSettings({ showHome: v }), 'The Home button at the top brings it back.')),
     panel('Updates', check('Check for a new version when TurboCut starts', s.autoCheckUpdates, (v) => store.updateSettings({ autoCheckUpdates: v }))),
     panel('Settings file', h('div', { class: 'row' }, exportBtn, importBtn)),
   );
 }
 
-/** The Look page: the colour theme, UI style and wallpaper picker from turbothemes. */
-function look(): HTMLElement {
+/** The Look page: the colour theme, UI style and wallpaper picker from turbothemes, and how the window itself is drawn. */
+function look({ store }: SettingsDeps, redraw: () => void): HTMLElement {
   const picker = Object.assign(document.createElement('turbo-themes-picker'), { variant: 'select' });
-  return h('div', { class: 'stack' }, panel('Look', h('p', { class: 'hint' }, 'Colours, shapes and motion come from the theme you pick. Every look works with every layout.'), picker));
+  const w = desktopWindow;
+  return h('div', { class: 'stack' },
+    panel('Look', h('p', { class: 'hint' }, 'Colours, shapes and motion come from the theme you pick. Every look works with every layout.'), picker),
+    panel('Window',
+      check('Bottom dock with Home, Edit and Settings', store.settings.dock, (v) => (store.updateSettings({ dock: v }), redraw()), 'A bar along the bottom of the window, drawn by the look. Settings opens as a page instead of a window.'),
+      ...(w
+        ? [
+            check('Draw the title bar from the theme', w.customFrame, (v) => void w.setCustomFrame(v), 'Applies after TurboCut restarts. Turn it off to use your desktop\'s own title bar; macOS always uses its own.'),
+          ]
+        : [])));
 }
 
 function fontsTab({ store }: SettingsDeps, redraw: () => void): HTMLElement {
@@ -257,9 +285,8 @@ function keys({ hotkeys }: SettingsDeps, redraw: () => void): HTMLElement {
 function captionsEngine({ store }: SettingsDeps): HTMLElement {
   const t = store.settings.transcribe;
   const save = () => store.updateSettings((s) => (s.transcribe = { ...t }));
-  const mode = h('select', { class: 'input' }, h('option', { value: 'local', selected: t.mode === 'local' }, 'On this device'), h('option', { value: 'remote', selected: t.mode === 'remote' }, 'A server on my network'));
-  const model = h('select', { class: 'input' }, ...MODELS.map((m) => h('option', { value: m.id, selected: m.id === t.model }, m.label)));
-  const compute = h('select', { class: 'input' },
+  const model = h('select', { class: 'input', 'aria-label': 'Speech model' }, ...MODELS.map((m) => h('option', { value: m.id, selected: m.id === t.model }, m.label)));
+  const compute = h('select', { class: 'input', 'aria-label': 'Processor' },
     h('option', { value: 'auto', selected: t.compute === 'auto' }, 'Automatic'),
     h('option', { value: 'webgpu', selected: t.compute === 'webgpu' }, 'Graphics chip (WebGPU)'),
     h('option', { value: 'wasm', selected: t.compute === 'wasm' }, 'CPU (slower, most compatible)'));
@@ -267,29 +294,19 @@ function captionsEngine({ store }: SettingsDeps): HTMLElement {
     h('option', { value: 'auto', selected: t.grouping === 'auto' }, 'Automatic: short lines on tall video, sentences on wide video'),
     h('option', { value: 'short', selected: t.grouping === 'short' }, 'Short lines (a few words at a time)'),
     h('option', { value: 'sentence', selected: t.grouping === 'sentence' }, 'Whole sentences'));
-  const lang = h('input', { class: 'input', value: t.lang, placeholder: 'english (blank = detect)' });
-  const url = h('input', { class: 'input', value: t.url, placeholder: 'http://192.168.1.20:8787' });
-  const token = h('input', { class: 'input', type: 'password', value: t.token, placeholder: 'Access token (optional)' });
-  const local = h('div', { class: 'stack' }, field('Speech model', model), field('Processor', compute));
-  const remote = h('div', { class: 'stack' }, field('Server address', url), field('Access token', token));
+  const lang = h('input', { class: 'input', value: t.lang, placeholder: 'english (blank = detect)', 'aria-label': 'Language' });
   const sync = () => {
-    t.mode = mode.value as 'local' | 'remote';
     if (model.value !== t.model) t.modelChosen = true; // picking one here counts as the first-use choice
     t.model = model.value;
     t.grouping = grouping.value as typeof t.grouping;
     t.compute = compute.value as Compute;
     t.lang = lang.value.trim();
-    t.url = url.value.trim();
-    t.token = token.value.trim();
-    local.style.display = t.mode === 'local' ? '' : 'none';
-    remote.style.display = t.mode === 'remote' ? '' : 'none';
     save();
   };
-  for (const el of [mode, model, compute, grouping, lang, url, token]) el.addEventListener('change', sync);
-  sync();
+  for (const el of [model, compute, grouping, lang]) el.addEventListener('change', sync);
   return h('div', { class: 'stack' },
-    h('p', { class: 'hint' }, 'Used by Captions, Generate captions. On this device downloads a speech model the first time (about 250 MB for the accurate one, 80 MB for the balanced one) and then works offline. The accurate model hears more words correctly and times them more closely.'),
-    field('Where speech is recognised', mode), local, remote,
+    h('p', { class: 'hint' }, 'Used by Captions, Generate captions. The speech model runs on this device: it downloads the first time (about 250 MB for the accurate one, 80 MB for the balanced one) and then works offline. The accurate model hears more words correctly and times them more closely. Your audio never leaves the device.'),
+    field('Speech model', model), field('Processor', compute),
     field('Language', lang),
     field('Caption length', grouping),
     h('p', { class: 'hint' }, 'English is the default. Detecting the language automatically can pick the wrong one on game or stream audio and give text that makes no sense.'),
@@ -384,13 +401,13 @@ function device({ store }: SettingsDeps): HTMLElement {
   const pre = h('pre', { class: 'report' }, 'Checking this device…');
   const copy = h('button', { class: 'btn btn-accent', onclick: () => navigator.clipboard?.writeText(pre.textContent ?? '').then(() => store.say('Report copied.')) }, 'Copy report');
   void deviceCheck(store.project.width, store.project.height).then((r) => (pre.textContent = r.text));
-  const w = desktopWindow;
-  const frame = w
-    ? panel('Window',
-        h('label', { class: 'setting' }, Object.assign(h('input', { type: 'checkbox', checked: w.customFrame }), { onchange: (e: Event) => void w.setCustomFrame((e.target as HTMLInputElement).checked) }), h('span', {}, 'Draw the window title bar from the theme (applies after a restart).')),
-        h('p', { class: 'hint' }, 'Turn this off to use your desktop\'s own title bar. macOS always uses its own.'))
+  const sharing = shareApi
+    ? panel('Other TurboCut devices',
+        check('Let other TurboCut apps on this network find this device', store.settings.shareEnabled, (v) => store.updateSettings({ shareEnabled: v }), 'They can then offer to send you a project. Nothing is saved until you press Accept, and only devices on your own network can reach this one.'),
+        field('Name shown to the others', Object.assign(h('input', { class: 'input', value: store.settings.deviceName, placeholder: 'The computer\'s own name', 'aria-label': 'Device name', maxlength: 60 }), { onchange: (e: Event) => store.updateSettings({ deviceName: (e.target as HTMLInputElement).value.trim() }) })),
+        h('p', { class: 'hint' }, 'Send a project with File, Send to another device. It uses port 47903 on the network (TCP and UDP); a firewall may ask about it the first time.'))
     : h('span');
-  return h('div', { class: 'stack' }, frame, h('p', { class: 'hint' }, 'What this device can encode and how fast. Copy it into a bug report.'), pre, copy);
+  return h('div', { class: 'stack' }, sharing, h('p', { class: 'hint' }, 'What this device can encode and how fast. Copy it into a bug report.'), pre, copy);
 }
 
 function about(): HTMLElement {
