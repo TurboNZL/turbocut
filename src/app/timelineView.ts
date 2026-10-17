@@ -2,7 +2,8 @@ import { clipEnd, moveLinked, trimEnd, trimStart } from '../core/timeline.ts';
 import { drawWave } from '../media/waveform.ts';
 import type { Clip, Track } from '../core/types.ts';
 import { fmtTime, h, popupMenu } from './dom.ts';
-import type { Store } from './store.ts';
+import { icon, type IconName } from './icons.ts';
+import { CAPTION_TRACK, type Store } from './store.ts';
 
 const HEAD_W = 56; // track label column on desktop
 const EDGE = 9; // grab zone on each end of a clip with a mouse
@@ -12,6 +13,7 @@ export interface TimelineOptions {
   trackActions?: {
     toggle(trackId: string, what: 'hidden' | 'muted' | 'locked'): void;
     remove(trackId: string): void;
+    add(kind: Track['kind']): void;
   };
   /** Called when a finger touches the timeline, so playback can stop before the user scrubs. */
   onUserTouch?: () => void;
@@ -93,8 +95,10 @@ export class TimelineView {
     const { project: p, zoom } = this.store;
     const end = this.endFrame();
     const step = [1, 2, 5, 10, 15, 30, 60, 120, 300].find((s) => s * p.fps * zoom >= 70) ?? 600; // seconds between labels
+    const corner = ruler.querySelector('.tl-corner'); // the add-track button lives in the ruler and must survive a redraw of the ticks
     ruler.replaceChildren();
     for (let s = 0; s * p.fps < end; s += step) ruler.append(h('span', { class: 'tl-tick', style: { left: `${this.pad + s * p.fps * zoom}px` } }, fmtTime(s * p.fps, p.fps).replace(/\.\d+$/, '')));
+    if (corner) ruler.append(corner);
   }
 
   /**
@@ -123,6 +127,7 @@ export class TimelineView {
     const ruler = h('div', { class: 'tl-ruler' });
     this.fillRuler(ruler);
     if (!this.touch) ruler.addEventListener('pointerdown', (e) => this.scrub(e));
+    ruler.append(this.addTrackButton());
     content.append(ruler);
 
     // Within a kind the highest track is on top (higher layers above). The setting picks which kind is on top.
@@ -139,8 +144,8 @@ export class TimelineView {
 
   private trackRow(track: Track): HTMLElement {
     const { selected } = this.store;
-    const badges = `${track.hidden ? ' ⊘' : ''}${track.muted ? ' 🔇' : ''}${track.locked ? ' 🔒' : ''}`;
-    const head = h('button', { class: 'tl-head', 'aria-label': `Track ${track.name} options`, title: 'Track options' }, track.name, badges ? h('small', {}, badges) : null);
+    const badges: IconName[] = [...(track.hidden ? ['eyeOff' as const] : []), ...(track.muted ? ['volumeOff' as const] : []), ...(track.locked ? ['lock' as const] : [])];
+    const head = h('button', { class: 'tl-head', 'aria-label': `Track ${track.name} options`, title: 'Track options' }, track.name, badges.length ? h('small', { class: 'tl-badges' }, ...badges.map((b) => icon(b, 11))) : null);
     head.addEventListener('click', (e) => {
       e.stopPropagation();
       this.store.setActiveTrack(track.id);
@@ -179,13 +184,13 @@ export class TimelineView {
     }
     row.addEventListener('click', (e) => {
       if (e.target !== row) return;
-      this.store.select(null);
+      this.store.clearSelection();
       this.store.setActiveTrack(track.id);
     });
     if (!this.touch) {
       row.addEventListener('pointerdown', (e) => {
         if (e.target !== row) return;
-        this.store.select(null);
+        this.store.clearSelection();
         this.scrub(e);
       });
     }
@@ -225,18 +230,52 @@ export class TimelineView {
 
   private captionRow(): HTMLElement {
     const { project: p } = this.store;
-    const row = h('div', { class: 'tl-track tl-caption' }, h('div', { class: 'tl-head' }, 'CC'));
+    const active = this.store.activeTrack === CAPTION_TRACK;
+    const head = h('button', { class: 'tl-head', 'aria-label': 'Caption track', title: 'Select the caption track (Split cuts captions here)' }, 'CC');
+    head.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.store.clearSelection();
+      this.store.setActiveTrack(CAPTION_TRACK);
+    });
+    const row = h('div', { class: `tl-track tl-caption${active ? ' active' : ''}`, 'data-track': CAPTION_TRACK }, head);
     for (const cue of p.captions) {
       const el = h('div', { class: `tl-clip tl-cue${cue.id === this.store.selectedCue ? ' sel' : ''}`, 'data-start': cue.start, 'data-dur': cue.end - cue.start, style: { left: `${this.pad + this.px(cue.start)}px`, width: `${Math.max(2, this.px(cue.end - cue.start))}px` }, title: cue.text }, h('span', { class: 'tl-name' }, cue.text));
       el.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.store.selectedCue = cue.id;
+        this.store.selectCue(cue.id);
         this.store.seek(cue.start);
-        this.store.emit('selection');
       });
       row.append(el);
     }
+    // A press on the empty part of the row lets go of the caption (and makes this the track Split works on), as it does for the other tracks.
+    row.addEventListener('click', (e) => {
+      if (e.target !== row) return;
+      this.store.clearSelection();
+      this.store.setActiveTrack(CAPTION_TRACK);
+    });
+    if (!this.touch) {
+      row.addEventListener('pointerdown', (e) => {
+        if (e.target !== row) return;
+        this.scrub(e);
+      });
+    }
     return row;
+  }
+
+  /** The "+ track" button sits in the empty corner above the track labels, left of the time ruler, and stays there when the timeline scrolls sideways. */
+  private addTrackButton(): HTMLElement {
+    const btn = h('button', { class: 'tl-corner', 'aria-label': 'Add a track', title: 'Add a track' }, icon('plus', 16));
+    btn.addEventListener('pointerdown', (e) => e.stopPropagation()); // not a scrub
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const acts = this.opts.trackActions;
+      if (!acts) return;
+      popupMenu(btn, [
+        { label: 'Add a video track', run: () => acts.add('video') },
+        { label: 'Add an audio track', run: () => acts.add('audio') },
+      ]);
+    });
+    return btn;
   }
 
   /** Mouse: click or drag on the ruler/empty track area to move the playhead. */
@@ -339,15 +378,23 @@ export class TimelineView {
     if (!this.touch) s.scrollLeft = Math.max(0, this.pad + frame * this.store.zoom - x);
   }
 
-  /** Ctrl+wheel or Alt+wheel (and a laptop trackpad pinch, which arrives as Ctrl+wheel) zooms; Shift+wheel scrolls sideways. */
+  /**
+   * The wheel moves along the footage (sideways); Ctrl or Alt + wheel zooms (a laptop pinch arrives as Ctrl+wheel);
+   * Shift + wheel scrolls the tracks up and down when there are more than fit. A trackpad's own sideways swipe is kept.
+   */
   private onWheel(e: WheelEvent): void {
     if (e.ctrlKey || e.altKey) {
       e.preventDefault();
       this.zoomAt(this.store.zoom * Math.exp(-e.deltaY * 0.0022), e.clientX);
-    } else if (e.shiftKey && !this.touch) {
-      e.preventDefault();
-      this.scroller.scrollLeft += e.deltaY || e.deltaX;
+      return;
     }
+    if (this.touch) return; // a finger scrolls natively
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.scroller.clientHeight : 1; // lines and pages to pixels
+    const dy = e.deltaY * unit;
+    const dx = e.deltaX * unit;
+    e.preventDefault();
+    if (e.shiftKey) this.scroller.scrollTop += dy || dx;
+    else this.scroller.scrollLeft += Math.abs(dx) > Math.abs(dy) ? dx : dy;
   }
 
   /** Two fingers on the timeline: spread to zoom in, pinch to zoom out, around the playhead in the middle. */

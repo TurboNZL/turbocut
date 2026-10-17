@@ -1,4 +1,5 @@
-import { loadStoredFonts } from './fonts.ts';
+import { fontChoices, loadStoredFonts } from './fonts.ts';
+import { onFontsDetected } from './systemFonts.ts';
 import { guidesView } from './guides.ts';
 import { layoutManager } from './layoutManager.ts';
 import { openFontManager } from './fontManager.ts';
@@ -80,10 +81,12 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
     ...([['filled', 'Filled with the outline colour'], ['rim', 'Thin rim, open middle'], ['clear', 'Clear, the picture shows through']] as [CounterMode, string][]).map(([v, l]) => h('option', { value: v, selected: s.counters === v }, l)));
   counters.addEventListener('change', () => store.updateSettings({ counters: counters.value as CounterMode }));
 
-  const fonts = h('datalist', { id: 'font-list' }, ...['Arial Black', 'Impact', 'Arial', 'Verdana', 'Georgia', 'Courier New'].map((f) => h('option', { value: f })));
+  const fonts = h('datalist', { id: 'font-list' }, ...fontChoices().map((f) => h('option', { value: f })));
   const font = h('input', { class: 'input', list: 'font-list', value: s.defaultFont, 'aria-label': 'Default font', placeholder: 'Font name' });
   font.addEventListener('change', () => store.updateSettings({ defaultFont: font.value.trim() || 'Arial Black' }));
-  void loadStoredFonts().then((fam) => fam.forEach((f) => fonts.append(h('option', { value: f }))));
+  const refreshFonts = () => fonts.replaceChildren(...fontChoices().map((f) => h('option', { value: f })));
+  void loadStoredFonts().then(refreshFonts);
+  const stopWatching = onFontsDetected(() => (fonts.isConnected ? refreshFonts() : stopWatching())); // new names after a detection, until this page is gone
   const addFont = h('button', { class: 'btn', onclick: () => openFontManager(store, redraw) }, 'Manage fonts…');
 
   const exportBtn = h('button', { class: 'btn', onclick: () => saveFile(exportSettings(store.settings), 'turbocut-settings.json', 'application/json') }, 'Export settings');
@@ -177,6 +180,10 @@ function captionsEngine({ store }: SettingsDeps): HTMLElement {
     h('option', { value: 'auto', selected: t.compute === 'auto' }, 'Automatic'),
     h('option', { value: 'webgpu', selected: t.compute === 'webgpu' }, 'Graphics chip (WebGPU)'),
     h('option', { value: 'wasm', selected: t.compute === 'wasm' }, 'CPU (slower, most compatible)'));
+  const grouping = h('select', { class: 'input', 'aria-label': 'Caption length' },
+    h('option', { value: 'auto', selected: t.grouping === 'auto' }, 'Automatic: short lines on tall video, sentences on wide video'),
+    h('option', { value: 'short', selected: t.grouping === 'short' }, 'Short lines (a few words at a time)'),
+    h('option', { value: 'sentence', selected: t.grouping === 'sentence' }, 'Whole sentences'));
   const lang = h('input', { class: 'input', value: t.lang, placeholder: 'english (blank = detect)' });
   const url = h('input', { class: 'input', value: t.url, placeholder: 'http://192.168.1.20:8787' });
   const token = h('input', { class: 'input', type: 'password', value: t.token, placeholder: 'Access token (optional)' });
@@ -184,7 +191,9 @@ function captionsEngine({ store }: SettingsDeps): HTMLElement {
   const remote = h('div', { class: 'stack' }, field('Server address', url), field('Access token', token));
   const sync = () => {
     t.mode = mode.value as 'local' | 'remote';
+    if (model.value !== t.model) t.modelChosen = true; // picking one here counts as the first-use choice
     t.model = model.value;
+    t.grouping = grouping.value as typeof t.grouping;
     t.compute = compute.value as Compute;
     t.lang = lang.value.trim();
     t.url = url.value.trim();
@@ -193,12 +202,13 @@ function captionsEngine({ store }: SettingsDeps): HTMLElement {
     remote.style.display = t.mode === 'remote' ? '' : 'none';
     save();
   };
-  for (const el of [mode, model, compute, lang, url, token]) el.addEventListener('change', sync);
+  for (const el of [mode, model, compute, grouping, lang, url, token]) el.addEventListener('change', sync);
   sync();
   return h('div', { class: 'stack' },
-    h('p', { class: 'hint' }, 'Used by Captions, Generate captions. On this device downloads a speech model the first time (about 80 MB for the balanced one) and then works offline.'),
+    h('p', { class: 'hint' }, 'Used by Captions, Generate captions. On this device downloads a speech model the first time (about 250 MB for the accurate one, 80 MB for the balanced one) and then works offline. The accurate model hears more words correctly and times them more closely.'),
     field('Where speech is recognised', mode), local, remote,
     field('Language', lang),
+    field('Caption length', grouping),
     h('p', { class: 'hint' }, 'English is the default. Detecting the language automatically can pick the wrong one on game or stream audio and give text that makes no sense.'),
   );
 }

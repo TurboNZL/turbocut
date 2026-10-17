@@ -1,5 +1,6 @@
 import { dialog, h, panel } from './dom.ts';
 import { fontAvailable, importFont, listFonts, removeFont, type FontEntry } from './fonts.ts';
+import { canQueryLocalFonts, detectedFonts, detectSystemFonts } from './systemFonts.ts';
 import { pickFiles } from './platform.ts';
 import type { Store } from './store.ts';
 
@@ -89,12 +90,43 @@ export function openFontManager(store: Store, onClose?: () => void): void {
       },
     }, 'Add font files…');
 
+    // Every font installed on this computer, found by asking the system (Electron, Chrome and Edge) or, where that is not possible, by testing well-known names.
+    const found = detectedFonts();
+    const detect = h('button', {
+      class: 'btn',
+      onclick: async (e: Event) => {
+        (e.currentTarget as HTMLButtonElement).disabled = true;
+        const d = await detectSystemFonts();
+        store.say(`${d.fonts.length} installed font${d.fonts.length === 1 ? '' : 's'} found${d.note ? `. ${d.note}` : '.'}`);
+        void redraw();
+      },
+    }, found ? 'Find them again' : canQueryLocalFonts() ? 'Find installed fonts' : 'Look for common fonts');
+    const query = h('input', { class: 'input', type: 'search', placeholder: 'Search installed fonts', 'aria-label': 'Search installed fonts' });
+    const installedList = h('div', { class: 'font-installed' });
+    let shown = 30;
+    const drawInstalled = () => {
+      const q = query.value.trim().toLowerCase();
+      const all = (found?.fonts ?? []).filter((f) => !q || f.family.toLowerCase().includes(q));
+      installedList.replaceChildren(
+        ...all.slice(0, shown).map((f) => row(f.family, [], f.styles.length ? f.styles.slice(0, 6).join(', ') + (f.styles.length > 6 ? ` and ${f.styles.length - 6} more` : '') : 'Installed on this device.')),
+        ...(all.length > shown ? [h('button', { class: 'btn', onclick: () => ((shown += 60), drawInstalled()) }, `Show more (${all.length - shown} left)`)] : []),
+        ...(found && all.length === 0 ? [h('p', { class: 'hint' }, 'No installed font matches.')] : []),
+      );
+    };
+    query.addEventListener('input', () => ((shown = 30), drawInstalled()));
+    drawInstalled();
+    const installedPanel = panel('Installed on this device',
+      h('p', { class: 'hint' }, found ? (found.source === 'local-fonts' ? `${found.fonts.length} font families found on this computer. Use one by typing its name in any font box, or make it the default here.` : `${found.note ?? ''} ${found.fonts.length} well-known font${found.fonts.length === 1 ? '' : 's'} found.`.trim()) : canQueryLocalFonts() ? 'See every font installed on this computer. In a browser you are asked once to allow it.' : 'This browser cannot list installed fonts. TurboCut can still check for well-known ones.'),
+      h('div', { class: 'row' }, detect),
+      ...(found ? [query, installedList] : []));
+
     body.replaceChildren(
       h('p', { class: 'hint' }, 'Fonts you add stay on this device. A caption style can carry its fonts when you export it. Only add fonts you have the right to use.'),
       h('div', { class: 'row' }, add),
       ...(missing.length ? [h('div', { class: 'card bt-panel font-missing' }, h('strong', {}, 'Missing on this device'), h('p', { class: 'hint' }, `${missing.join(', ')}. Styles that use these fall back to a plain font. Add the file, or import a style that carries it.`))] : []),
       panel('Your fonts', ...(userRows.length ? userRows : [h('p', { class: 'hint' }, 'None yet.')])),
-      panel('Built into most devices', ...SYSTEM_FONTS.filter((f) => fontAvailable(f)).map((f) => row(f, [], 'System font. It may look different on another device.'))),
+      installedPanel,
+      ...(found ? [] : [panel('Built into most devices', ...SYSTEM_FONTS.filter((f) => fontAvailable(f)).map((f) => row(f, [], 'System font. It may look different on another device.')))]),
     );
   };
   void redraw();

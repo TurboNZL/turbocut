@@ -19,7 +19,7 @@ button, select, input { font: inherit; }
 .stage { display: grid; min-width: 0; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; padding: 0.5rem; gap: 0.5rem; }
 .preview { min-height: 0; min-width: 0; position: relative; }
 /* Absolute + auto margins + max sizes: the canvas keeps its aspect ratio and shrinks to whatever box is left. */
-.preview canvas { position: absolute; inset: 0; margin: auto; max-width: 100%; max-height: 100%; background: #000; border-radius: var(--radius, 6px); box-shadow: 0 0 0 1px hsl(var(--line)); }
+.preview canvas { position: absolute; inset: 0; margin: auto; max-width: 100%; max-height: 100%; background: #000; border-radius: 0; box-shadow: 0 0 0 1px hsl(var(--line)); } /* a video frame is a rectangle in every look: no rounded corners on the picture */
 .transport { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .transport .time { padding: 0 0.4rem; white-space: nowrap; }
 .zoom { width: 110px; }
@@ -51,6 +51,11 @@ button, select, input { font: inherit; }
 .tl-scroll { height: 100%; overflow: auto; overscroll-behavior: contain; touch-action: pan-x pan-y; }
 .tl-content { position: relative; min-height: 100%; }
 .tl-ruler { position: sticky; top: 0; z-index: 3; height: 22px; background: hsl(var(--surface)); border-bottom: 1px solid hsl(var(--line)); cursor: col-resize; }
+.tl-corner { position: sticky; left: 0; z-index: 2; display: grid; place-items: center; width: 56px; height: 100%; margin: 0; padding: 0; border: 0; border-right: 1px solid hsl(var(--line)); border-radius: 0; background: hsl(var(--surface)); color: hsl(var(--muted)); cursor: pointer; }
+.tl-corner:hover, .tl-corner:focus-visible { color: hsl(var(--fg)); }
+.tl-badges { display: flex; gap: 2px; margin-top: 2px; }
+.ico { display: inline-grid; place-items: center; line-height: 0; }
+.ico svg { display: block; }
 .tl-tick { position: absolute; top: 4px; font-size: 11px; color: hsl(var(--muted)); border-left: 1px solid hsl(var(--line)); padding-left: 3px; height: 18px; }
 .tl-track { position: relative; height: 46px; border-bottom: 1px solid hsl(var(--line) / 0.6); }
 .tl-audio { height: 38px; }
@@ -88,6 +93,7 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; padding: 0 0.35rem;
 .tl-tip { position: absolute; display: none; z-index: 10; padding: 4px 9px; border-radius: 8px; background: hsl(var(--surface)); border: 1px solid hsl(var(--line)); box-shadow: 0 2px 8px rgb(0 0 0 / 0.25); font-size: 12px; pointer-events: none; white-space: nowrap; }
 .tl.touch .tl-scroll { scrollbar-width: none; touch-action: pan-x pan-y; }
 .tl.touch .tl-scroll::-webkit-scrollbar { display: none; }
+.tl.touch .tl-corner { width: 34px; }
 .tl.touch .tl-head { width: 34px; font-size: 11px; background: hsl(var(--surface) / 0.85); }
 .tl.touch .tl-head small { display: none; }
 .tl.touch .tl-ruler { height: 28px; }
@@ -113,6 +119,13 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; padding: 0 0.35rem;
 #app[data-panel='sheet'] .side:not(.collapsed) { height: 34vh; min-height: 0; max-height: 34vh; }
 #app[data-panel='sheet']:has(.side:not(.collapsed)) { grid-template-rows: auto minmax(0, 1fr) 150px auto auto; }
 #app[data-panel='sheet'] .stage { padding: 0.3rem; }
+
+/* The panel is this app's side bar (`bt-shell`), so the looks that float a side bar (Liquid Glass, Spotify, One UI: a gap around it and rounded corners) float it too.
+   Those looks leave a gap on the left, top and bottom; the panel also touches the right edge of the window and the bottom sheet touches both, so it gets the same gap there. */
+:is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) #app:not([data-panel='left']) .side.bt-shell { margin-right: 12px; }
+/* The gap comes out of the panel's width, so the column grows by the same amount and the sliders keep their room. */
+:is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) #app[data-panel='right'] .main { grid-template-columns: minmax(0, 1fr) calc(var(--panel-w, 340px) + 24px); }
+:is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) #app[data-panel='left'] .main { grid-template-columns: calc(var(--panel-w, 340px) + 24px) minmax(0, 1fr); }
 
 /* Control size: large for fingers, compact for a lot on screen. */
 #app[data-density='large'] .btn { min-height: 44px; min-width: 44px; }

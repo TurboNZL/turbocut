@@ -11,6 +11,9 @@ export type Topic = 'project' | 'playhead' | 'selection' | 'play' | 'view' | 'st
 export const ZOOM_MIN = 0.02;
 export const ZOOM_MAX = 40;
 
+/** `activeTrack` value of the caption row, which is not a project track. */
+export const CAPTION_TRACK = 'captions';
+
 const PRESETS_KEY = 'turbocut.presets';
 const ACTIVE_KEY = 'turbocut.preset.active';
 
@@ -91,6 +94,7 @@ export class Store {
   private afterHistory(): void {
     const ids = new Set(this.project.tracks.flatMap((t) => t.clips.map((c) => c.id)));
     if (this.selected && !ids.has(this.selected)) this.selected = null;
+    if (this.selectedCue && !this.project.captions.some((c) => c.id === this.selectedCue)) this.selectedCue = null;
     this.emit('project', 'selection');
   }
 
@@ -112,12 +116,31 @@ export class Store {
     this.emit('playhead');
   }
 
+  /** Select a clip. A clip and a caption are never selected together (Delete and Split would not know which one you meant). */
   select(id: string | null): void {
     this.selected = id;
     if (id) {
+      this.selectedCue = null;
       const t = this.project.tracks.find((x) => x.clips.some((c) => c.id === id));
       if (t) this.activeTrack = t.id;
     }
+    this.emit('selection');
+  }
+
+  /** Select a caption (and let go of any clip). */
+  selectCue(id: string | null): void {
+    this.selectedCue = id;
+    if (id) {
+      this.selected = null;
+      this.activeTrack = CAPTION_TRACK;
+    }
+    this.emit('selection');
+  }
+
+  /** Nothing selected: neither a clip nor a caption. The active track stays, so Split still knows where to cut. */
+  clearSelection(): void {
+    this.selected = null;
+    this.selectedCue = null;
     this.emit('selection');
   }
 

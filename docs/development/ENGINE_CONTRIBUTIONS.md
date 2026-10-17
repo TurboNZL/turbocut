@@ -59,3 +59,13 @@ Apps with downloads need somewhere to explain them, and GitHub Pages is not free
 
 ## 9. Done: the .deb installer and the cut emblem
 The vanilla CommonJS .deb updater (`electron/updater.cjs`, `electron/debInstall.cjs`) and the `cut` emblem are already in the engine (`modules/updaters/variants/vanilla-electron`, `modules/logos`, engine commit `4b4264b`). Also learned here: a 60 fps default frame rate makes every "seconds to frames" test constant change (a 3 s text layer is 180 frames, a 6 s export is 360); and merging a dopesheet under the inspector means e2e must scroll it into view before dragging.
+
+## 10. `system-fonts` (done, 2026-10-17, now in the engine as `modules/system-fonts`)
+`src/app/systemFonts.ts`: installed fonts via `queryLocalFonts()` with a well-known-names fallback; no imports, never throws. Measured in a real Electron 44.7 (Chromium 152, Xvfb): the call works with no permission handler and no user gesture. TurboDocs asked for it. The font manager's "Installed on this device" panel and `fontChoices()` (the one list every font box uses) are TurboCut's own and stay here.
+
+## 11. Things learned in the 2026-10-17 pass that other apps may want
+- **A side panel that floats**: mark the panel `bt-shell` (it is a side bar) and Liquid Glass, Spotify and One UI draw it rounded with a gap; those looks only leave the gap on the left, top and bottom, so an app whose panel is on the right or at the bottom adds the missing margin and widens its column by the gap (`styles.css`, "floating"). A theme variable for the gap (`--float-gap` is documented in `modules/layouts` but no style defines it) would remove the app CSS.
+- **Never rebuild a panel for a change it already shows.** A dopesheet that tore down and rebuilt its whole card on every key change flickered, and in looks whose elements animate on insertion would replay that animation. Compare a signature of what is drawn (`keysPanel.ts` `signature`) and skip the rebuild, and do not `replaceChildren` with the node that is already there (`showTab`).
+- **Selection is one thing.** Two independent selection fields (clip and caption) made Delete remove the wrong one and left a highlight no click could clear. Keep one selection, clear it on an empty press and on Escape.
+- **Split follows the selection or the active track**, not "everything under the playhead": the unexpected cut of a track you were not looking at is worse than one extra click.
+- **Symbol characters are emoji on many systems** (`⏮ ⏸ ⚙`): draw icons as inline SVG in `currentColor` (`src/app/icons.ts`).

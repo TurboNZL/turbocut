@@ -1,5 +1,6 @@
 import type { AssStyle, Rgba } from '../captions/ass.ts';
 import { h } from './dom.ts';
+import { fontChoices } from './fonts.ts';
 
 const hex = (c: Rgba) => '#' + [c.r, c.g, c.b].map((v) => v.toString(16).padStart(2, '0')).join('');
 const fromHex = (s: string, alpha: number): Rgba => ({ r: parseInt(s.slice(1, 3), 16), g: parseInt(s.slice(3, 5), 16), b: parseInt(s.slice(5, 7), 16), a: alpha });
@@ -33,7 +34,7 @@ export function styleControls(style: AssStyle, o: StyleControlOptions): HTMLElem
   const done = () => (burst = false);
 
   const listId = `fonts-${Math.random().toString(36).slice(2, 7)}`;
-  const list = h('datalist', { id: listId }, ...(o.fonts ?? ['Arial Black', 'Impact', 'Arial', 'Verdana', 'Georgia', 'Courier New']).map((f) => h('option', { value: f })));
+  const list = h('datalist', { id: listId }, ...(o.fonts ?? fontChoices()).map((f) => h('option', { value: f })));
   const font = h('input', { class: 'input', list: listId, value: style.fontname, 'aria-label': 'Font' });
   font.addEventListener('input', () => ((begin(), (style.fontname = font.value.trim() || style.fontname)), commit()));
   font.addEventListener('change', done);

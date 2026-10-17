@@ -17,8 +17,7 @@ const SAMPLE = 'Your captions look like this';
 export function openStyleEditor(store: Store): void {
   let variant = 0;
   const root = h('div', { class: 'style-editor' });
-  const fontNames = ['Arial Black', 'Impact', 'Arial', 'Verdana', 'Georgia', 'Courier New'];
-  void loadStoredFonts().then((f) => fontNames.push(...f));
+  void loadStoredFonts();
 
   // Live preview: a 9:16 canvas at project size, scaled down by CSS.
   const pv = createProject({ width: 1080, height: 1920 });
@@ -123,7 +122,7 @@ export function openStyleEditor(store: Store): void {
           vsel,
           h('label', { class: 'prop style-row' }, h('span', { class: 'prop-l' }, 'Variant name'), vname),
           h('div', { class: 'row' }, addVariant, delVariant),
-          styleControls(p.styles[variant]!, { placement: true, fonts: fontNames, onChange: changed })),
+          styleControls(p.styles[variant]!, { placement: true, onChange: changed })),
         animationControls(p.animation, (a) => { p.animation = a; changed(); replay(); }),
       );
     }

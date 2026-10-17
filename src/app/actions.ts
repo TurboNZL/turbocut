@@ -1,3 +1,4 @@
+import { cueAt, findCue, splitCue } from '../core/captions.ts';
 import { addClip, addTrack, clipEnd, createClip, findClip, findFreeStart, newId, projectDuration, removeLinked, removeTrack, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
 import type { Track } from '../core/types.ts';
 import { overlaps } from '../core/timeline.ts';
@@ -5,7 +6,7 @@ import { exportProject } from '../export/exporter.ts';
 import { dialog, h } from './dom.ts';
 import { keepAwake, saveFile } from './platform.ts';
 import type { Player } from './player.ts';
-import type { Store } from './store.ts';
+import { CAPTION_TRACK, type Store } from './store.ts';
 
 /** Everything the person can do to the project, as plain functions the buttons, shortcuts and tests all call. */
 export class Actions {
@@ -103,15 +104,44 @@ export class Actions {
     });
   }
 
+  /**
+   * Split at the playhead, but only what you have chosen: the selected clip (with its linked picture or sound), the
+   * selected caption, or, with nothing selected, whatever is at the playhead on the active track (the one you last
+   * clicked, or the CC row). Only when no track has been chosen at all does it cut every track, like a first-time user expects.
+   */
   split(): void {
     const { store } = this;
     const p = store.project;
     const f = store.playhead;
+    const cuts: string[] = [];
+    let cue: string | undefined;
+    let where = 'the playhead';
+    if (store.selectedCue) {
+      const c = findCue(p, store.selectedCue);
+      if (c && f > c.start && f < c.end) cue = c.id;
+      where = 'the selected caption';
+    } else if (store.selected) {
+      const hit = findClip(p, store.selected);
+      if (hit?.track.locked) return store.say('That track is locked.');
+      if (hit && f > hit.clip.start && f < clipEnd(hit.clip)) cuts.push(hit.clip.id);
+      where = 'the selected clip';
+    } else if (store.activeTrack === CAPTION_TRACK) {
+      const c = cueAt(p, f);
+      if (c && f > c.start) cue = c.id;
+      where = 'the caption row';
+    } else {
+      const only = p.tracks.find((t) => t.id === store.activeTrack);
+      if (only?.locked) return store.say('That track is locked.');
+      for (const t of only ? [only] : p.tracks) if (!t.locked) for (const c of t.clips) if (f > c.start && f < clipEnd(c)) cuts.push(c.id);
+      if (only) where = `track ${only.name}`;
+    }
+    if (!cue && cuts.length === 0) return store.say(`Nothing to split at the playhead on ${where}.`);
+    let done = true;
     store.edit(() => {
-      if (store.selected) {
-        if (!findClip(p, store.selected)?.track.locked) splitLinked(p, store.selected, f);
-      } else for (const t of p.tracks) if (!t.locked) for (const c of [...t.clips]) if (f > c.start && f < clipEnd(c)) splitLinked(p, c.id, f);
+      if (cue) done = !!splitCue(p, cue, f);
+      for (const id of cuts) splitLinked(p, id, f); // a linked partner is already split by its pair: the second call finds nothing to cut
     });
+    if (!done) store.say('A caption of one word cannot be split.');
   }
 
   remove(ripple: boolean): void {

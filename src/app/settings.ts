@@ -1,5 +1,5 @@
 import type { Compute } from '../transcribe/local.ts';
-import { MODELS } from '../transcribe/local.ts';
+import { BALANCED_MODEL, MODELS, recommendedModel } from '../transcribe/local.ts';
 import { AUTO_LAYOUT, cleanLayout, type Layout } from './layout.ts';
 
 export type CounterMode = 'filled' | 'rim' | 'clear';
@@ -12,7 +12,13 @@ export interface TranscribeSettings {
   lang: string;
   model: string;
   compute: Compute;
+  /** The person has picked a model (in the first-use window or in Settings). Until then Generate captions asks first. */
+  modelChosen: boolean;
+  /** How long each caption is: `auto` is short lines for tall video and whole sentences for wide video. */
+  grouping: CaptionGrouping;
 }
+
+export type CaptionGrouping = 'auto' | 'short' | 'sentence';
 
 export interface Settings {
   /** 2: the letter-hole default became 'filled'; older stored 'rim' values came from the old default and are upgraded once. */
@@ -50,7 +56,7 @@ export const DEFAULT_SETTINGS = (touch: boolean): Settings => ({
   layouts: [],
   autoCheckUpdates: true,
   showHome: true,
-  transcribe: { mode: 'local', url: '', token: '', lang: 'english', model: MODELS[0].id, compute: 'auto' },
+  transcribe: { mode: 'local', url: '', token: '', lang: 'english', model: recommendedModel(touch), compute: 'auto', modelChosen: false, grouping: 'auto' },
   hotkeys: {},
 });
 
@@ -70,6 +76,11 @@ export function mergeSettings(stored: unknown, defaults: Settings): Settings {
     const t = s.transcribe;
     if (t.mode === 'local' || t.mode === 'remote') out.transcribe.mode = t.mode;
     for (const k of ['url', 'token', 'lang', 'model'] as const) if (typeof t[k] === 'string') out.transcribe[k] = t[k];
+    if (t.grouping === 'auto' || t.grouping === 'short' || t.grouping === 'sentence') out.transcribe.grouping = t.grouping;
+    if (typeof t.modelChosen === 'boolean') out.transcribe.modelChosen = t.modelChosen;
+    // Settings saved before the first-use window existed: a model other than the old default was a choice, the old default was not.
+    else if (typeof t.model === 'string' && MODELS.some((m) => m.id === t.model) && t.model !== BALANCED_MODEL) out.transcribe.modelChosen = true;
+    if (!out.transcribe.modelChosen && t.model === BALANCED_MODEL) out.transcribe.model = defaults.transcribe.model; // the old default is replaced by today's recommendation
     if (t.compute === 'auto' || t.compute === 'webgpu' || t.compute === 'wasm') out.transcribe.compute = t.compute;
   }
   if (s.hotkeys && typeof s.hotkeys === 'object') {
