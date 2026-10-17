@@ -39,7 +39,7 @@ try {
   await page.getByRole('button', { name: 'Settings' }).first().click();
   await page.waitForSelector('.settings');
   const tabs = await page.$$eval('.settings-nav .tab', (els) => els.map((e) => e.textContent));
-  assert.deepEqual(tabs, ['General', 'Layout', 'Fonts', 'Guides', 'Keys', 'Captions', 'Updates', 'Device', 'About']);
+  assert.deepEqual(tabs, ['General', 'Look', 'Layout', 'Keys', 'Captions', 'Fonts', 'Updates', 'Device', 'Guides', 'About']);
   const track = page.getByRole('combobox', { name: 'Track order' });
   await track.selectOption('audio');
   assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.videoOnTop), false);

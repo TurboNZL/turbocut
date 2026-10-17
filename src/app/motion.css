@@ -25,7 +25,7 @@
 
 /* Everything above is switched off for people who ask for less motion. */
 @media (prefers-reduced-motion: reduce) {
-  .tk-arrive, .tk-swap, .tk-slide-in, .tk-pop, .tk-expand, .tk-fade, .tk-page-fwd, .tk-page-back, #app.booting > *, #app.booting .side > .pane { animation-duration: 1ms !important; }
+  .tk-arrive, .tk-swap, .tk-slide-in, .tk-pop, .tk-expand, .tk-fade, .tk-page-fwd, .tk-page-back, #app.booting > *, #app.booting .side > .pane, .home-arrive, .home { animation-duration: 1ms !important; }
   .btn, .tl-clip, .home-start, .tab, .status, .prop .kf { transition-duration: 1ms !important; }
   .btn:not(:disabled):active, .home-start:hover { transform: none; }
 }

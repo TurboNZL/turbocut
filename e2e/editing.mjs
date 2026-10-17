@@ -318,6 +318,30 @@ try {
   assert.ok(choices.includes('Fake Sans') && choices.includes('Arial Black'), 'every font box now offers them');
   await ctx.close();
 
+  // ============================================================ 9. everything you can press shows a hand
+  page = await fresh();
+  await page.evaluate(() => { const s = window.turbocutApp.store; s.select(s.project.tracks[0].clips[0].id); });
+  const noHand = async (label) => {
+    const bad = await page.evaluate(() => [...document.querySelectorAll('button, summary, select, a[href], [role=tab], [role=menuitem], [role=option], input[type=checkbox], input[type=radio], input[type=range], input[type=color], .layout-card, .home-start')]
+      .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; })
+      .filter((el) => !/pointer|not-allowed|grab|col-resize|row-resize|ew-resize/.test(getComputedStyle(el).cursor))
+      .map((el) => `${el.tagName.toLowerCase()}.${String(el.className).split(' ').slice(0, 2).join('.')} "${(el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 20)}" -> ${getComputedStyle(el).cursor}`));
+    assert.deepEqual(bad, [], `${label}: pressable things without a hand cursor`);
+  };
+  await noHand('editor');
+  await page.getByRole('button', { name: 'Settings' }).first().click();
+  for (const t of ['General', 'Look', 'Layout', 'Keys', 'Captions', 'Fonts', 'Updates', 'Device', 'Guides', 'About']) {
+    await page.locator('.settings-nav').getByRole('tab', { name: t, exact: true }).click();
+    await page.waitForTimeout(80);
+    await noHand(`settings ${t}`);
+  }
+  await page.locator('.dlg .bt-close').click();
+  await page.getByRole('tab', { name: 'Media', exact: true }).click();
+  await noHand('media');
+  await page.getByRole('tab', { name: 'Captions', exact: true }).click();
+  await noHand('captions');
+  await page.close();
+
   assert.deepEqual(errors, [], 'no page errors');
   console.log('editing e2e passed');
 } finally {

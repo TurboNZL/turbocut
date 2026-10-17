@@ -1,5 +1,6 @@
 import { guides, openGuides } from './guides.ts';
-import { h, panel } from './dom.ts';
+import { h } from './dom.ts';
+import { icon, type IconName } from './icons.ts';
 import { platform } from './platform.ts';
 import type { Store } from './store.ts';
 import { checkForUpdate, type LatestRelease, type ReleaseAsset } from './updater.ts';
@@ -47,7 +48,7 @@ export function openHome(deps: HomeDeps): { close: () => void } {
   };
   const startCard = (title: string, sub: string, w: number, hh: number) =>
     h('button', { class: 'home-start btn', onclick: () => start(w, hh) },
-      h('span', { class: 'home-ratio', style: { aspectRatio: `${w} / ${hh}` }, 'aria-hidden': 'true' }),
+      h('span', { class: 'home-frame', 'aria-hidden': 'true' }, h('span', { class: 'home-ratio', style: { aspectRatio: `${w} / ${hh}` } })),
       h('strong', {}, title), h('small', { class: 'hint' }, sub));
 
   // updates
@@ -92,37 +93,48 @@ export function openHome(deps: HomeDeps): { close: () => void } {
   const dontShow = h('input', { type: 'checkbox', checked: !store.settings.showHome, 'aria-label': 'Do not show this at startup' });
   dontShow.addEventListener('change', () => store.updateSettings({ showHome: !dontShow.checked }));
 
+  const arrive = (el: HTMLElement, i: number) => (el.style.setProperty('--i', String(i)), el.classList.add('home-arrive'), el);
+  const quick = (iconName: IconName, title: string, sub: string, run: () => void) =>
+    h('button', { class: 'home-quick', onclick: run }, h('span', { class: 'home-quick-ico' }, icon(iconName, 20)), h('span', { class: 'home-quick-text' }, h('strong', {}, title), h('small', {}, sub)));
+
   root.append(
-    h('div', { class: 'home-inner stack' },
-      h('header', { class: 'home-head' },
-        h('img', { class: 'home-logo', src: `${import.meta.env.BASE_URL}icon.svg`, alt: '', width: 72, height: 72 }),
-        h('h1', {}, 'TurboCut'),
-        h('p', { class: 'lead' }, 'A light video editor for shorts, with captions made for you.')),
-      panel('Start',
-        h('div', { class: 'home-starts' },
-          startCard('Vertical short', '9:16, 1080×1920', 1080, 1920),
-          startCard('Landscape', '16:9, 1920×1080', 1920, 1080),
-          startCard('Portrait', '4:5, 1080×1350', 1080, 1350),
-          startCard('Square', '1:1, 1080×1080', 1080, 1080)),
-        h('div', { class: 'row' },
-          h('button', { class: 'btn btn-accent', onclick: () => { close(); void deps.importFiles(); } }, 'Import video…'),
-          h('button', { class: 'btn', onclick: () => { close(); deps.openProject(); } }, 'Open project…'),
-          h('button', { class: 'btn', onclick: close }, 'Start editing'))),
-      panel('Updates', updateLine, h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => deps.openSettings('Updates') }, 'Update settings'))),
-      panel('Get TurboCut on other devices',
+    h('div', { class: 'home-inner' },
+      arrive(h('header', { class: 'home-bar' },
+        h('img', { class: 'home-logo', src: `${import.meta.env.BASE_URL}icon.svg`, alt: '', width: 36, height: 36 }),
+        h('span', { class: 'home-word' }, 'TurboCut'),
+        h('span', { class: 'spacer' }),
+        h('button', { class: 'btn', onclick: close }, 'Start editing')), 0),
+      arrive(h('section', { class: 'home-hero' },
+        h('h1', {}, 'What are you making?'),
+        h('p', { class: 'lead' }, 'Pick a shape and start cutting. Captions are made for you.')), 1),
+      arrive(h('div', { class: 'home-starts' },
+        startCard('Vertical short', '9:16 · 1080×1920', 1080, 1920),
+        startCard('Landscape', '16:9 · 1920×1080', 1920, 1080),
+        startCard('Portrait', '4:5 · 1080×1350', 1080, 1350),
+        startCard('Square', '1:1 · 1080×1080', 1080, 1080)), 2),
+      arrive(h('div', { class: 'home-quicks' },
+        quick('folder', 'Open a project', 'A .turbocut file you saved', () => { close(); deps.openProject(); }),
+        quick('video', 'Import video', 'Straight into the media bin', () => { close(); void deps.importFiles(); }),
+        quick('settings', 'Make it yours', 'Layouts, fonts and looks', () => deps.openSettings('Layout'))), 3),
+      arrive(h('div', { class: 'home-cols' },
+        h('section', { class: 'home-card' },
+          h('h2', {}, 'Updates'),
+          updateLine,
+          h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => deps.openSettings('Updates') }, 'Update settings'))),
+        h('section', { class: 'home-card' },
+          h('h2', {}, 'Learn'),
+          h('div', { class: 'home-guides' }, ...guideButtons))), 4),
+      arrive(h('section', { class: 'home-card home-get' },
+        h('h2', {}, 'Get TurboCut on other devices'),
         platform === 'android'
-          ? h('p', { class: 'hint' }, 'This is the Android app. Updates come as a new APK that installs over this one.')
+          ? h('p', { class: 'hint' }, 'This is the Android app. Updates install from inside the app.')
           : h('p', { class: 'hint' }, 'Android, Windows and Linux apps, or run it in a browser from your own computer. Each download is a plain file.'),
         downloads,
-        h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => openGuides('ANDROID_APK.md') }, 'Android install help'), h('button', { class: 'btn', onclick: () => openGuides('WEB_SERVER.md') }, 'Run your own web server'))),
-      panel('Guides', h('div', { class: 'row' }, ...guideButtons)),
-      panel('Make it yours',
-        h('div', { class: 'row' },
-          h('button', { class: 'btn', onclick: () => deps.openSettings('Layout') }, 'Layouts'),
-          h('button', { class: 'btn', onclick: () => deps.openSettings('Fonts') }, 'Fonts'))),
-      h('label', { class: 'setting' }, dontShow, h('span', {}, 'Do not show this screen when TurboCut starts. The Home button at the top brings it back.'))),
+        h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => openGuides('ANDROID_APK.md') }, 'Android install help'), h('button', { class: 'btn', onclick: () => openGuides('WEB_SERVER.md') }, 'Run your own web server'))), 5),
+      h('label', { class: 'home-foot setting' }, dontShow, h('span', {}, 'Do not show this screen when TurboCut starts. The Home button at the top brings it back.')))
   );
   document.body.append(root);
-  root.querySelector<HTMLElement>('.btn-accent')?.focus();
+  root.tabIndex = -1;
+  root.focus({ preventScroll: true }); // keyboard users tab into the first shape; nothing is outlined on arrival
   return { close };
 }
