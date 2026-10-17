@@ -142,7 +142,7 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; padding: 0 0.35rem;
 /* ---------------------------------------------------------------- settings dialog */
 .dlg-wide { width: min(780px, calc(100vw - 16px)); height: min(640px, calc(100vh - 16px)); }
 .dlg-wide .bt-body { flex: 1; min-height: 0; padding: 0; display: flex; }
-.settings { display: grid; grid-template-columns: 150px minmax(0, 1fr); flex: 1; min-height: 0; width: 100%; }
+.settings { display: grid; grid-template-columns: 200px minmax(0, 1fr); flex: 1; min-height: 0; width: 100%; }
 .settings-nav { display: flex; flex-direction: column; border-right: 1px solid hsl(var(--line)); overflow-y: auto; }
 .settings-nav .tab { text-align: left; }
 .settings-body { overflow-y: auto; padding: 0.9rem; min-width: 0; }
@@ -358,3 +358,100 @@ button:disabled, .btn:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .kf-dot { position: absolute; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; padding: 0; border: 0; border-radius: 0; background: none; color: hsl(var(--accent)); display: grid; place-items: center; cursor: grab; touch-action: none; z-index: 2; }
 .kf-dot.sel { color: hsl(var(--fg)); transform: scale(1.25); }
 .kf-ph { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: hsl(var(--bad)); pointer-events: none; z-index: 3; }
+
+/* ---------------------------------------------------------------- the panel as panes, draggable bars, the dock */
+.side { display: flex; flex-direction: column; position: relative; }
+.pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; flex: 1 1 0; }
+.pane > .tabs { flex: none; }
+.pane > .tab-body { flex: 1; min-height: 0; overflow: auto; }
+#app[data-dock='on'] .pane > .tabs { display: none; }
+.pane + .splitter-pane + .pane { border-top: 0; }
+
+.splitter { flex: none; touch-action: none; position: relative; z-index: 25; outline: none; }
+.splitter::after { content: ''; position: absolute; border-radius: 2px; background: transparent; transition: background var(--dur, 120ms) var(--ease, ease); }
+.splitter:hover::after, .splitter:focus-visible::after, .splitter.dragging::after { background: hsl(var(--accent)); }
+.splitter-edge { position: absolute; top: 0; bottom: 0; width: 8px; cursor: col-resize; }
+.splitter-edge[data-side='right'] { left: 0; }
+.splitter-edge[data-side='left'] { right: 0; }
+.splitter-edge::after { top: 12%; bottom: 12%; width: 3px; left: 2px; }
+.splitter-edge[data-side='left']::after { left: auto; right: 2px; }
+.splitter-pane { height: 8px; cursor: row-resize; margin: -2px 0; }
+.splitter-pane::after { left: 12%; right: 12%; height: 3px; top: 2px; }
+.bottom { position: relative; overflow: visible; }
+.splitter-timeline { position: absolute; left: 0; right: 0; top: -4px; height: 8px; cursor: row-resize; }
+.splitter-timeline::after { left: 38%; right: 38%; height: 3px; top: 2px; }
+#app[data-panel='sheet'] .splitter-edge { display: none; }
+body.resizing { user-select: none; -webkit-user-select: none; }
+body.resizing-x, body.resizing-x * { cursor: col-resize !important; }
+body.resizing-y, body.resizing-y * { cursor: row-resize !important; }
+
+.dock { grid-area: dock; position: relative; }
+.dock[hidden] { display: none; }
+.dock-nav { display: flex; align-items: stretch; overflow-x: auto; }
+.dock-nav .bt-tab { flex: 1 0 4.25rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0.5rem 0.25rem; font-size: 11px; background: none; border: 0; font-family: inherit; cursor: pointer; position: relative; z-index: 1; }
+
+/* the Settings tab in the panel: no extra padding, the page lays itself out for the width it has */
+.tab-body:has(> .settings-tab) { padding: 0; overflow: hidden; }
+.settings-tab { height: 100%; display: flex; }
+.settings-tab > .settings-shell { flex: 1; min-width: 0; }
+
+/* ---------------------------------------------------------------- Settings: roomier, grouped, searchable */
+.dlg-settings { width: min(1040px, calc(100vw - 16px)); height: min(780px, calc(100vh - 16px)); }
+.settings-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; container-type: inline-size; container-name: settings; }
+.settings-top { position: relative; display: flex; align-items: center; padding: 0.7rem 1rem; border-bottom: 1px solid hsl(var(--line)); }
+.settings-search { flex: 1; padding-left: 2.1rem; }
+.settings-search-icon { position: absolute; left: 1.6rem; color: hsl(var(--muted)); pointer-events: none; }
+.settings-shell .settings { grid-template-columns: 210px minmax(0, 1fr); }
+.settings-body { padding: 1.2rem 1.6rem 2rem; font-size: 1.02rem; }
+.settings-body .stack { gap: 0.9rem; }
+.settings-nav { padding: 0.4rem 0; }
+.settings-nav .tab { font-size: 1rem; padding: 0.6rem 1rem; }
+.settings-group { padding: 0.9rem 1rem 0.3rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: hsl(var(--muted)); font-weight: 600; }
+.settings-hit { margin-bottom: 1.4rem; }
+.settings-hit-title { margin: 0 0 0.5rem; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: hsl(var(--muted)); }
+.settings-none { padding: 1rem 0; }
+.settings-body .card.bt-panel { padding: 0.9rem 1.1rem; }
+.settings-body .setting { padding: 0.45rem 0; }
+@container settings (max-width: 640px) {
+  .settings-shell .settings { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .settings-shell .settings-nav { flex-direction: row; border-right: 0; border-bottom: 1px solid hsl(var(--line)); overflow-x: auto; overflow-y: hidden; padding: 0; }
+  .settings-shell .settings-nav .tab { flex: none; border-left: 0; margin-left: 0; border-bottom: 2px solid transparent; }
+  .settings-shell .settings-nav .tab[aria-selected='true'] { border-bottom-color: hsl(var(--accent)); background: none; }
+  .settings-shell .settings-group { display: none; }
+  .settings-body { padding: 0.9rem 0.9rem 1.5rem; }
+}
+
+/* ---------------------------------------------------------------- the Layout page */
+.layout-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.7rem; margin: 0.4rem 0 0.8rem; }
+.layout-card { display: grid; gap: 0.35rem; align-content: start; text-align: left; padding: 0.55rem; border: 1px solid hsl(var(--line)); border-radius: var(--radius, 6px); background: hsl(var(--surface) / 0.5); color: inherit; font: inherit; cursor: pointer; transition: border-color var(--dur, 120ms) var(--ease, ease), background var(--dur, 120ms) var(--ease, ease); }
+.layout-card:hover { border-color: hsl(var(--accent) / 0.6); }
+.layout-card[aria-checked='true'] { outline: 2px solid hsl(var(--accent)); outline-offset: 0; background: hsl(var(--accent) / 0.08); }
+.layout-card-name { font-weight: 600; display: flex; gap: 0.4rem; align-items: center; }
+.layout-card .hint { margin: 0; line-height: 1.3; }
+.layout-schematic { width: 100%; height: auto; display: block; background: hsl(var(--bg)); border-radius: calc(var(--radius, 6px) * 0.7); }
+.layout-schematic .sc-bar { fill: hsl(var(--muted) / 0.4); }
+.layout-schematic .sc-stage { fill: hsl(var(--line) / 0.7); }
+.layout-schematic .sc-panel { fill: hsl(var(--accent) / 0.6); }
+.layout-schematic .sc-tools { fill: hsl(var(--muted) / 0.35); }
+.layout-schematic .sc-tl { fill: hsl(var(--good) / 0.45); }
+.layout-schematic .sc-dock { fill: hsl(var(--accent) / 0.35); }
+.arrange-row { display: grid; grid-template-columns: minmax(5rem, 1fr) repeat(4, 3.8rem); align-items: center; text-align: center; padding: 0.25rem 0; border-bottom: 1px solid hsl(var(--line) / 0.4); }
+.arrange-row > span:first-child { text-align: left; }
+.arrange-head { color: hsl(var(--muted)); font-size: 0.8rem; font-weight: 600; }
+.slider-row { flex-wrap: nowrap; }
+.slider-row .bt-range { flex: 1; min-width: 6rem; }
+
+/* ---------------------------------------------------------------- opening the editor: the parts arrive one after another */
+@keyframes tk-boot-down { from { opacity: 0; transform: translateY(-14px); } }
+@keyframes tk-boot-up { from { opacity: 0; transform: translateY(20px); } }
+@keyframes tk-boot-in { from { opacity: 0; transform: scale(0.965); } }
+@keyframes tk-boot-right { from { opacity: 0; transform: translateX(30px); } }
+@keyframes tk-boot-left { from { opacity: 0; transform: translateX(-30px); } }
+#app.booting > header { animation: tk-boot-down 440ms cubic-bezier(0.22, 0.8, 0.3, 1) backwards; }
+#app.booting .stage { animation: tk-boot-in 560ms 90ms cubic-bezier(0.22, 0.8, 0.3, 1) backwards; }
+#app.booting .side > .pane { animation: tk-boot-right 520ms 150ms cubic-bezier(0.22, 0.8, 0.3, 1) backwards; }
+#app.booting[data-panel='left'] .side > .pane { animation-name: tk-boot-left; }
+#app.booting[data-panel='sheet'] .side > .pane { animation-name: tk-boot-up; }
+#app.booting .bottom { animation: tk-boot-up 520ms 210ms cubic-bezier(0.22, 0.8, 0.3, 1) backwards; }
+#app.booting .edit-bar { animation: tk-boot-up 460ms 270ms cubic-bezier(0.22, 0.8, 0.3, 1) backwards; }
+#app.booting .dock { animation: tk-boot-up 500ms 330ms cubic-bezier(0.22, 0.8, 0.3, 1) backwards; }
