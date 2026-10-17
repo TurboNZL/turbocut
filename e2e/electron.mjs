@@ -22,6 +22,12 @@ try {
   assert.equal(env.secure, true, 'app:// is a secure context');
   assert.equal(env.platform, 'electron', 'preload told the app it is in Electron');
 
+  // The window is drawn by the theme (frameless) and its controls work.
+  const fr = await win.evaluate(() => ({ custom: window.turbocut.window.customFrame, bar: !!document.querySelector('.bt-wf'), btns: document.querySelectorAll('.bt-wf-btn').length, h: document.querySelector('.bt-wf')?.getBoundingClientRect().height, appTop: document.getElementById('app').getBoundingClientRect().top }));
+  console.log('window frame:', JSON.stringify(fr));
+  assert.equal(fr.custom && fr.bar && fr.btns === 3, true, 'the drawn title bar is present with three buttons');
+  assert.equal(fr.appTop >= fr.h - 1, true, 'the editor sits below the title bar');
+
   // The desktop shell exposes the self-updater. An unpackaged run cannot update, and must say so instead of throwing.
   const upd = await win.evaluate(() => window.turbocut.updater.check());
   console.log('updater in an unpackaged run:', JSON.stringify(upd));

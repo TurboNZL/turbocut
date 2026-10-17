@@ -58,7 +58,7 @@ export interface MenuItem {
 }
 
 /** A small themed pop-up menu next to `anchor`. Closes on a choice, an outside press or Escape. */
-export function popupMenu(anchor: HTMLElement, items: MenuItem[]): { close: () => void } {
+export function popupMenu(anchor: HTMLElement | { x: number; y: number }, items: MenuItem[]): { close: () => void } {
   document.querySelector('.popup-menu')?.remove();
   const menu = h('div', { class: 'bt-menu popup-menu tk-pop', role: 'menu' });
   const close = () => {
@@ -78,7 +78,7 @@ export function popupMenu(anchor: HTMLElement, items: MenuItem[]): { close: () =
     });
     menu.append(b);
   }
-  const r = anchor.getBoundingClientRect();
+  const r = 'getBoundingClientRect' in anchor ? anchor.getBoundingClientRect() : new DOMRect(anchor.x - 4, anchor.y, 0, 0); // a point (right-click) or an element
   document.body.append(menu);
   const w = menu.offsetWidth || 200;
   const hgt = menu.offsetHeight || 160;
@@ -94,4 +94,29 @@ export function popupMenu(anchor: HTMLElement, items: MenuItem[]): { close: () =
 /** A settings panel the way turbothemes expects it: the title is the first child of a `.card.bt-panel`. */
 export function panel(title: string, ...children: (Node | string | null)[]): HTMLElement {
   return h('section', { class: 'card bt-panel' }, h('h2', { class: 'bt-panel-title' }, title), ...children.filter((c) => c !== null));
+}
+
+/** Ask for one line of text in a themed dialog (not the browser's prompt). Resolves null when cancelled. */
+export function askText(title: string, value = '', label = 'Name', ok = 'OK'): Promise<string | null> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: string | null) => {
+      if (done) return;
+      done = true;
+      dlg.close();
+      resolve(v);
+    };
+    const input = h('input', { class: 'input', type: 'text', value, 'aria-label': label });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') finish(input.value.trim() || null);
+      if (e.key === 'Escape') finish(null);
+    });
+    const dlg = dialog(title, h('div', { class: 'stack' }, input), [
+      h('button', { class: 'btn', onclick: () => finish(null) }, 'Cancel'),
+      h('button', { class: 'btn btn-accent', onclick: () => finish(input.value.trim() || null) }, ok),
+    ]);
+    const watch = new MutationObserver(() => dlg.el.isConnected || (watch.disconnect(), finish(null)));
+    watch.observe(document.body, { childList: true });
+    queueMicrotask(() => (input.focus(), input.select()));
+  });
 }

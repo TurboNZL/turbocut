@@ -14,19 +14,19 @@ export class Actions {
   constructor(private store: Store, private player: Player) {}
 
   /**
-   * Open files into the media bin. The very first import into an empty timeline is also placed on it, so a
-   * single clip is one step; after that, files wait in the bin until they are added.
+   * Open files into the media bin (into `folder` when given). Nothing is put on the timeline: files wait in the bin
+   * until the person adds them (pass `place` to add them straight away, for tests and automation).
    */
-  async importMedia(files: File[], place?: boolean): Promise<void> {
+  async importMedia(files: File[], place = false, folder?: string): Promise<void> {
     const { store } = this;
     for (const file of files) {
       try {
         store.say(`Importing ${file.name}…`);
         const asset = await store.lib.importFile(file, file.name, store.project.fps);
-        const empty = store.project.tracks.every((t) => t.clips.length === 0);
+        if (folder && store.project.folders?.some((f) => f.id === folder)) asset.folder = folder;
         store.edit((p) => (p.assets[asset.id] = asset));
-        if (place ?? empty) this.addAsset(asset.id);
-        store.say(place ?? empty ? `Imported ${file.name}.` : `${file.name} is in the media bin. Open Media and tap Add.`);
+        if (place) this.addAsset(asset.id);
+        store.say(place ? `Imported ${file.name}.` : `${file.name} is in the media bin. Add it to the timeline from there.`);
       } catch (e) {
         store.say(`Could not open ${file.name}: ${e instanceof Error ? e.message : e}. This device may not support its format.`);
       }
@@ -144,16 +144,21 @@ export class Actions {
   /**
    * Put a bin item on the timeline. Video goes to the active video track and its sound to the active audio track
    * (linked, so they split and delete together). It starts at `at` (default the playhead), moved later if that spot
-   * is taken on either track. Dropping onto a specific track sends the matching part there.
+   * is taken on either track. Dropping onto a specific track sends the matching part there. `only` puts just the picture
+   * or just the sound (not linked to anything).
    */
-  addAsset(assetId: string, opts: { at?: number; trackId?: string } = {}): boolean {
+  addAsset(assetId: string, opts: { at?: number; trackId?: string; only?: 'video' | 'audio' } = {}): boolean {
     const { store } = this;
     const asset = store.project.assets[assetId];
     if (!asset) return false;
     const dropped = opts.trackId ? store.project.tracks.find((t) => t.id === opts.trackId) : undefined;
     const pick = (kind: Track['kind']): Track => (dropped && dropped.kind === kind ? dropped : store.targetTrack(kind));
-    const v = asset.hasVideo ? pick('video') : undefined;
-    const a = asset.hasAudio ? pick('audio') : undefined;
+    const v = asset.hasVideo && opts.only !== 'audio' ? pick('video') : undefined;
+    const a = asset.hasAudio && opts.only !== 'video' ? pick('audio') : undefined;
+    if (!v && !a) {
+      store.say(opts.only === 'audio' ? 'That file has no sound.' : 'That file has no picture.');
+      return false;
+    }
     if ((v && v.locked) || (a && a.locked)) {
       store.say('That track is locked.');
       return false;
@@ -167,6 +172,46 @@ export class Actions {
       for (const t of targets) addClip(p, t.id, { ...createClip(assetId, start, asset.duration), link });
     });
     return true;
+  }
+
+  // ---------------------------------------------------------------- bin folders
+
+  /** A new, empty folder in the media bin. Returns its id. */
+  addFolder(name = 'New folder'): string {
+    const id = newId('f');
+    const base = name.trim() || 'New folder';
+    const taken = new Set((this.store.project.folders ?? []).map((f) => f.name));
+    let unique = base;
+    for (let i = 2; taken.has(unique); i++) unique = `${base} ${i}`;
+    this.store.edit((p) => (p.folders = [...(p.folders ?? []), { id, name: unique }]));
+    return id;
+  }
+
+  renameFolder(id: string, name: string): void {
+    const clean = name.trim();
+    if (!clean) return;
+    this.store.edit((p) => {
+      const f = p.folders?.find((x) => x.id === id);
+      if (f) f.name = clean;
+    });
+  }
+
+  /** Delete a folder; what was inside goes back to the top level of the bin. */
+  removeFolder(id: string): void {
+    this.store.edit((p) => {
+      p.folders = (p.folders ?? []).filter((f) => f.id !== id);
+      for (const a of Object.values(p.assets)) if (a.folder === id) delete a.folder;
+    });
+  }
+
+  /** Move a bin item into a folder (null: back to the top level). */
+  moveToFolder(assetId: string, folder: string | null): void {
+    this.store.edit((p) => {
+      const a = p.assets[assetId];
+      if (!a) return;
+      if (folder && p.folders?.some((f) => f.id === folder)) a.folder = folder;
+      else delete a.folder;
+    });
   }
 
   /** Add a text layer at the playhead on the top video track (a new track above if that spot is taken). */
@@ -230,10 +275,15 @@ export class Actions {
       if (c && f > c.start && f < c.end) cue = c.id;
       where = 'the selected caption';
     } else if (store.selected) {
-      const hit = findClip(p, store.selected);
-      if (hit?.track.locked) return store.say('That track is locked.');
-      if (hit && f > hit.clip.start && f < clipEnd(hit.clip)) cuts.push(hit.clip.id);
-      where = 'the selected clip';
+      let lockedOnly = true;
+      for (const id of store.selectedIds) {
+        const hit = findClip(p, id);
+        if (!hit || hit.track.locked) continue;
+        lockedOnly = false;
+        if (f > hit.clip.start && f < clipEnd(hit.clip)) cuts.push(hit.clip.id);
+      }
+      if (lockedOnly) return store.say('That track is locked.');
+      where = store.selectedIds.length > 1 ? 'the selected clips' : 'the selected clip';
     } else if (store.activeTrack === CAPTION_TRACK) {
       const c = cueAt(p, f);
       if (c && f > c.start) cue = c.id;
@@ -253,6 +303,7 @@ export class Actions {
     if (!done) store.say('A caption of one word cannot be split.');
   }
 
+  /** Delete what is selected (every selected clip with its linked partners, or the selected caption). */
   remove(ripple: boolean): void {
     const { store } = this;
     if (store.selectedCue) {
@@ -261,30 +312,62 @@ export class Actions {
       store.edit((p) => (p.captions = p.captions.filter((c) => c.id !== id)));
       return;
     }
-    if (!store.selected) return;
-    const id = store.selected;
-    if (findClip(store.project, id)?.track.locked) return store.say('That track is locked.');
+    const ids = store.selectedIds.filter((id) => !findClip(store.project, id)?.track.locked);
+    if (store.selectedIds.length && ids.length === 0) return store.say('That track is locked.');
+    if (!ids.length) return;
+    // Last first: closing a gap moves what comes after, so work from the end of the timeline backwards.
+    const order = ids.map((id) => ({ id, at: findClip(store.project, id)?.clip.start ?? 0 })).sort((x, y) => y.at - x.at);
     store.select(null);
-    store.edit((p) => removeLinked(p, id, ripple));
+    store.edit((p) => {
+      for (const { id } of order) removeLinked(p, id, ripple);
+    });
   }
 
   trimToPlayhead(side: 'start' | 'end'): void {
     const { store } = this;
     if (!store.selected) return;
-    const id = store.selected;
+    const ids = new Set(store.selectedIds);
     store.edit((p) => {
       const all = p.tracks.flatMap((t) => t.clips);
-      const link = all.find((x) => x.id === id)?.link;
-      for (const c of all.filter((c) => c.id === id || (link && c.link === link))) (side === 'start' ? trimStart : trimEnd)(p, c.id, store.playhead);
+      const links = new Set(all.filter((c) => ids.has(c.id) && c.link).map((c) => c.link));
+      for (const c of all.filter((c) => ids.has(c.id) || (c.link && links.has(c.link)))) (side === 'start' ? trimStart : trimEnd)(p, c.id, store.playhead);
     });
   }
 
   toggleMute(): void {
     const { store } = this;
     if (!store.selected) return;
+    const ids = new Set(store.selectedIds);
+    const mute = !findClip(store.project, store.selected)?.clip.muted; // all follow the first one
     store.edit((p) => {
-      for (const t of p.tracks) for (const c of t.clips) if (c.id === store.selected) c.muted = !c.muted;
+      for (const t of p.tracks) for (const c of t.clips) if (ids.has(c.id)) c.muted = mute;
     });
+  }
+
+  /** A copy of the selected clips straight after the last of them (or at the next free spot), on the same tracks. */
+  duplicateSelection(): void {
+    const { store } = this;
+    const ids = store.selectedIds;
+    if (!ids.length) return;
+    const hits = ids.map((id) => findClip(store.project, id)).filter((h): h is NonNullable<typeof h> => !!h && !h.track.locked);
+    if (!hits.length) return;
+    const from = Math.min(...hits.map((x) => x.clip.start));
+    const to = Math.max(...hits.map((x) => clipEnd(x.clip)));
+    const shift = to - from;
+    let made: string[] = [];
+    store.edit((p) => {
+      const links = new Map<string, string>();
+      for (const { track, clip } of hits) {
+        const copy = structuredClone(clip);
+        copy.id = newId('c');
+        copy.start = clip.start + shift;
+        if (clip.link) copy.link = links.get(clip.link) ?? links.set(clip.link, newId('l')).get(clip.link)!;
+        const dest = p.tracks.find((t) => t.id === track.id)!;
+        if (!overlaps(dest, copy.start, copy.duration)) (addClip(p, dest.id, copy), made.push(copy.id));
+      }
+    });
+    if (made.length) store.select(made[0]!);
+    else store.say('There is no free space right after it to put a copy.');
   }
 
   toggleSnapping(): void {

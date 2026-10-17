@@ -1,6 +1,6 @@
 import type { AssStyle, Rgba } from '../captions/ass.ts';
 import { h } from './dom.ts';
-import { fontChoices } from './fonts.ts';
+import { fontPicker } from './fontPicker.ts';
 
 const hex = (c: Rgba) => '#' + [c.r, c.g, c.b].map((v) => v.toString(16).padStart(2, '0')).join('');
 const fromHex = (s: string, alpha: number): Rgba => ({ r: parseInt(s.slice(1, 3), 16), g: parseInt(s.slice(3, 5), 16), b: parseInt(s.slice(5, 7), 16), a: alpha });
@@ -12,8 +12,6 @@ export interface StyleControlOptions {
   onBegin?: () => void;
   /** Alignment and margins matter for captions (where they sit on screen) but not for text layers (positioned with X and Y). */
   placement?: boolean;
-  /** Font names offered in the list. */
-  fonts?: string[];
 }
 
 const row = (label: string, ...controls: HTMLElement[]) => h('label', { class: 'prop style-row' }, h('span', { class: 'prop-l' }, label), ...controls);
@@ -33,11 +31,7 @@ export function styleControls(style: AssStyle, o: StyleControlOptions): HTMLElem
   const commit = () => o.onChange();
   const done = () => (burst = false);
 
-  const listId = `fonts-${Math.random().toString(36).slice(2, 7)}`;
-  const list = h('datalist', { id: listId }, ...(o.fonts ?? fontChoices()).map((f) => h('option', { value: f })));
-  const font = h('input', { class: 'input', list: listId, value: style.fontname, 'aria-label': 'Font' });
-  font.addEventListener('input', () => ((begin(), (style.fontname = font.value.trim() || style.fontname)), commit()));
-  font.addEventListener('change', done);
+  const fontBox = fontPicker({ value: style.fontname, ariaLabel: 'Font', onInput: (name) => (begin(), (style.fontname = name || style.fontname), commit()), onCommit: done });
 
   const num = (label: string, get: () => number, set: (v: number) => void, min: number, max: number, step = 1) => {
     const input = h('input', { type: 'number', class: 'input num', min, max, step, value: get(), 'aria-label': label });
@@ -84,7 +78,7 @@ export function styleControls(style: AssStyle, o: StyleControlOptions): HTMLElem
   });
 
   const parts: HTMLElement[] = [
-    row('Font', font), list,
+    h('div', { class: 'prop style-row' }, h('span', { class: 'prop-l' }, 'Font'), fontBox.el),
     num('Size', () => style.fontsize, (v) => (style.fontsize = v), 8, 600),
     h('div', { class: 'row' }, check('Bold', () => style.bold, (v) => (style.bold = v)), check('Italic', () => style.italic, (v) => (style.italic = v))),
     colour('Fill', () => style.primary, (c) => (style.primary = c)),

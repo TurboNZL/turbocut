@@ -22,6 +22,9 @@ try {
     await page.getByRole('button', { name: 'File' }).click();
     const [ch] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('menuitem', { name: 'Import media…' }).click()]);
     await ch.setFiles(`${root}e2e/.media/src.webm`);
+    await page.waitForFunction(() => Object.keys(window.turbocutApp.store.project.assets).length === 1);
+    // importing only fills the bin; put the clip on the timeline the way a person does, from the bin
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
     await page.waitForFunction(() => window.turbocutApp.store.project.tracks[0].clips.length === 1);
     return page;
   };
@@ -69,20 +72,30 @@ try {
   assert.ok((await page.$eval('.tl-scroll', (e) => e.scrollTop)) > 0, 'Shift + wheel scrolls the tracks vertically');
   await page.close();
 
-  // ============================================================ 1b. adding a keyframe does not replay the panel's opening animation
+  // ============================================================ 1b. adding a keyframe keeps the panel where it is and runs no panel animation
   page = await fresh();
+  await page.setViewportSize({ width: 1280, height: 600 });
   await page.evaluate(() => { const s = window.turbocutApp.store; s.select(s.project.tracks[0].clips[0].id); });
-  await page.locator('.ks-fold > summary').click(); // the person opens the fold: this one may animate
-  await page.waitForTimeout(500);
-  await page.evaluate(() => { window.__fold = document.querySelector('.ks-fold'); window.__seen = new Set(); window.__t = setInterval(() => { for (const a of document.getAnimations()) { const t = a.effect?.target; if (t && t.closest?.('.ks-fold, .insp')) window.__seen.add(`${t.className}:${a.animationName ?? a.transitionProperty}`); } }, 8); });
-  await page.getByRole('button', { name: 'Keyframe X', exact: true }).click(); // from the inspector
-  await page.locator('.ks-label').getByText('Y', { exact: true }).click(); // from the dopesheet
-  await page.keyboard.press('k');
-  await page.waitForTimeout(700);
-  const kf = await page.evaluate(() => { clearInterval(window.__t); return { sameFold: window.__fold === document.querySelector('.ks-fold'), open: document.querySelector('.ks-fold').open, anims: [...window.__seen].filter((a) => /tk-|ks-/.test(a) && !/transition|background|opacity$|box-shadow|border|color/.test(a.split(':')[1] ?? '')) }; });
-  console.log('keyframe added, fold:', JSON.stringify(kf));
-  assert.ok(kf.sameFold && kf.open, 'the fold is the same element and stays open');
-  assert.deepEqual(kf.anims, [], 'no panel animation runs when a keyframe is added');
+  await page.waitForTimeout(400);
+  const scrollInfo = await page.$eval('.tab-body', (e) => [e.scrollHeight, e.clientHeight]);
+  console.log('panel scroll height / visible height:', scrollInfo.join(' / '));
+  assert.ok(scrollInfo[0] > scrollInfo[1] + 20, 'the panel has to scroll at this window height (the test would prove nothing otherwise)');
+  await page.$eval('.tab-body', (e) => (e.scrollTop = e.scrollHeight));
+  const top0 = await page.$eval('.tab-body', (e) => e.scrollTop);
+  await page.evaluate(() => { window.__insp = document.querySelector('.insp'); window.__seen = new Set(); window.__t = setInterval(() => { for (const a of document.getAnimations()) { const t = a.effect?.target; if (t && t.closest?.('.insp, .tab-body') && a.animationName) window.__seen.add(`${t.className}:${a.animationName}`); } }, 8); });
+  await page.getByRole('button', { name: 'Keyframe Pixelate' }).click();
+  await page.waitForTimeout(250);
+  await page.evaluate(() => window.turbocutApp.store.seek(30));
+  await page.getByRole('button', { name: 'Keyframe Pixelate' }).click(); // a second key: the lane appears
+  await page.waitForTimeout(250);
+  await page.getByRole('button', { name: 'Next Pixelate keyframe' }).waitFor();
+  const kf = await page.evaluate(() => { clearInterval(window.__t); return { same: window.__insp === document.querySelector('.insp'), anims: [...window.__seen] }; });
+  const top1 = await page.$eval('.tab-body', (e) => e.scrollTop);
+  console.log('keyframe added: scrollTop', top0, '->', top1, JSON.stringify(kf));
+  assert.ok(kf.same, 'the settings panel is the same element');
+  assert.deepEqual(kf.anims, [], 'no animation runs in the panel');
+  assert.ok(Math.abs(top1 - top0) <= 40, 'and the panel does not jump back to the top');
+  assert.equal(await page.locator('.kf-lane[data-param="pixelate"]:visible').count(), 1, 'the key lane of that setting appears right under it');
   await page.close();
 
   // ============================================================ 2. the add-track button is in the corner, and works
@@ -187,6 +200,56 @@ try {
   assert.equal((await st(page)).cues.length, 3);
   await page.close();
 
+  // ============================================================ 4b. several clips: Shift and Ctrl click, move together, right-click menu
+  page = await fresh();
+  await page.evaluate(() => { const a = window.turbocutApp; const s = a.store; s.clearSelection(); s.setActiveTrack(s.project.tracks[0].id); s.seek(60); a.actions.split(); s.seek(120); a.actions.split(); s.clearSelection(); });
+  await page.evaluate(() => window.turbocutApp.store.setZoom(3));
+  const vclips = page.locator('.tl-track.tl-video .tl-clip');
+  assert.equal(await vclips.count(), 3, 'three clips on V1 after two splits');
+  await vclips.nth(0).click();
+  await vclips.nth(2).click({ modifiers: ['Shift'] });
+  let ids = await page.evaluate(() => window.turbocutApp.store.selectedIds.length);
+  assert.equal(ids, 3, 'Shift + click selects the clips in between');
+  assert.equal(await page.locator('.tl-clip.sel').count(), 3 + 0, 'and highlights each (the picture ones; their sound is not selected)');
+  await vclips.nth(1).click({ modifiers: ['Control'] });
+  ids = await page.evaluate(() => window.turbocutApp.store.selectedIds.length);
+  assert.equal(ids, 2, 'Ctrl + click takes one out');
+  await vclips.nth(1).click({ modifiers: ['Control'] });
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedIds.length), 3, 'and puts it back');
+  // drag one of the three: all three move by the same amount (and their linked sound with them)
+  const starts = () => page.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((t) => t.clips.map((c) => `${t.name}:${c.start}`)).join(' '));
+  const before = await starts();
+  const box = await vclips.nth(1).boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const after = await starts();
+  console.log('group drag:', before, '->', after);
+  const shifts = new Set(after.split(' ').map((x, i) => Number(x.split(':')[1]) - Number(before.split(' ')[i].split(':')[1])));
+  assert.equal(shifts.size, 1, 'every clip moved by the same amount');
+  assert.ok([...shifts][0] > 0, 'to the right');
+  // Delete removes all selected
+  await page.keyboard.press('Delete');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((t) => t.clips).length), 0, 'Delete removes every selected clip with its sound');
+  await page.evaluate(() => window.turbocutApp.store.undo());
+  // Ctrl+A and the right-click menu
+  await page.locator('.tl-track.tl-video').first().click({ position: { x: 1500, y: 20 } });
+  await page.keyboard.press('Control+a');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedIds.length), 6, 'Ctrl+A selects every clip');
+  await page.evaluate(() => { const s = window.turbocutApp.store; s.clearSelection(); s.seek(30); });
+  await vclips.nth(0).click({ button: 'right' });
+  const items = await page.getByRole('menuitem').allTextContents();
+  console.log('clip menu:', items.join(' | '));
+  assert.ok(items.some((t) => /Split at the playhead/.test(t)) && items.some((t) => /Delete clip$/.test(t)) && items.some((t) => /Duplicate/.test(t)), 'right-click shows the clip menu');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedIds.length), 1, 'and selects the clip it was opened on');
+  await page.getByRole('menuitem', { name: 'Split at the playhead' }).click();
+  assert.equal(await vclips.count(), 4, 'Split from the menu cuts it');
+  await vclips.nth(0).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: /^Delete clip$/ }).click();
+  assert.equal(await vclips.count(), 3, 'Delete from the menu removes it');
+  await page.close();
+
   // ============================================================ 5. text layers: pop in, or stay still
   page = await fresh();
   await page.evaluate(() => { document.activeElement?.blur(); });
@@ -254,6 +317,30 @@ try {
   const choices = await page.evaluate(async () => { const { fontChoices } = await import('/src/app/fonts.ts'); return fontChoices(); });
   assert.ok(choices.includes('Fake Sans') && choices.includes('Arial Black'), 'every font box now offers them');
   await ctx.close();
+
+  // ============================================================ 9. everything you can press shows a hand
+  page = await fresh();
+  await page.evaluate(() => { const s = window.turbocutApp.store; s.select(s.project.tracks[0].clips[0].id); });
+  const noHand = async (label) => {
+    const bad = await page.evaluate(() => [...document.querySelectorAll('button, summary, select, a[href], [role=tab], [role=menuitem], [role=option], input[type=checkbox], input[type=radio], input[type=range], input[type=color], .layout-card, .home-start')]
+      .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; })
+      .filter((el) => !/pointer|not-allowed|grab|col-resize|row-resize|ew-resize/.test(getComputedStyle(el).cursor))
+      .map((el) => `${el.tagName.toLowerCase()}.${String(el.className).split(' ').slice(0, 2).join('.')} "${(el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 20)}" -> ${getComputedStyle(el).cursor}`));
+    assert.deepEqual(bad, [], `${label}: pressable things without a hand cursor`);
+  };
+  await noHand('editor');
+  await page.getByRole('button', { name: 'Settings' }).first().click();
+  for (const t of ['General', 'Look', 'Layout', 'Keys', 'Captions', 'Fonts', 'Updates', 'Device', 'Guides', 'About']) {
+    await page.locator('.settings-nav').getByRole('tab', { name: t, exact: true }).click();
+    await page.waitForTimeout(80);
+    await noHand(`settings ${t}`);
+  }
+  await page.locator('.dlg .bt-close').click();
+  await page.getByRole('tab', { name: 'Media', exact: true }).click();
+  await noHand('media');
+  await page.getByRole('tab', { name: 'Captions', exact: true }).click();
+  await noHand('captions');
+  await page.close();
 
   assert.deepEqual(errors, [], 'no page errors');
   console.log('editing e2e passed');

@@ -17,9 +17,15 @@
 .tk-fade { animation: tk-fade 180ms ease-out backwards; }
 @keyframes tk-fade { from { opacity: 0; } to { opacity: 1; } }
 
+/* a panel tab slides in from the side it sits on (TurboKeep's page motion) */
+.tk-page-fwd { animation: tk-in-r 280ms cubic-bezier(0.22, 0.8, 0.3, 1) backwards; }
+.tk-page-back { animation: tk-in-l 280ms cubic-bezier(0.22, 0.8, 0.3, 1) backwards; }
+@keyframes tk-in-r { from { opacity: 0; transform: translateX(22px); } to { opacity: 1; transform: none; } }
+@keyframes tk-in-l { from { opacity: 0; transform: translateX(-22px); } to { opacity: 1; transform: none; } }
+
 /* Everything above is switched off for people who ask for less motion. */
 @media (prefers-reduced-motion: reduce) {
-  .tk-arrive, .tk-swap, .tk-slide-in, .tk-pop, .tk-expand, .tk-fade, .ks-fold[open] > .ks-body { animation-duration: 1ms !important; }
-  .btn, .tl-clip, .home-start, .tab, .status, .ks-fold > summary .ico, .prop .kf { transition-duration: 1ms !important; }
+  .tk-arrive, .tk-swap, .tk-slide-in, .tk-pop, .tk-expand, .tk-fade, .tk-page-fwd, .tk-page-back, #app.booting > *, #app.booting .side > .pane, .home-arrive, .home { animation-duration: 1ms !important; }
+  .btn, .tl-clip, .home-start, .tab, .status, .prop .kf { transition-duration: 1ms !important; }
   .btn:not(:disabled):active, .home-start:hover { transform: none; }
 }

@@ -1,5 +1,6 @@
-import { fontChoices, loadStoredFonts } from './fonts.ts';
-import { onFontsDetected } from './systemFonts.ts';
+import { loadStoredFonts } from './fonts.ts';
+import { fontPicker } from './fontPicker.ts';
+import { icon } from './icons.ts';
 import { guidesView } from './guides.ts';
 import { layoutManager } from './layoutManager.ts';
 import { openFontManager } from './fontManager.ts';
@@ -10,11 +11,18 @@ import { pickFiles, platform, saveFile } from './platform.ts';
 import { DEFAULT_SETTINGS, exportSettings, importSettings, type CounterMode } from './settings.ts';
 import type { Store } from './store.ts';
 import { MODELS, type Compute } from '../transcribe/local.ts';
-import { assetFor, checkForUpdate, desktopUpdater, openApk, type UpdateStatus } from './updater.ts';
+import { desktopWindow } from './windowFrame.ts';
+import { assetFor, checkForUpdate, apkUpdater, desktopUpdater, openApk, type UpdateStatus } from './updater.ts';
 import { APP_VERSION } from './version.ts';
 
-export type SettingsTab = 'General' | 'Layout' | 'Fonts' | 'Guides' | 'Keys' | 'Captions' | 'Updates' | 'Device' | 'About';
-const TABS: SettingsTab[] = ['General', 'Layout', 'Fonts', 'Guides', 'Keys', 'Captions', 'Updates', 'Device', 'About'];
+export type SettingsTab = 'General' | 'Look' | 'Layout' | 'Fonts' | 'Guides' | 'Keys' | 'Captions' | 'Updates' | 'Device' | 'About';
+/** The pages of Settings in groups, so nine small tabs read as three short lists. */
+const GROUPS: [string, SettingsTab[]][] = [
+  ['Editor', ['General', 'Look', 'Layout', 'Keys']],
+  ['Captions and text', ['Captions', 'Fonts']],
+  ['App', ['Updates', 'Device', 'Guides', 'About']],
+];
+const TABS: SettingsTab[] = GROUPS.flatMap(([, t]) => t);
 
 /** True while the shortcut editor is waiting for a key, so the editor's own shortcuts stay quiet. */
 export let capturingKey = false;
@@ -35,26 +43,38 @@ const check = (label: string, on: boolean, set: (v: boolean) => void, hint?: str
 
 const field = (label: string, control: HTMLElement) => h('label', { class: 'setting col' }, h('span', { class: 'prop-l' }, label), control);
 
-/** The settings window. Everything that used to be scattered over panels lives here. */
-export function openSettings(deps: SettingsDeps, tab: SettingsTab = 'General'): void {
+/**
+ * Settings as a page that works in a window and in a side panel: a search box, the list of pages (a column when there is room,
+ * a row when the space is narrow: it follows its own width, not the screen's) and the page. Typing in the search shows every
+ * setting in every page that matches, grouped by page; clearing it goes back to the page you were on.
+ */
+export function settingsView(deps: SettingsDeps, tab: SettingsTab = 'General'): { el: HTMLElement; show: (t: SettingsTab) => void } {
   const { store } = deps;
   const body = h('div', { class: 'settings-body' });
   const nav = h('div', { class: 'settings-nav', role: 'tablist', 'aria-orientation': 'vertical' });
+  const search = h('input', { class: 'input settings-search', type: 'search', placeholder: 'Search settings', 'aria-label': 'Search settings', spellcheck: false });
   let current: SettingsTab = tab;
+  let searching = '';
 
   const show = (t: SettingsTab) => {
     current = t;
-    for (const b of nav.children) (b as HTMLElement).setAttribute('aria-selected', String(b.textContent === t));
+    searching = '';
+    search.value = '';
+    for (const b of nav.querySelectorAll<HTMLElement>('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === t));
     body.replaceChildren(build(t));
     body.scrollTop = 0;
   };
-  for (const t of TABS) nav.append(h('button', { class: 'tab', role: 'tab', onclick: () => show(t) }, t));
+  for (const [group, tabs] of GROUPS) {
+    nav.append(h('div', { class: 'settings-group', role: 'presentation' }, group));
+    for (const t of tabs) nav.append(h('button', { class: 'tab', role: 'tab', 'data-tab': t, onclick: () => show(t) }, t));
+  }
 
   const build = (t: SettingsTab): HTMLElement => {
     switch (t) {
       case 'General': return general(deps, () => show(current));
+      case 'Look': return look();
       case 'Layout': return layoutManager(store, () => show(current));
-      case 'Fonts': return fontsTab(deps);
+      case 'Fonts': return fontsTab(deps, () => show(current));
       case 'Guides': return guidesView();
       case 'Keys': return keys(deps, () => show(current));
       case 'Captions': return captionsEngine(deps);
@@ -64,30 +84,78 @@ export function openSettings(deps: SettingsDeps, tab: SettingsTab = 'General'): 
     }
   };
 
-  dialog('Settings', h('div', { class: 'settings' }, nav, body), [], 'dlg-wide');
+  // ---- search: every page is built once for the search, then rows and panels that do not match are hidden
+  const SEARCHABLE: SettingsTab[] = TABS.filter((t) => t !== 'Guides');
+  let built = new Map<SettingsTab, HTMLElement>();
+  const runSearch = (q: string) => {
+    searching = q;
+    if (!q) return show(current);
+    for (const b of nav.querySelectorAll('.tab')) b.setAttribute('aria-selected', 'false');
+    if (built.size === 0) for (const t of SEARCHABLE) built.set(t, build(t));
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const sections: HTMLElement[] = [];
+    for (const [t, el] of built) {
+      const shown = filterPage(el, words);
+      if (shown) sections.push(h('section', { class: 'settings-hit' }, h('h2', { class: 'settings-hit-title' }, t), el));
+    }
+    body.replaceChildren(...(sections.length ? sections : [h('p', { class: 'hint settings-none' }, `Nothing in Settings matches "${q}".`)]));
+    body.scrollTop = 0;
+  };
+  search.addEventListener('input', () => {
+    const q = search.value.trim();
+    if (!q) built = new Map();
+    runSearch(q);
+  });
+  search.addEventListener('keydown', (e) => e.key === 'Escape' && search.value && (e.stopPropagation(), (search.value = ''), built = new Map(), runSearch('')));
+
+  const root = h('div', { class: 'settings-shell' }, h('div', { class: 'settings-top' }, h('span', { class: 'settings-search-icon' }, icon('search', 16)), search), h('div', { class: 'settings' }, nav, body));
   show(tab);
+  void searching;
+  return { el: root, show };
+}
+
+/** Hide what does not match in one page (rows, then whole panels). Returns how many rows or panels stay. */
+function filterPage(page: HTMLElement, words: string[]): number {
+  const has = (el: Element) => {
+    const t = (el.textContent ?? '').toLowerCase() + ' ' + [...el.querySelectorAll('input, select, textarea, button')].map((x) => `${(x as HTMLElement).getAttribute('aria-label') ?? ''} ${(x as HTMLInputElement).placeholder ?? ''} ${(x as HTMLElement).title ?? ''}`).join(' ').toLowerCase();
+    return words.every((w) => t.includes(w));
+  };
+  let visible = 0;
+  const panels = [...page.querySelectorAll<HTMLElement>('.card.bt-panel')];
+  for (const panel of panels.length ? panels : [page]) {
+    const title = panel.querySelector('.bt-panel-title')?.textContent?.toLowerCase() ?? '';
+    const titleHit = words.every((w) => title.includes(w));
+    const units = [...panel.querySelectorAll<HTMLElement>('.setting, .key-row, .tab-row, .font-row, .layout-card')];
+    if (titleHit || units.length === 0) {
+      const ok = titleHit || has(panel);
+      panel.hidden = !ok;
+      for (const u of units) u.hidden = false;
+      if (ok) visible++;
+      continue;
+    }
+    let any = 0;
+    for (const u of units) {
+      const ok = has(u);
+      u.hidden = !ok;
+      if (ok) any++;
+    }
+    panel.hidden = any === 0;
+    visible += any;
+  }
+  return visible;
+}
+
+/** The settings window. */
+export function openSettings(deps: SettingsDeps, tab: SettingsTab = 'General'): void {
+  dialog('Settings', settingsView(deps, tab).el, [], 'dlg-wide dlg-settings');
 }
 
 function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
   const s = store.settings;
-  const picker = Object.assign(document.createElement('turbo-themes-picker'), { variant: 'select' });
-
   const trackOrder = h('select', { class: 'input', 'aria-label': 'Track order' },
     h('option', { value: 'video', selected: s.videoOnTop }, 'Video tracks on top, audio below'),
     h('option', { value: 'audio', selected: !s.videoOnTop }, 'Audio tracks on top, video below'));
   trackOrder.addEventListener('change', () => store.updateSettings({ videoOnTop: trackOrder.value === 'video' }));
-
-  const counters = h('select', { class: 'input', 'aria-label': 'Letter holes' },
-    ...([['filled', 'Filled with the outline colour'], ['rim', 'Thin rim, open middle'], ['clear', 'Clear, the picture shows through']] as [CounterMode, string][]).map(([v, l]) => h('option', { value: v, selected: s.counters === v }, l)));
-  counters.addEventListener('change', () => store.updateSettings({ counters: counters.value as CounterMode }));
-
-  const fonts = h('datalist', { id: 'font-list' }, ...fontChoices().map((f) => h('option', { value: f })));
-  const font = h('input', { class: 'input', list: 'font-list', value: s.defaultFont, 'aria-label': 'Default font', placeholder: 'Font name' });
-  font.addEventListener('change', () => store.updateSettings({ defaultFont: font.value.trim() || 'Arial Black' }));
-  const refreshFonts = () => fonts.replaceChildren(...fontChoices().map((f) => h('option', { value: f })));
-  void loadStoredFonts().then(refreshFonts);
-  const stopWatching = onFontsDetected(() => (fonts.isConnected ? refreshFonts() : stopWatching())); // new names after a detection, until this page is gone
-  const addFont = h('button', { class: 'btn', onclick: () => openFontManager(store, redraw) }, 'Manage fonts…');
 
   const exportBtn = h('button', { class: 'btn', onclick: () => saveFile(exportSettings(store.settings), 'turbocut-settings.json', 'application/json') }, 'Export settings');
   const importBtn = h('button', {
@@ -108,22 +176,37 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
   }, 'Import settings');
 
   return h('div', { class: 'stack' },
-    panel('Look', picker),
     panel('Timeline',
       check('Snap clips and edges to the playhead and to each other', s.snapping, (v) => store.updateSettings({ snapping: v }), 'Hotkey N toggles it.'),
       check('Show audio waveforms', s.waveforms, (v) => store.updateSettings({ waveforms: v }), 'Low detail. Uses a little more battery.'),
       field('Track order', trackOrder)),
-    panel('Captions and text', field('Default font', font), fonts, addFont, field('Letter holes (o, e, a, g) in new styles', counters)),
     panel('Start', check('Show the home screen when TurboCut starts with an empty project', s.showHome, (v) => store.updateSettings({ showHome: v }), 'The Home button at the top brings it back.')),
     panel('Updates', check('Check for a new version when TurboCut starts', s.autoCheckUpdates, (v) => store.updateSettings({ autoCheckUpdates: v }))),
     panel('Settings file', h('div', { class: 'row' }, exportBtn, importBtn)),
   );
 }
 
-function fontsTab({ store }: SettingsDeps): HTMLElement {
-  return panel('Fonts',
-    h('p', { class: 'hint' }, `The default font is "${store.settings.defaultFont}". Add font files, see each one drawn, change the default or remove fonts in the font manager.`),
-    h('button', { class: 'btn btn-accent', onclick: () => openFontManager(store) }, 'Open the font manager…'));
+/** The Look page: the colour theme, UI style and wallpaper picker from turbothemes. */
+function look(): HTMLElement {
+  const picker = Object.assign(document.createElement('turbo-themes-picker'), { variant: 'select' });
+  return h('div', { class: 'stack' }, panel('Look', h('p', { class: 'hint' }, 'Colours, shapes and motion come from the theme you pick. Every look works with every layout.'), picker));
+}
+
+function fontsTab({ store }: SettingsDeps, redraw: () => void): HTMLElement {
+  const s = store.settings;
+  const counters = h('select', { class: 'input', 'aria-label': 'Letter holes' },
+    ...([['filled', 'Filled with the outline colour'], ['rim', 'Thin rim, open middle'], ['clear', 'Clear, the picture shows through']] as [CounterMode, string][]).map(([v, l]) => h('option', { value: v, selected: s.counters === v }, l)));
+  counters.addEventListener('change', () => store.updateSettings({ counters: counters.value as CounterMode }));
+  const defaultFont = fontPicker({
+    value: s.defaultFont,
+    ariaLabel: 'Default font',
+    onInput: () => {},
+    onCommit: () => store.updateSettings({ defaultFont: defaultFont.input.value.trim() || 'Arial Black' }),
+  });
+  void loadStoredFonts();
+  return h('div', { class: 'stack' },
+    panel('Default font', h('p', { class: 'hint' }, 'Used by new caption styles, new text layers and the built-in caption style.'), field('Font', defaultFont.el), field('Letter holes (o, e, a, g) in new styles', counters)),
+    panel('Font manager', h('p', { class: 'hint' }, 'Add font files, see every installed font drawn in itself, change the default or remove fonts.'), h('button', { class: 'btn btn-accent', onclick: () => openFontManager(store, redraw) }, 'Open the font manager…')));
 }
 
 function keys({ hotkeys }: SettingsDeps, redraw: () => void): HTMLElement {
@@ -265,7 +348,28 @@ function updates({ store }: SettingsDeps): HTMLElement {
       }
       rows.push(h('p', { class: 'hint' }, can.reason ?? 'This copy cannot update itself.'));
     }
-    if (platform === 'android' && asset) rows.push(h('button', { class: 'btn btn-accent', onclick: () => openApk(asset.url) }, 'Download the update (APK)'), h('p', { class: 'hint' }, 'Open the downloaded file to install it over the current version.'));
+    if (platform === 'android' && asset && apkUpdater) {
+      const apk = apkUpdater;
+      const go = h('button', { class: 'btn btn-accent' }, 'Download and install');
+      go.addEventListener('click', async () => {
+        go.disabled = true;
+        progress.style.display = '';
+        note.replaceChildren();
+        const sub = await apk.addListener('progress', (e) => (progress.value = Math.max(0, e.percent)));
+        try {
+          await apk.download({ url: asset.url });
+          const r = await apk.install();
+          note.replaceChildren(h('p', { class: 'hint' }, r && r.needsPermission ? 'Allow TurboCut to install apps on the page that just opened, come back and press the button again.' : 'Android will ask you to confirm the install.'));
+        } catch (e) {
+          note.replaceChildren(h('p', {}, `Update failed: ${e instanceof Error ? e.message : e}`));
+        } finally {
+          go.disabled = false;
+          void sub.remove();
+        }
+      });
+      return [...rows, go, progress, note];
+    }
+    if (platform === 'android' && asset) rows.push(h('button', { class: 'btn btn-accent', onclick: () => openApk(asset.url) }, 'Download the update (APK)'));
     else if (platform === 'web') rows.push(h('button', { class: 'btn btn-accent', onclick: () => location.reload() }, 'Reload to get it'), h('p', { class: 'hint' }, 'The web version is always the newest one.'));
     else if (asset) rows.push(h('a', { class: 'btn btn-accent', href: asset.url, target: '_blank', rel: 'noreferrer' }, `Download ${asset.name}`));
     rows.push(h('a', { class: 'btn', href: st.latest.pageUrl, target: '_blank', rel: 'noreferrer' }, 'Release page'));
@@ -280,7 +384,13 @@ function device({ store }: SettingsDeps): HTMLElement {
   const pre = h('pre', { class: 'report' }, 'Checking this device…');
   const copy = h('button', { class: 'btn btn-accent', onclick: () => navigator.clipboard?.writeText(pre.textContent ?? '').then(() => store.say('Report copied.')) }, 'Copy report');
   void deviceCheck(store.project.width, store.project.height).then((r) => (pre.textContent = r.text));
-  return h('div', { class: 'stack' }, h('p', { class: 'hint' }, 'What this device can encode and how fast. Copy it into a bug report.'), pre, copy);
+  const w = desktopWindow;
+  const frame = w
+    ? panel('Window',
+        h('label', { class: 'setting' }, Object.assign(h('input', { type: 'checkbox', checked: w.customFrame }), { onchange: (e: Event) => void w.setCustomFrame((e.target as HTMLInputElement).checked) }), h('span', {}, 'Draw the window title bar from the theme (applies after a restart).')),
+        h('p', { class: 'hint' }, 'Turn this off to use your desktop\'s own title bar. macOS always uses its own.'))
+    : h('span');
+  return h('div', { class: 'stack' }, frame, h('p', { class: 'hint' }, 'What this device can encode and how fast. Copy it into a bug report.'), pre, copy);
 }
 
 function about(): HTMLElement {

@@ -11,6 +11,7 @@ export function createProject(opts: Partial<Pick<Project, 'name' | 'fps' | 'widt
     width: opts.width ?? 1080,
     height: opts.height ?? 1920,
     assets: {},
+    folders: [],
     tracks: [
       { id: newId('t'), kind: 'video', name: 'V1', clips: [], locked: false, hidden: false },
       { id: newId('t'), kind: 'audio', name: 'A1', clips: [], locked: false, hidden: false },
@@ -233,4 +234,30 @@ export function findFreeStart(tracks: Track[], from: Frame, duration: number): F
     s = clipEnd(blocker);
   }
   return s;
+}
+
+/**
+ * Move every clip in `ids` (and the clips linked to them) by `delta` frames, each staying on its own track. All or
+ * nothing: if any of them would start before 0, land on a locked track or hit a clip that is not moving, nothing moves.
+ */
+export function moveClips(p: Project, ids: string[], delta: Frame): boolean {
+  const moving = new Map<string, { track: Track; clip: Clip }>();
+  for (const id of ids) {
+    const hit = findClip(p, id);
+    if (!hit) continue;
+    for (const m of linkedClips(p, hit.clip)) moving.set(m.clip.id, m);
+  }
+  if (moving.size === 0) return false;
+  if (delta === 0) return true;
+  for (const { track, clip } of moving.values()) {
+    const start = clip.start + delta;
+    if (start < 0 || track.locked) return false;
+    const end = start + clip.duration;
+    if (track.clips.some((c) => !moving.has(c.id) && start < clipEnd(c) && end > c.start)) return false;
+  }
+  for (const { track, clip } of moving.values()) {
+    clip.start += delta;
+    sortTrack(track);
+  }
+  return true;
 }

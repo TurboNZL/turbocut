@@ -10,9 +10,9 @@ TurboCut for Android is an **APK** file you download from the Releases page and 
 Needs Android 7.0 (API 24) or newer. The app id is `com.turbonzl.turbocut`.
 
 ## Update
-- **Inside the app:** Settings → Updates → *Check for updates*. If a newer release exists, the button opens the APK download. Open it and confirm; it installs **over** the old version and keeps your settings.
+- **Inside the app:** Settings → Updates → *Check for updates*. If a newer release exists, *Download and install* downloads the APK inside the app (with a progress bar) and opens Android's installer. The first time, Android sends you to a page where you allow TurboCut to install apps; allow it, come back and press the button again. The new version installs **over** the old one and keeps your settings.
 - Every build is signed with the same fixed key, which is why a new APK can replace the old one. Version numbers go up with every build (`versionCode` is derived from the release number), so Android accepts it as an update.
-- Releases from branches other than `main` are marked *pre-release*. The updater offers them too.
+- Every release comes from `main` and is a normal release; there are no pre-releases.
 
 ## If it does not install
 | Message or symptom | Cause and fix |

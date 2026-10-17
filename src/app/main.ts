@@ -15,12 +15,16 @@ import { importFont, loadStoredFonts } from './fonts.ts';
 import { Hotkeys, type HotkeyAction } from './hotkeys.ts';
 import { openHome } from './home.ts';
 import { Inspector } from './inspector.ts';
-import { applyLayout, findLayout, type TabName } from './layout.ts';
-import { KeysPanel } from './keysPanel.ts';
+import { applyLayout, LIMITS, normalizeSizes, type TabName } from './layout.ts';
+import { activeLayout, editLayout } from './layoutStore.ts';
+import { Dock } from './dock.ts';
+import { windowFrame } from './windowFrame.ts';
+import { PanelHost } from './panelHost.ts';
+import { splitter } from './splitter.ts';
 import { icon, setIcon, type IconName } from './icons.ts';
 import { pickFiles, platform } from './platform.ts';
 import { Player } from './player.ts';
-import { openSettings, capturingKey, type SettingsTab } from './settingsDialog.ts';
+import { openSettings, capturingKey, settingsView, type SettingsTab } from './settingsDialog.ts';
 import { Store, ZOOM_MAX, ZOOM_MIN } from './store.ts';
 import { detectSystemFonts, fontPermission } from './systemFonts.ts';
 import { TimelineView } from './timelineView.ts';
@@ -38,19 +42,30 @@ const store = new Store();
 const player = new Player(store);
 const actions = new Actions(store, player);
 const timeline = new TimelineView(store, {
+  actions,
   onUserTouch: () => store.playing && player.pause(),
   trackActions: { toggle: (id, what) => actions.toggleTrack(id, what), remove: (id) => actions.removeTrack(id), add: (kind) => actions.addTrack(kind) },
 });
 const inspector = new Inspector(store);
 const captions = new CaptionsPanel(store);
-const keys = new KeysPanel(store, (dir) => inspector.jumpKey(dir));
 const hotkeys = new Hotkeys(() => store.settings.hotkeys, (o) => store.updateSettings({ hotkeys: o }));
 const touch = timeline.touch;
-const settings = (tab?: SettingsTab) => openSettings({ store, hotkeys, touch }, tab);
+/** Settings: in the panel when the layout has a Settings tab (the dock layout does), otherwise a window. */
+const settings = (tab?: SettingsTab) => {
+  if (host.shown.includes('Settings')) {
+    ensureSettings().show(tab ?? 'General');
+    host.show('Settings', true);
+  } else openSettings({ store, hotkeys, touch }, tab);
+};
 captions.openEngineSettings = () => settings('Captions');
 
-const importFiles = async () => actions.importMedia(await pickFiles('video/*,audio/*,.mkv,.webm,.mov', true));
-const bin = new BinPanel(store, actions, timeline, () => void importFiles());
+const importFiles = async (folder?: string) => {
+  const files = await pickFiles('video/*,audio/*,.mkv,.webm,.mov', true);
+  if (!files.length) return;
+  await actions.importMedia(files, false, folder);
+  showTab('Media'); // imported files wait in the bin: show it, so it is clear where they went
+};
+const bin = new BinPanel(store, actions, timeline, (folder) => void importFiles(folder));
 
 // ---------------------------------------------------------------- shortcuts (the person can change all of these in Settings)
 const act = (group: string, id: string, label: string, keys: string[], run: HotkeyAction['run']): HotkeyAction => ({ id, label, group, keys, run });
@@ -63,6 +78,8 @@ hotkeys.register([
   act('Playback', 'toStart', 'Go to the start', ['Home'], () => store.seek(0)),
   act('Playback', 'toEnd', 'Go to the end', ['End'], () => store.seek(projectDuration(store.project))),
   act('Editing', 'split', 'Split at the playhead', ['S'], () => actions.split()),
+  act('Editing', 'selectAll', 'Select every clip', ['Ctrl+A'], () => store.selectAllClips()),
+  act('Editing', 'duplicate', 'Duplicate the selected clips', ['Ctrl+D'], () => actions.duplicateSelection()),
   act('Editing', 'deselect', 'Select nothing', ['Escape'], () => !document.querySelector('.dlg-backdrop, .popup-menu') && store.clearSelection()),
   act('Editing', 'delete', 'Delete the selection', ['Delete', 'Backspace'], () => actions.remove(false)),
   act('Editing', 'rippleDelete', 'Delete and close the gap', ['Shift+Delete', 'Shift+Backspace'], () => actions.remove(true)),
@@ -97,39 +114,46 @@ zoom.addEventListener('input', () => store.setZoom(Math.exp(Number(zoom.value)))
 store.on('view', () => (zoom.value = String(Math.log(store.zoom))));
 const status = h('div', { class: 'status', role: 'status' });
 
-const tabs: Record<string, HTMLElement> = { Clip: h('div', { class: 'clip-tab' }, inspector.el, keys.el), Media: bin.el, Captions: captions.el, Project: projectPanel() };
-const tabBar = h('div', { class: 'tabs', role: 'tablist' });
-const tabBody = h('div', { class: 'tab-body' });
-let activeTab = 'Clip';
-const side = h('aside', { class: 'bt-side bt-shell side collapsed' }, tabBar, tabBody);
-function showTab(name: string, userTap = false): void {
-  // On a narrow screen the panel is a sheet: tap a tab to open it, tap the open tab again to close it.
-  if (userTap && name === activeTab) side.classList.toggle('collapsed');
-  else if (userTap) side.classList.remove('collapsed');
-  activeTab = name;
-  for (const b of tabBar.children) (b as HTMLElement).setAttribute('aria-selected', String(b.textContent === name));
-  if (tabBody.firstChild !== tabs[name]) tabBody.replaceChildren(tabs[name]!); // putting the same panel back would restart whatever animation its look gives a new element
-  if (userTap) swap(tabs[name]!);
-}
-/** Replay the swap animation on an element (a class that is already there does nothing until it is removed and the page has laid out). */
-function swap(el: HTMLElement, cls = 'tk-swap'): void {
-  el.classList.remove(cls);
-  void el.offsetWidth;
-  el.classList.add(cls);
-}
-showTab('Clip');
-/** Draw the chosen layout: panel side and size, timeline height, control size and which panel tabs show. */
+// The panel's tabs are built once; the panel host moves them between panes as the layout says.
+const settingsHolder = h('div', { class: 'settings-tab' });
+let settingsPage: ReturnType<typeof settingsView> | null = null;
+const ensureSettings = () => {
+  if (!settingsPage) {
+    settingsPage = settingsView({ store, hotkeys, touch });
+    settingsHolder.append(settingsPage.el);
+  }
+  return settingsPage;
+};
+const tabs: Record<TabName, HTMLElement> = { Clip: h('div', { class: 'clip-tab' }, inspector.el), Media: bin.el, Captions: captions.el, Project: projectPanel(), Settings: settingsHolder };
+const dock = new Dock((t) => host.show(t, true));
+const host: PanelHost = new PanelHost(tabs, {
+  getWidth: () => parseFloat(app.style.getPropertyValue('--panel-w')) || activeLayout(store).panelWidth,
+  setWidth: (px, commit) => {
+    app.style.setProperty('--panel-w', `${px}px`);
+    if (commit) editLayout(store, { panelWidth: px });
+  },
+  setPaneSizes: (sizes, commit) => commit && editLayout(store, { paneSizes: sizes }),
+  resetSizes: () => editLayout(store, { panelWidth: 340, paneSizes: normalizeSizes(null, activeLayout(store).panes.length) }),
+});
+host.onShow = (name) => {
+  if (name === 'Settings') ensureSettings();
+  dock.render(app.dataset.dock === 'on', host.shown, name);
+};
+const side = host.el;
+const showTab = (name: TabName, userTap = false) => host.show(name, userTap);
+/** Draw the chosen layout: panel side and size, panes, timeline height, tool bar place, control size, dock. */
 const narrowQuery = matchMedia('(max-width: 820px)');
 const touchQuery = matchMedia('(pointer: coarse)');
 function drawLayout(): void {
-  const l = applyLayout(findLayout(store.settings.layout, store.settings.layouts), narrowQuery.matches, touchQuery.matches);
+  const l = applyLayout(activeLayout(store), narrowQuery.matches, touchQuery.matches);
   app.dataset.panel = l.panel;
   app.dataset.density = l.density;
+  app.dataset.tools = l.tools; // above the timeline with a mouse, under it for thumbs (or as the layout says)
+  app.dataset.dock = l.dock ? 'on' : 'off';
   app.style.setProperty('--panel-w', `${l.panelWidth}px`);
   app.style.setProperty('--tl-h', `${l.timelineHeight}%`);
-  tabBar.replaceChildren(...l.tabs.map((name) => h('button', { class: 'tab', role: 'tab', onclick: () => showTab(name, true) }, name)));
-  if (!l.tabs.includes(activeTab as TabName)) showTab(l.tabs[0]!);
-  else showTab(activeTab);
+  host.apply(l);
+  dock.render(l.dock, host.shown, host.current);
 }
 store.on('settings', drawLayout);
 narrowQuery.addEventListener('change', drawLayout);
@@ -189,7 +213,7 @@ fileMenu.addEventListener('click', () =>
   ]),
 );
 const header = h('header', { class: 'bt-top top' },
-  h('img', { class: 'logo-mark', src: `${import.meta.env.BASE_URL}favicon.svg`, alt: '', width: 22, height: 22 }),
+  h('img', { class: 'logo-mark', src: `${import.meta.env.BASE_URL}icon.svg`, alt: '', width: 28, height: 28 }),
   h('strong', { class: 'logo' }, 'TurboCut'),
   iconBtn('home', 'Home', () => showHome()),
   fileMenu,
@@ -234,17 +258,37 @@ const editBar = h('div', { class: 'edit-bar' },
 player.canvas.addEventListener('click', () => player.toggle());
 const stage = h('section', { class: 'stage' }, h('div', { class: 'preview' }, player.canvas), transport);
 const app = document.getElementById('app')!;
-app.append(header, h('main', { class: 'main' }, stage, side), h('section', { class: 'bottom' }, timeline.el), editBar, status);
+const frameBar = windowFrame();
+if (frameBar) app.before(frameBar);
+// The bar between the preview and the timeline: drag to give the timeline more or less of the window.
+let tlStart = 0;
+const timelineBar = splitter({
+  axis: 'y',
+  label: 'Resize the timeline',
+  extraClass: 'splitter-timeline',
+  onStart: () => (tlStart = bottomEl.offsetHeight),
+  onDrag: (dy) => app.style.setProperty('--tl-h', `${Math.min(LIMITS.timelineHeight[1], Math.max(LIMITS.timelineHeight[0], ((tlStart - dy) / app.clientHeight) * 100)).toFixed(1)}%`),
+  onEnd: () => editLayout(store, { timelineHeight: Math.round(parseFloat(app.style.getPropertyValue('--tl-h'))) }),
+  onReset: () => editLayout(store, { timelineHeight: 34 }),
+});
+const bottomEl = h('section', { class: 'bottom' }, timelineBar, timeline.el);
+app.append(header, h('main', { class: 'main' }, stage, side), bottomEl, editBar, dock.el, status);
 drawLayout();
+/** The parts of the editor arrive one after another when it opens (and again when the home screen is closed). */
+function bootAnimation(): void {
+  app.classList.add('booting');
+  window.setTimeout(() => app.classList.remove('booting'), 1100);
+}
 
 /** The home screen: shown when the app starts with nothing in the project (unless switched off), and from the Home button. */
 let homeOpen = false;
 function showHome(): void {
   if (homeOpen) return;
   homeOpen = true;
-  openHome({ store, importFiles, openProject: () => actions.openProject(), openSettings: (tab) => settings(tab), onClose: () => (homeOpen = false) });
+  openHome({ store, importFiles, openProject: () => actions.openProject(), openSettings: (tab) => settings(tab), onClose: () => ((homeOpen = false), bootAnimation()) });
 }
 if (store.settings.showHome && projectDuration(store.project) === 0) showHome();
+else bootAnimation();
 
 const tick = () => {
   const p = store.project;
@@ -332,4 +376,5 @@ async function probeAudio(seconds: number) {
   for (let t = 0; t < seconds; t += 6) await mixWindow(store.project, store.lib, t, t + 6);
 }
 
-(window as any).turbocutApp = { store, player, themes, actions, detectSystemFonts, hotkeys, settings, importFont, importMedia: (f: File[]) => actions.importMedia(f), runExport: () => actions.runExport(), split: () => actions.split(), exportForTest, probeVideo, probeAudio, probeDecode };
+// importMedia places the first clip into an empty timeline here, as older tests expect; the app itself never places an import.
+(window as any).turbocutApp = { store, player, themes, actions, detectSystemFonts, hotkeys, settings, importFont, importMedia: (f: File[], place?: boolean) => actions.importMedia(f, place ?? store.project.tracks.every((t) => t.clips.length === 0)), runExport: () => actions.runExport(), split: () => actions.split(), exportForTest, probeVideo, probeAudio, probeDecode };

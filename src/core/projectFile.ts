@@ -35,6 +35,11 @@ export function parseProject(json: string): Project {
   for (const [id, a] of Object.entries<any>(p.assets)) {
     if (!isObj(a) || a.id !== id || typeof a.name !== 'string' || !int(a.duration)) throw new Error('The project file is damaged (a media entry is wrong).');
   }
+  // Bin folders are optional; an asset that names a folder that does not exist goes back to the top level.
+  const folders = Array.isArray(p.folders) ? (p.folders as unknown[]).filter((f): f is { id: string; name: string } => isObj(f) && typeof f.id === 'string' && typeof f.name === 'string').slice(0, 200) : [];
+  const folderIds = new Set(folders.map((f) => f.id));
+  for (const a of Object.values<any>(p.assets)) if (a.folder !== undefined && !folderIds.has(a.folder)) delete a.folder;
+  p.folders = folders;
   const clipIds = new Set<string>();
   for (const t of p.tracks) {
     if (!isObj(t) || typeof t.id !== 'string' || (t.kind !== 'video' && t.kind !== 'audio') || !Array.isArray(t.clips)) throw new Error('The project file is damaged (a track is wrong).');

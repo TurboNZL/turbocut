@@ -30,7 +30,10 @@ function readPresets(): CaptionPreset[] {
 export class Store {
   project: Project = createProject({ name: 'Untitled', fps: 60, width: 1080, height: 1920 });
   lib = new MediaLibrary();
+  /** The clip the settings panel shows (the one clicked last). */
   selected: string | null = null;
+  /** Clips selected in addition to `selected` (Shift or Ctrl/Cmd + click). */
+  selectedMore = new Set<string>();
   selectedCue: string | null = null;
   /** Where "Add to timeline" puts new clips: the track last clicked or last selected from. */
   activeTrack: string | null = null;
@@ -104,6 +107,7 @@ export class Store {
     this.undoStack = [];
     this.redoStack = [];
     this.selected = null;
+    this.selectedMore.clear();
     this.selectedCue = null;
     this.activeTrack = null;
     this.playhead = 0;
@@ -118,7 +122,9 @@ export class Store {
 
   private afterHistory(): void {
     const ids = new Set(this.project.tracks.flatMap((t) => t.clips.map((c) => c.id)));
-    if (this.selected && !ids.has(this.selected)) this.selected = null;
+    if (this.selected && !ids.has(this.selected)) this.selected = [...this.selectedMore].find((x) => ids.has(x)) ?? null;
+    if (this.selected) this.selectedMore.delete(this.selected);
+    for (const x of [...this.selectedMore]) if (!ids.has(x)) this.selectedMore.delete(x);
     if (this.selectedCue && !this.project.captions.some((c) => c.id === this.selectedCue)) this.selectedCue = null;
     this.emit('project', 'selection');
   }
@@ -141,9 +147,19 @@ export class Store {
     this.emit('playhead');
   }
 
-  /** Select a clip. A clip and a caption are never selected together (Delete and Split would not know which one you meant). */
+  /** Every selected clip id, the one the panel shows first. */
+  get selectedIds(): string[] {
+    return this.selected ? [this.selected, ...this.selectedMore] : [];
+  }
+
+  isSelected(id: string): boolean {
+    return id === this.selected || this.selectedMore.has(id);
+  }
+
+  /** Select one clip and nothing else. A clip and a caption are never selected together (Delete and Split would not know which one you meant). */
   select(id: string | null): void {
     this.selected = id;
+    this.selectedMore.clear();
     if (id) {
       this.selectedCue = null;
       const t = this.project.tracks.find((x) => x.clips.some((c) => c.id === id));
@@ -152,11 +168,53 @@ export class Store {
     this.emit('selection');
   }
 
+  /** Ctrl/Cmd + click: add the clip to the selection, or take it out. */
+  toggleSelect(id: string): void {
+    this.selectedCue = null;
+    if (this.isSelected(id)) {
+      if (id === this.selected) this.selected = [...this.selectedMore][0] ?? null;
+      if (this.selected) this.selectedMore.delete(this.selected);
+      this.selectedMore.delete(id);
+    } else {
+      if (this.selected) this.selectedMore.add(id);
+      else this.selected = id;
+    }
+    this.emit('selection');
+  }
+
+  /** Shift + click: every clip on the clicked clip's track between it and the one selected before (or just add it, on another track). */
+  selectRange(id: string): void {
+    const track = this.project.tracks.find((t) => t.clips.some((c) => c.id === id));
+    const from = this.selected ? this.project.tracks.find((t) => t.clips.some((c) => c.id === this.selected)) : undefined;
+    this.selectedCue = null;
+    if (!track || !this.selected || from !== track) return this.toggleSelectOn(id);
+    const a = track.clips.findIndex((c) => c.id === this.selected);
+    const b = track.clips.findIndex((c) => c.id === id);
+    for (const c of track.clips.slice(Math.min(a, b), Math.max(a, b) + 1)) if (c.id !== this.selected) this.selectedMore.add(c.id);
+    this.emit('selection');
+  }
+
+  private toggleSelectOn(id: string): void {
+    if (this.selected) this.selectedMore.add(id);
+    else this.selected = id;
+    this.emit('selection');
+  }
+
+  /** Select every clip of every track. */
+  selectAllClips(): void {
+    const ids = this.project.tracks.flatMap((t) => t.clips.map((c) => c.id));
+    this.selectedCue = null;
+    this.selected = ids[0] ?? null;
+    this.selectedMore = new Set(ids.slice(1));
+    this.emit('selection');
+  }
+
   /** Select a caption (and let go of any clip). */
   selectCue(id: string | null): void {
     this.selectedCue = id;
     if (id) {
       this.selected = null;
+      this.selectedMore.clear();
       this.activeTrack = CAPTION_TRACK;
     }
     this.emit('selection');
@@ -165,6 +223,7 @@ export class Store {
   /** Nothing selected: neither a clip nor a caption. The active track stays, so Split still knows where to cut. */
   clearSelection(): void {
     this.selected = null;
+    this.selectedMore.clear();
     this.selectedCue = null;
     this.emit('selection');
   }
