@@ -22,6 +22,9 @@ try {
     await page.getByRole('button', { name: 'File' }).click();
     const [ch] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('menuitem', { name: 'Import media…' }).click()]);
     await ch.setFiles(`${root}e2e/.media/src.webm`);
+    await page.waitForFunction(() => Object.keys(window.turbocutApp.store.project.assets).length === 1);
+    // importing only fills the bin; put the clip on the timeline the way a person does, from the bin
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
     await page.waitForFunction(() => window.turbocutApp.store.project.tracks[0].clips.length === 1);
     return page;
   };

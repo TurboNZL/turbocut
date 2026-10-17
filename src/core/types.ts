@@ -99,6 +99,14 @@ export interface Asset {
   duration: Frame;
   width: number;
   height: number;
+  /** The bin folder it sits in (a folder id), if any. */
+  folder?: string;
+}
+
+/** A folder in the media bin. Folders only organise the bin; clips on the timeline do not know about them. */
+export interface BinFolder {
+  id: string;
+  name: string;
 }
 
 export interface Project {
@@ -108,6 +116,8 @@ export interface Project {
   width: number;
   height: number;
   assets: Record<string, Asset>;
+  /** Media bin folders (absent in older projects). */
+  folders?: BinFolder[];
   /** Lowest index is drawn first (bottom). */
   tracks: Track[];
   /** Caption clips live in their own list so they can be edited as text. */

@@ -49,8 +49,13 @@ const touch = timeline.touch;
 const settings = (tab?: SettingsTab) => openSettings({ store, hotkeys, touch }, tab);
 captions.openEngineSettings = () => settings('Captions');
 
-const importFiles = async () => actions.importMedia(await pickFiles('video/*,audio/*,.mkv,.webm,.mov', true));
-const bin = new BinPanel(store, actions, timeline, () => void importFiles());
+const importFiles = async (folder?: string) => {
+  const files = await pickFiles('video/*,audio/*,.mkv,.webm,.mov', true);
+  if (!files.length) return;
+  await actions.importMedia(files, false, folder);
+  showTab('Media'); // imported files wait in the bin: show it, so it is clear where they went
+};
+const bin = new BinPanel(store, actions, timeline, (folder) => void importFiles(folder));
 
 // ---------------------------------------------------------------- shortcuts (the person can change all of these in Settings)
 const act = (group: string, id: string, label: string, keys: string[], run: HotkeyAction['run']): HotkeyAction => ({ id, label, group, keys, run });
@@ -189,7 +194,7 @@ fileMenu.addEventListener('click', () =>
   ]),
 );
 const header = h('header', { class: 'bt-top top' },
-  h('img', { class: 'logo-mark', src: `${import.meta.env.BASE_URL}favicon.svg`, alt: '', width: 22, height: 22 }),
+  h('img', { class: 'logo-mark', src: `${import.meta.env.BASE_URL}icon.svg`, alt: '', width: 28, height: 28 }),
   h('strong', { class: 'logo' }, 'TurboCut'),
   iconBtn('home', 'Home', () => showHome()),
   fileMenu,
@@ -332,4 +337,5 @@ async function probeAudio(seconds: number) {
   for (let t = 0; t < seconds; t += 6) await mixWindow(store.project, store.lib, t, t + 6);
 }
 
-(window as any).turbocutApp = { store, player, themes, actions, detectSystemFonts, hotkeys, settings, importFont, importMedia: (f: File[]) => actions.importMedia(f), runExport: () => actions.runExport(), split: () => actions.split(), exportForTest, probeVideo, probeAudio, probeDecode };
+// importMedia places the first clip into an empty timeline here, as older tests expect; the app itself never places an import.
+(window as any).turbocutApp = { store, player, themes, actions, detectSystemFonts, hotkeys, settings, importFont, importMedia: (f: File[], place?: boolean) => actions.importMedia(f, place ?? store.project.tracks.every((t) => t.clips.length === 0)), runExport: () => actions.runExport(), split: () => actions.split(), exportForTest, probeVideo, probeAudio, probeDecode };

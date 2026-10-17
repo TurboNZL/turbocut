@@ -95,3 +95,28 @@ export function popupMenu(anchor: HTMLElement, items: MenuItem[]): { close: () =
 export function panel(title: string, ...children: (Node | string | null)[]): HTMLElement {
   return h('section', { class: 'card bt-panel' }, h('h2', { class: 'bt-panel-title' }, title), ...children.filter((c) => c !== null));
 }
+
+/** Ask for one line of text in a themed dialog (not the browser's prompt). Resolves null when cancelled. */
+export function askText(title: string, value = '', label = 'Name', ok = 'OK'): Promise<string | null> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: string | null) => {
+      if (done) return;
+      done = true;
+      dlg.close();
+      resolve(v);
+    };
+    const input = h('input', { class: 'input', type: 'text', value, 'aria-label': label });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') finish(input.value.trim() || null);
+      if (e.key === 'Escape') finish(null);
+    });
+    const dlg = dialog(title, h('div', { class: 'stack' }, input), [
+      h('button', { class: 'btn', onclick: () => finish(null) }, 'Cancel'),
+      h('button', { class: 'btn btn-accent', onclick: () => finish(input.value.trim() || null) }, ok),
+    ]);
+    const watch = new MutationObserver(() => dlg.el.isConnected || (watch.disconnect(), finish(null)));
+    watch.observe(document.body, { childList: true });
+    queueMicrotask(() => (input.focus(), input.select()));
+  });
+}

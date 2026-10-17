@@ -1,5 +1,5 @@
-import { fontChoices, loadStoredFonts } from './fonts.ts';
-import { onFontsDetected } from './systemFonts.ts';
+import { loadStoredFonts } from './fonts.ts';
+import { fontPicker } from './fontPicker.ts';
 import { guidesView } from './guides.ts';
 import { layoutManager } from './layoutManager.ts';
 import { openFontManager } from './fontManager.ts';
@@ -81,12 +81,13 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
     ...([['filled', 'Filled with the outline colour'], ['rim', 'Thin rim, open middle'], ['clear', 'Clear, the picture shows through']] as [CounterMode, string][]).map(([v, l]) => h('option', { value: v, selected: s.counters === v }, l)));
   counters.addEventListener('change', () => store.updateSettings({ counters: counters.value as CounterMode }));
 
-  const fonts = h('datalist', { id: 'font-list' }, ...fontChoices().map((f) => h('option', { value: f })));
-  const font = h('input', { class: 'input', list: 'font-list', value: s.defaultFont, 'aria-label': 'Default font', placeholder: 'Font name' });
-  font.addEventListener('change', () => store.updateSettings({ defaultFont: font.value.trim() || 'Arial Black' }));
-  const refreshFonts = () => fonts.replaceChildren(...fontChoices().map((f) => h('option', { value: f })));
-  void loadStoredFonts().then(refreshFonts);
-  const stopWatching = onFontsDetected(() => (fonts.isConnected ? refreshFonts() : stopWatching())); // new names after a detection, until this page is gone
+  const defaultFont = fontPicker({
+    value: s.defaultFont,
+    ariaLabel: 'Default font',
+    onInput: () => {},
+    onCommit: () => store.updateSettings({ defaultFont: defaultFont.input.value.trim() || 'Arial Black' }),
+  });
+  void loadStoredFonts();
   const addFont = h('button', { class: 'btn', onclick: () => openFontManager(store, redraw) }, 'Manage fonts…');
 
   const exportBtn = h('button', { class: 'btn', onclick: () => saveFile(exportSettings(store.settings), 'turbocut-settings.json', 'application/json') }, 'Export settings');
@@ -113,7 +114,7 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
       check('Snap clips and edges to the playhead and to each other', s.snapping, (v) => store.updateSettings({ snapping: v }), 'Hotkey N toggles it.'),
       check('Show audio waveforms', s.waveforms, (v) => store.updateSettings({ waveforms: v }), 'Low detail. Uses a little more battery.'),
       field('Track order', trackOrder)),
-    panel('Captions and text', field('Default font', font), fonts, addFont, field('Letter holes (o, e, a, g) in new styles', counters)),
+    panel('Captions and text', field('Default font', defaultFont.el), addFont, field('Letter holes (o, e, a, g) in new styles', counters)),
     panel('Start', check('Show the home screen when TurboCut starts with an empty project', s.showHome, (v) => store.updateSettings({ showHome: v }), 'The Home button at the top brings it back.')),
     panel('Updates', check('Check for a new version when TurboCut starts', s.autoCheckUpdates, (v) => store.updateSettings({ autoCheckUpdates: v }))),
     panel('Settings file', h('div', { class: 'row' }, exportBtn, importBtn)),

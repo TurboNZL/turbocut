@@ -11,6 +11,7 @@ export function createProject(opts: Partial<Pick<Project, 'name' | 'fps' | 'widt
     width: opts.width ?? 1080,
     height: opts.height ?? 1920,
     assets: {},
+    folders: [],
     tracks: [
       { id: newId('t'), kind: 'video', name: 'V1', clips: [], locked: false, hidden: false },
       { id: newId('t'), kind: 'audio', name: 'A1', clips: [], locked: false, hidden: false },

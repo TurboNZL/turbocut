@@ -14,19 +14,19 @@ export class Actions {
   constructor(private store: Store, private player: Player) {}
 
   /**
-   * Open files into the media bin. The very first import into an empty timeline is also placed on it, so a
-   * single clip is one step; after that, files wait in the bin until they are added.
+   * Open files into the media bin (into `folder` when given). Nothing is put on the timeline: files wait in the bin
+   * until the person adds them (pass `place` to add them straight away, for tests and automation).
    */
-  async importMedia(files: File[], place?: boolean): Promise<void> {
+  async importMedia(files: File[], place = false, folder?: string): Promise<void> {
     const { store } = this;
     for (const file of files) {
       try {
         store.say(`Importing ${file.name}…`);
         const asset = await store.lib.importFile(file, file.name, store.project.fps);
-        const empty = store.project.tracks.every((t) => t.clips.length === 0);
+        if (folder && store.project.folders?.some((f) => f.id === folder)) asset.folder = folder;
         store.edit((p) => (p.assets[asset.id] = asset));
-        if (place ?? empty) this.addAsset(asset.id);
-        store.say(place ?? empty ? `Imported ${file.name}.` : `${file.name} is in the media bin. Open Media and tap Add.`);
+        if (place) this.addAsset(asset.id);
+        store.say(place ? `Imported ${file.name}.` : `${file.name} is in the media bin. Add it to the timeline from there.`);
       } catch (e) {
         store.say(`Could not open ${file.name}: ${e instanceof Error ? e.message : e}. This device may not support its format.`);
       }
@@ -144,16 +144,21 @@ export class Actions {
   /**
    * Put a bin item on the timeline. Video goes to the active video track and its sound to the active audio track
    * (linked, so they split and delete together). It starts at `at` (default the playhead), moved later if that spot
-   * is taken on either track. Dropping onto a specific track sends the matching part there.
+   * is taken on either track. Dropping onto a specific track sends the matching part there. `only` puts just the picture
+   * or just the sound (not linked to anything).
    */
-  addAsset(assetId: string, opts: { at?: number; trackId?: string } = {}): boolean {
+  addAsset(assetId: string, opts: { at?: number; trackId?: string; only?: 'video' | 'audio' } = {}): boolean {
     const { store } = this;
     const asset = store.project.assets[assetId];
     if (!asset) return false;
     const dropped = opts.trackId ? store.project.tracks.find((t) => t.id === opts.trackId) : undefined;
     const pick = (kind: Track['kind']): Track => (dropped && dropped.kind === kind ? dropped : store.targetTrack(kind));
-    const v = asset.hasVideo ? pick('video') : undefined;
-    const a = asset.hasAudio ? pick('audio') : undefined;
+    const v = asset.hasVideo && opts.only !== 'audio' ? pick('video') : undefined;
+    const a = asset.hasAudio && opts.only !== 'video' ? pick('audio') : undefined;
+    if (!v && !a) {
+      store.say(opts.only === 'audio' ? 'That file has no sound.' : 'That file has no picture.');
+      return false;
+    }
     if ((v && v.locked) || (a && a.locked)) {
       store.say('That track is locked.');
       return false;
@@ -167,6 +172,46 @@ export class Actions {
       for (const t of targets) addClip(p, t.id, { ...createClip(assetId, start, asset.duration), link });
     });
     return true;
+  }
+
+  // ---------------------------------------------------------------- bin folders
+
+  /** A new, empty folder in the media bin. Returns its id. */
+  addFolder(name = 'New folder'): string {
+    const id = newId('f');
+    const base = name.trim() || 'New folder';
+    const taken = new Set((this.store.project.folders ?? []).map((f) => f.name));
+    let unique = base;
+    for (let i = 2; taken.has(unique); i++) unique = `${base} ${i}`;
+    this.store.edit((p) => (p.folders = [...(p.folders ?? []), { id, name: unique }]));
+    return id;
+  }
+
+  renameFolder(id: string, name: string): void {
+    const clean = name.trim();
+    if (!clean) return;
+    this.store.edit((p) => {
+      const f = p.folders?.find((x) => x.id === id);
+      if (f) f.name = clean;
+    });
+  }
+
+  /** Delete a folder; what was inside goes back to the top level of the bin. */
+  removeFolder(id: string): void {
+    this.store.edit((p) => {
+      p.folders = (p.folders ?? []).filter((f) => f.id !== id);
+      for (const a of Object.values(p.assets)) if (a.folder === id) delete a.folder;
+    });
+  }
+
+  /** Move a bin item into a folder (null: back to the top level). */
+  moveToFolder(assetId: string, folder: string | null): void {
+    this.store.edit((p) => {
+      const a = p.assets[assetId];
+      if (!a) return;
+      if (folder && p.folders?.some((f) => f.id === folder)) a.folder = folder;
+      else delete a.folder;
+    });
   }
 
   /** Add a text layer at the playhead on the top video track (a new track above if that spot is taken). */

@@ -21,7 +21,7 @@ try {
   const tracks = () => app(() => window.turbocutApp.store.project.tracks.map((t) => ({ name: t.name, kind: t.kind, clips: t.clips.map((c) => [c.start, c.duration, c.link ? 1 : 0]), hidden: !!t.hidden, muted: !!t.muted, locked: !!t.locked })));
   const importFile = (url, name) => app(async ([u, n]) => { const blob = await (await fetch(u)).blob(); await window.turbocutApp.importMedia([new File([blob], n, { type: 'video/webm' })]); }, [url, name]);
 
-  // ---- 1. the first import goes on the timeline, later ones wait in the bin
+  // ---- 1. (test hook: the first import is placed; the person's own Import button never places, see section 8)
   await importFile('/e2e/.media/src.webm', 'first.webm');
   await importFile('/e2e/.media/src.webm', 'second.webm');
   await importFile('/e2e/.media/vonly.webm', 'picture-only.webm');
@@ -134,6 +134,50 @@ try {
   await page.locator('.tl-head', { hasText: 'V2' }).click();
   await page.getByRole('menuitem', { name: 'Delete this track' }).click();
   assert.deepEqual((await tracks()).filter((x) => x.kind === 'video').map((x) => x.name), ['V1'], 'the empty spare track is gone');
+
+  // ---- 8. the Import button only fills the bin; folders; grips drag the picture or the sound alone
+  const p2 = await (await browser.newContext({ viewport: { width: 1280, height: 800 }, fps: 30 })).newPage();
+  p2.on('pageerror', (e) => errors.push(e.message));
+  await p2.goto('http://localhost:5203/');
+  await p2.waitForFunction(() => window.turbocutApp);
+  await p2.getByRole('button', { name: 'File' }).click();
+  const [chooser] = await Promise.all([p2.waitForEvent('filechooser'), p2.getByRole('menuitem', { name: 'Import media…' }).click()]);
+  await chooser.setFiles(`${root}e2e/.media/src.webm`);
+  await p2.waitForSelector('.bin-item');
+  assert.equal(await p2.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((x) => x.clips).length), 0, 'importing does not put anything on the timeline');
+  assert.ok(await p2.getByRole('tab', { name: 'Media', exact: true }).isVisible(), 'and the bin is shown');
+  assert.equal(await p2.locator('.tab[aria-selected=true]').first().textContent(), 'Media');
+  // a folder: create, move the item in with the menu, it is listed inside, rename, delete keeps the item
+  await p2.getByRole('button', { name: 'New folder' }).click();
+  await p2.getByLabel('Folder name').fill('Interviews');
+  await p2.getByRole('button', { name: 'Create' }).click();
+  assert.equal(await p2.locator('.bin-folder-name').textContent(), 'Interviews');
+  await p2.getByRole('button', { name: /Move .* to a folder/ }).click();
+  await p2.getByRole('menuitem', { name: 'Move to Interviews' }).click();
+  assert.equal(await p2.locator('.bin-folder .bin-item').count(), 1, 'the item is inside the folder');
+  assert.equal(await p2.evaluate(() => Object.values(window.turbocutApp.store.project.assets)[0].folder !== undefined), true);
+  // grips: picture only, sound only (a mouse drag onto a track)
+  const dragGrip = async (label, trackName, x = 300) => {
+    const g = await p2.getByRole('button', { name: new RegExp(label) }).boundingBox();
+    const tr = await p2.locator('.tl-track', { hasText: trackName }).first().boundingBox();
+    await p2.mouse.move(g.x + 8, g.y + 8);
+    await p2.mouse.down();
+    await p2.mouse.move(g.x + 40, g.y + 30, { steps: 4 });
+    await p2.mouse.move(tr.x + x, tr.y + tr.height / 2, { steps: 6 });
+    await p2.mouse.up();
+  };
+  await dragGrip('picture only', 'V1');
+  let clips = await p2.evaluate(() => Object.fromEntries(window.turbocutApp.store.project.tracks.map((x) => [x.name, x.clips.length])));
+  assert.deepEqual(clips, { V1: 1, A1: 0 }, 'the picture grip puts only the picture on the timeline');
+  await dragGrip('sound only', 'A1', 500);
+  clips = await p2.evaluate(() => Object.fromEntries(window.turbocutApp.store.project.tracks.map((x) => [x.name, x.clips.length])));
+  assert.deepEqual(clips, { V1: 1, A1: 1 }, 'the sound grip puts only the sound');
+  assert.equal(await p2.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((x) => x.clips).some((c) => c.link)), false, 'and they are not linked');
+  await p2.locator('.bin-folder-head').getByRole('button', { name: /options/ }).click();
+  await p2.getByRole('menuitem', { name: /Delete folder/ }).click();
+  assert.equal(await p2.locator('.bin-folder').count(), 0);
+  assert.equal(await p2.locator('.bin-item').count(), 1, 'deleting a folder keeps what was in it');
+  await p2.close();
 
   assert.deepEqual(errors, [], 'no page errors');
   console.log('bin e2e passed');
