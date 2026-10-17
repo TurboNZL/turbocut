@@ -58,7 +58,7 @@ export interface MenuItem {
 }
 
 /** A small themed pop-up menu next to `anchor`. Closes on a choice, an outside press or Escape. */
-export function popupMenu(anchor: HTMLElement, items: MenuItem[]): { close: () => void } {
+export function popupMenu(anchor: HTMLElement | { x: number; y: number }, items: MenuItem[]): { close: () => void } {
   document.querySelector('.popup-menu')?.remove();
   const menu = h('div', { class: 'bt-menu popup-menu tk-pop', role: 'menu' });
   const close = () => {
@@ -78,7 +78,7 @@ export function popupMenu(anchor: HTMLElement, items: MenuItem[]): { close: () =
     });
     menu.append(b);
   }
-  const r = anchor.getBoundingClientRect();
+  const r = 'getBoundingClientRect' in anchor ? anchor.getBoundingClientRect() : new DOMRect(anchor.x - 4, anchor.y, 0, 0); // a point (right-click) or an element
   document.body.append(menu);
   const w = menu.offsetWidth || 200;
   const hgt = menu.offsetHeight || 160;

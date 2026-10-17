@@ -49,6 +49,13 @@ export class Inspector {
     const kind = this.kind();
     const asset = this.store.project.assets[clip.assetId];
     this.el.append(h('h2', { class: 'bt-panel-title' }, clip.text ? 'Text layer' : (asset?.name ?? 'Clip')));
+    const multi = h('p', { class: 'hint' });
+    this.refreshers.push(() => {
+      const n = this.store.selectedIds.length;
+      multi.textContent = n > 1 ? `${n} clips are selected. These settings change the first one; drag, split, delete and mute act on all of them.` : '';
+      multi.style.display = n > 1 ? '' : 'none';
+    });
+    this.el.append(multi);
     if (clip.text) this.el.append(this.textSection(clip));
     for (const param of paramsFor(kind)) this.el.append(this.paramRow(param));
     if (kind === 'video' && !clip.text) this.el.append(this.speed());

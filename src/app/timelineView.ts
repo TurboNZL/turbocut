@@ -1,4 +1,6 @@
-import { clipEnd, moveLinked, trimEnd, trimStart } from '../core/timeline.ts';
+import { cueAt } from '../core/captions.ts';
+import { clipEnd, moveClips, moveLinked, trimEnd, trimStart } from '../core/timeline.ts';
+import type { Actions } from './actions.ts';
 import { drawWave } from '../media/waveform.ts';
 import type { Clip, Track } from '../core/types.ts';
 import { fmtTime, h, popupMenu } from './dom.ts';
@@ -15,6 +17,8 @@ export interface TimelineOptions {
     remove(trackId: string): void;
     add(kind: Track['kind']): void;
   };
+  /** The editing actions the right-click menus call. */
+  actions?: Actions;
   /** Called when a finger touches the timeline, so playback can stop before the user scrubs. */
   onUserTouch?: () => void;
 }
@@ -66,9 +70,9 @@ export class TimelineView {
     return frame * this.store.zoom;
   }
 
-  private snapPoints(except: Clip | null): number[] {
+  private snapPoints(except: Set<string>): number[] {
     const pts = [0, this.store.playhead];
-    for (const t of this.store.project.tracks) for (const c of t.clips) if (c !== except) pts.push(c.start, clipEnd(c));
+    for (const t of this.store.project.tracks) for (const c of t.clips) if (!except.has(c.id)) pts.push(c.start, clipEnd(c));
     return pts;
   }
 
@@ -156,8 +160,8 @@ export class TimelineView {
     let selectedClip: Clip | null = null;
     for (const clip of track.clips) {
       const asset = this.store.project.assets[clip.assetId];
-      const isSel = clip.id === selected;
-      if (isSel) selectedClip = clip;
+      const isSel = this.store.isSelected(clip.id);
+      if (clip.id === selected) selectedClip = clip;
       const el = h(
         'div',
         { class: `tl-clip${isSel ? ' sel' : ''}${clip.muted ? ' muted' : ''}${clip.text ? ' tl-text' : ''}`, 'data-start': clip.start, 'data-dur': clip.duration, style: { left: `${this.pad + this.px(clip.start)}px`, width: `${Math.max(2, this.px(clip.duration))}px` }, title: asset?.name },
@@ -166,6 +170,7 @@ export class TimelineView {
         Object.values(clip.keys).some((k) => k?.length) ? h('span', { class: 'tl-fx' }, '◆') : null,
       );
       if (track.kind === 'audio' && asset?.hasAudio && this.store.settings.waveforms) this.addWaveform(el, clip, asset.duration);
+      if (!this.touch) el.addEventListener('contextmenu', (e) => this.clipMenu(e, clip, track));
       if (this.touch) {
         // Unselected clips only react to a tap, so a finger dragged across them pans the timeline natively.
         el.addEventListener('click', () => this.store.select(clip.id));
@@ -182,6 +187,7 @@ export class TimelineView {
         row.append(handle);
       }
     }
+    if (!this.touch) row.addEventListener('contextmenu', (e) => e.target === row && this.trackAreaMenu(e, track.id));
     row.addEventListener('click', (e) => {
       if (e.target !== row) return;
       this.store.clearSelection();
@@ -207,6 +213,61 @@ export class TimelineView {
       const from = clip.sourceIn / p.fps;
       drawWave(canvas, peaks, from, from + (clip.duration * clip.speed) / p.fps, `hsl(${fg} / 0.55)`);
     });
+  }
+
+  /** Right-click on a clip: what can be done to it (and to the rest of the selection). */
+  private clipMenu(e: MouseEvent, clip: Clip, track: Track): void {
+    e.preventDefault();
+    e.stopPropagation();
+    const { store } = this;
+    const acts = this.opts.actions;
+    if (!acts) return;
+    if (!store.isSelected(clip.id)) store.select(clip.id);
+    const f = store.playhead;
+    const inside = f > clip.start && f < clipEnd(clip);
+    const many = store.selectedIds.length > 1;
+    const what = many ? `${store.selectedIds.length} clips` : 'clip';
+    popupMenu({ x: e.clientX, y: e.clientY }, [
+      { label: 'Split at the playhead', run: () => acts.split(), disabled: !inside && !many },
+      { label: 'Trim the start to the playhead', run: () => acts.trimToPlayhead('start'), disabled: !inside },
+      { label: 'Trim the end to the playhead', run: () => acts.trimToPlayhead('end'), disabled: !inside },
+      { label: clip.muted ? 'Unmute' : 'Mute', run: () => acts.toggleMute() },
+      { label: `Duplicate ${what}`, run: () => acts.duplicateSelection(), disabled: track.locked },
+      { label: `Delete ${what}`, run: () => acts.remove(false), disabled: track.locked },
+      { label: `Delete ${what} and close the gap`, run: () => acts.remove(true), disabled: track.locked },
+    ]);
+  }
+
+  /** Right-click on a caption. */
+  private cueMenu(e: MouseEvent, cueId: string): void {
+    e.preventDefault();
+    e.stopPropagation();
+    const { store } = this;
+    const acts = this.opts.actions;
+    if (!acts) return;
+    store.selectCue(cueId);
+    const cue = store.project.captions.find((c) => c.id === cueId);
+    const inside = !!cue && cueAt(store.project, store.playhead)?.id === cueId && store.playhead > cue.start;
+    popupMenu({ x: e.clientX, y: e.clientY }, [
+      { label: 'Split at the playhead', run: () => acts.split(), disabled: !inside },
+      { label: 'Go to this caption', run: () => cue && store.seek(cue.start) },
+      { label: 'Delete caption', run: () => acts.remove(false) },
+    ]);
+  }
+
+  /** Right-click on empty space of a track (or the caption row). */
+  private trackAreaMenu(e: MouseEvent, trackId: string): void {
+    e.preventDefault();
+    const { store } = this;
+    const acts = this.opts.actions;
+    if (!acts) return;
+    store.clearSelection();
+    store.setActiveTrack(trackId);
+    popupMenu({ x: e.clientX, y: e.clientY }, [
+      { label: trackId === CAPTION_TRACK ? 'Split the caption at the playhead' : 'Split this track at the playhead', run: () => acts.split() },
+      { label: 'Add a video track', run: () => acts.addTrack('video') },
+      { label: 'Add an audio track', run: () => acts.addTrack('audio') },
+    ]);
   }
 
   /** Small pop-up with what can be done to a track. */
@@ -238,8 +299,10 @@ export class TimelineView {
       this.store.setActiveTrack(CAPTION_TRACK);
     });
     const row = h('div', { class: `tl-track tl-caption${active ? ' active' : ''}`, 'data-track': CAPTION_TRACK }, head);
+    if (!this.touch) row.addEventListener('contextmenu', (e) => e.target === row && this.trackAreaMenu(e, CAPTION_TRACK));
     for (const cue of p.captions) {
       const el = h('div', { class: `tl-clip tl-cue${cue.id === this.store.selectedCue ? ' sel' : ''}`, 'data-start': cue.start, 'data-dur': cue.end - cue.start, style: { left: `${this.pad + this.px(cue.start)}px`, width: `${Math.max(2, this.px(cue.end - cue.start))}px` }, title: cue.text }, h('span', { class: 'tl-name' }, cue.text));
+      if (!this.touch) el.addEventListener('contextmenu', (e) => this.cueMenu(e, cue.id));
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         this.store.selectCue(cue.id);
@@ -294,16 +357,21 @@ export class TimelineView {
     e.preventDefault();
     const store = this.store;
     if (track.locked) return store.select(clip.id); // a locked track can be selected but not changed
+    // Shift + click selects the clips between; Ctrl/Cmd + click adds or removes one. Neither starts a drag.
+    if (!forced && e.shiftKey) return store.selectRange(clip.id);
+    if (!forced && (e.ctrlKey || e.metaKey)) return store.toggleSelect(clip.id);
     // Measure BEFORE selecting: selecting re-renders the timeline and detaches this element, and a detached element
     // measures as zero, which made every grab look like the end handle.
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const mode: 'move' | 'left' | 'right' = forced ?? (e.clientX - rect.left < EDGE ? 'left' : rect.right - e.clientX < EDGE ? 'right' : 'move');
-    store.select(clip.id);
+    // Pressing a clip that is already one of several keeps them all selected, so they can be dragged together.
+    const group = mode === 'move' && store.isSelected(clip.id) && store.selectedIds.length > 1;
+    if (!group) store.select(clip.id);
     const startX = e.clientX;
     const startY = e.clientY;
     const origStart = clip.start;
     const origEnd = clipEnd(clip);
-    const points = this.snapPoints(clip);
+    const points = this.snapPoints(new Set(group ? store.selectedIds : [clip.id]));
     const slop = this.touch ? 6 : 3;
     let began = false;
 
@@ -328,6 +396,15 @@ export class TimelineView {
         if (aSnapped && bSnapped) start = Math.abs(a - start) <= Math.abs(b - start) ? a : b;
         else if (aSnapped) start = a;
         else if (bSnapped) start = b;
+        if (group) {
+          // Several clips: they all move by the same amount and stay on their own tracks.
+          const ids = store.selectedIds;
+          const lowest = Math.min(...ids.map((id) => store.project.tracks.flatMap((t) => t.clips).find((c) => c.id === id)?.start ?? 0));
+          moveClips(store.project, ids, Math.max(start, cur.start - lowest) - cur.start);
+          this.showTip(ev.clientX, ev.clientY, `${ids.length} clips, ${fmtTime(cur.start, store.project.fps)}`);
+          store.emit('project');
+          return;
+        }
         // Which track is the pointer over? Only same-kind tracks accept the clip.
         const under = document.elementsFromPoint(ev.clientX, ev.clientY).find((n) => (n as HTMLElement).dataset?.track) as HTMLElement | undefined;
         const toTrack = under?.dataset.track && store.project.tracks.find((t) => t.id === under.dataset.track && t.kind === track.kind) ? under.dataset.track : undefined;
@@ -351,6 +428,7 @@ export class TimelineView {
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       this.tip.style.display = 'none';
+      if (group && !began) store.select(clip.id); // a plain click on one of several selects just that one
       if (this.dragging) {
         this.dragging = false;
         this.movePlayhead(true); // bring the edge you just trimmed back to the middle

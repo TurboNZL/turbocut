@@ -190,6 +190,56 @@ try {
   assert.equal((await st(page)).cues.length, 3);
   await page.close();
 
+  // ============================================================ 4b. several clips: Shift and Ctrl click, move together, right-click menu
+  page = await fresh();
+  await page.evaluate(() => { const a = window.turbocutApp; const s = a.store; s.clearSelection(); s.setActiveTrack(s.project.tracks[0].id); s.seek(60); a.actions.split(); s.seek(120); a.actions.split(); s.clearSelection(); });
+  await page.evaluate(() => window.turbocutApp.store.setZoom(3));
+  const vclips = page.locator('.tl-track.tl-video .tl-clip');
+  assert.equal(await vclips.count(), 3, 'three clips on V1 after two splits');
+  await vclips.nth(0).click();
+  await vclips.nth(2).click({ modifiers: ['Shift'] });
+  let ids = await page.evaluate(() => window.turbocutApp.store.selectedIds.length);
+  assert.equal(ids, 3, 'Shift + click selects the clips in between');
+  assert.equal(await page.locator('.tl-clip.sel').count(), 3 + 0, 'and highlights each (the picture ones; their sound is not selected)');
+  await vclips.nth(1).click({ modifiers: ['Control'] });
+  ids = await page.evaluate(() => window.turbocutApp.store.selectedIds.length);
+  assert.equal(ids, 2, 'Ctrl + click takes one out');
+  await vclips.nth(1).click({ modifiers: ['Control'] });
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedIds.length), 3, 'and puts it back');
+  // drag one of the three: all three move by the same amount (and their linked sound with them)
+  const starts = () => page.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((t) => t.clips.map((c) => `${t.name}:${c.start}`)).join(' '));
+  const before = await starts();
+  const box = await vclips.nth(1).boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const after = await starts();
+  console.log('group drag:', before, '->', after);
+  const shifts = new Set(after.split(' ').map((x, i) => Number(x.split(':')[1]) - Number(before.split(' ')[i].split(':')[1])));
+  assert.equal(shifts.size, 1, 'every clip moved by the same amount');
+  assert.ok([...shifts][0] > 0, 'to the right');
+  // Delete removes all selected
+  await page.keyboard.press('Delete');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((t) => t.clips).length), 0, 'Delete removes every selected clip with its sound');
+  await page.evaluate(() => window.turbocutApp.store.undo());
+  // Ctrl+A and the right-click menu
+  await page.locator('.tl-track.tl-video').first().click({ position: { x: 1500, y: 20 } });
+  await page.keyboard.press('Control+a');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedIds.length), 6, 'Ctrl+A selects every clip');
+  await page.evaluate(() => { const s = window.turbocutApp.store; s.clearSelection(); s.seek(30); });
+  await vclips.nth(0).click({ button: 'right' });
+  const items = await page.getByRole('menuitem').allTextContents();
+  console.log('clip menu:', items.join(' | '));
+  assert.ok(items.some((t) => /Split at the playhead/.test(t)) && items.some((t) => /Delete clip$/.test(t)) && items.some((t) => /Duplicate/.test(t)), 'right-click shows the clip menu');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedIds.length), 1, 'and selects the clip it was opened on');
+  await page.getByRole('menuitem', { name: 'Split at the playhead' }).click();
+  assert.equal(await vclips.count(), 4, 'Split from the menu cuts it');
+  await vclips.nth(0).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: /^Delete clip$/ }).click();
+  assert.equal(await vclips.count(), 3, 'Delete from the menu removes it');
+  await page.close();
+
   // ============================================================ 5. text layers: pop in, or stay still
   page = await fresh();
   await page.evaluate(() => { document.activeElement?.blur(); });

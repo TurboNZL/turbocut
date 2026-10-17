@@ -38,6 +38,7 @@ const store = new Store();
 const player = new Player(store);
 const actions = new Actions(store, player);
 const timeline = new TimelineView(store, {
+  actions,
   onUserTouch: () => store.playing && player.pause(),
   trackActions: { toggle: (id, what) => actions.toggleTrack(id, what), remove: (id) => actions.removeTrack(id), add: (kind) => actions.addTrack(kind) },
 });
@@ -68,6 +69,8 @@ hotkeys.register([
   act('Playback', 'toStart', 'Go to the start', ['Home'], () => store.seek(0)),
   act('Playback', 'toEnd', 'Go to the end', ['End'], () => store.seek(projectDuration(store.project))),
   act('Editing', 'split', 'Split at the playhead', ['S'], () => actions.split()),
+  act('Editing', 'selectAll', 'Select every clip', ['Ctrl+A'], () => store.selectAllClips()),
+  act('Editing', 'duplicate', 'Duplicate the selected clips', ['Ctrl+D'], () => actions.duplicateSelection()),
   act('Editing', 'deselect', 'Select nothing', ['Escape'], () => !document.querySelector('.dlg-backdrop, .popup-menu') && store.clearSelection()),
   act('Editing', 'delete', 'Delete the selection', ['Delete', 'Backspace'], () => actions.remove(false)),
   act('Editing', 'rippleDelete', 'Delete and close the gap', ['Shift+Delete', 'Shift+Backspace'], () => actions.remove(true)),
@@ -130,6 +133,7 @@ function drawLayout(): void {
   const l = applyLayout(findLayout(store.settings.layout, store.settings.layouts), narrowQuery.matches, touchQuery.matches);
   app.dataset.panel = l.panel;
   app.dataset.density = l.density;
+  app.dataset.tools = touchQuery.matches || narrowQuery.matches ? 'bottom' : 'top'; // tools: above the timeline with a mouse, under it for thumbs
   app.style.setProperty('--panel-w', `${l.panelWidth}px`);
   app.style.setProperty('--tl-h', `${l.timelineHeight}%`);
   tabBar.replaceChildren(...l.tabs.map((name) => h('button', { class: 'tab', role: 'tab', onclick: () => showTab(name, true) }, name)));

@@ -62,3 +62,42 @@ describe('splitCue', () => {
     expect(cueAt(p, 45)).toBeUndefined();
   });
 });
+
+import { addClip, createClip, moveClips } from '../src/core/timeline.ts';
+
+describe('moveClips', () => {
+  const three = () => {
+    const p = createProject({ fps: 30 });
+    const v = p.tracks[0]!;
+    const a = createClip('x', 0, 60);
+    const b = createClip('x', 60, 60);
+    const c = createClip('x', 200, 60);
+    for (const k of [a, b, c]) addClip(p, v.id, k);
+    return { p, v, a, b, c };
+  };
+
+  it('moves a group together, even into the space one of them leaves', () => {
+    const { p, a, b, c } = three();
+    expect(moveClips(p, [a.id, b.id], 30)).toBe(true);
+    expect([a.start, b.start, c.start]).toEqual([30, 90, 200]);
+  });
+
+  it('moves nothing when one of them would hit a clip that is not moving, or start before 0', () => {
+    const { p, a, b, c } = three();
+    expect(moveClips(p, [a.id, b.id], 100)).toBe(false); // b would end at 220, over c
+    expect(moveClips(p, [b.id, c.id], -70)).toBe(false); // b would start at -10
+    expect([a.start, b.start, c.start]).toEqual([0, 60, 200]);
+  });
+
+  it('takes linked partners along and keeps tracks sorted', () => {
+    const p = createProject({ fps: 30 });
+    const [v, au] = p.tracks as [typeof p.tracks[0], typeof p.tracks[0]];
+    const vc = { ...createClip('x', 0, 60), link: 'l1' };
+    const ac = { ...createClip('x', 0, 60), link: 'l1' };
+    addClip(p, v!.id, vc);
+    addClip(p, au!.id, ac);
+    expect(moveClips(p, [vc.id], 45)).toBe(true);
+    expect([vc.start, ac.start]).toEqual([45, 45]);
+    expect(moveClips(p, ['nope'], 5)).toBe(false);
+  });
+});
