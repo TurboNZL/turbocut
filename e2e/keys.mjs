@@ -12,12 +12,6 @@ const server = await createServer({ root, server: { port: 5204, strictPort: true
 await server.listen();
 const browser = await launch();
 const errors = [];
-/** The keyframe section is folded until wanted (it opens by itself for a clip that already has keys). */
-const openFold = async (page) => {
-  const open = await page.locator('.ks-fold').evaluate((d) => d.open);
-  if (!open) await page.locator('.ks-fold > summary').click();
-  await page.locator('.ks-row').first().waitFor();
-};
 try {
   const newPage = async () => {
     const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
@@ -66,22 +60,20 @@ try {
   await page.screenshot({ path: `${out}text-layer.png` });
 
   // ---- keyframe editor: X moves the text across the frame
-  await page.getByRole('tab', { name: 'Clip', exact: true }).click(); // keyframes now sit under the Clip settings, in a fold
-  await openFold(page);
-  assert.equal(await page.locator('.ks-row').count(), 7, 'a video layer shows its 7 animatable settings');
-  const xRow = page.locator('.ks-row[data-param="x"]');
+  await page.getByRole('tab', { name: 'Clip', exact: true }).click(); // each setting carries its own keyframe controls
+  assert.equal(await page.locator('.prop-block').count(), 7, 'a video layer shows its 7 animatable settings');
+  const xRow = page.locator('.prop-block[data-param="x"]');
+  const xKey = xRow.getByRole('button', { name: 'Keyframe X' });
   await page.evaluate(() => window.turbocutApp.store.seek(0));
-  await xRow.getByRole('button').first().click(); // key at frame 0
+  await xKey.click(); // key at frame 0
   await page.evaluate(() => window.turbocutApp.store.seek(60));
-  await xRow.getByRole('button').first().click(); // key at frame 60
-  assert.equal(await xRow.locator('.ks-key').count(), 2, 'two diamonds');
-  // value of the second key: move far to the right
-  await xRow.locator('.ks-key').nth(1).click();
-  await page.getByLabel('Keyframe value').fill('300');
-  await page.getByLabel('Keyframe value').dispatchEvent('change');
-  await xRow.locator('.ks-key').nth(0).click();
-  await page.getByLabel('Keyframe value').fill('-300');
-  await page.getByLabel('Keyframe value').dispatchEvent('change');
+  await xKey.click(); // key at frame 60
+  assert.equal(await xRow.locator('.kf-dot').count(), 2, 'two diamonds');
+  // value of each key: go to it and type the number (typing at a key's frame changes that key)
+  await page.evaluate(() => window.turbocutApp.store.seek(60));
+  await page.getByLabel('X', { exact: true }).fill('300');
+  await page.evaluate(() => window.turbocutApp.store.seek(0));
+  await page.getByLabel('X', { exact: true }).fill('-300');
   // frame 8, not 0: the bounce entrance starts at scale 0, so nothing is drawn on the very first frame
   const at0 = await look(page, 8), at30 = await look(page, 30), at60 = await look(page, 60);
   console.log(`text centre x at frames 8/30/60: ${at0.cx.toFixed(2)} ${at30.cx.toFixed(2)} ${at60.cx.toFixed(2)}`);
@@ -91,8 +83,8 @@ try {
   // dragging a diamond changes its time; Ctrl+Z puts it back
   const keyTimes = () => page.evaluate(() => window.turbocutApp.store.project.tracks[0].clips[0].keys.x.map((k) => k.t));
   assert.deepEqual(await keyTimes(), [0, 60]);
-  await xRow.locator('.ks-key').nth(1).scrollIntoViewIfNeeded(); // the dopesheet sits below the clip settings now
-  const d2 = await xRow.locator('.ks-key').nth(1).boundingBox();
+  await xRow.locator('.kf-dot').nth(1).scrollIntoViewIfNeeded();
+  const d2 = await xRow.locator('.kf-dot').nth(1).boundingBox();
   await page.mouse.move(d2.x + d2.width / 2, d2.y + d2.height / 2);
   await page.mouse.down();
   await page.mouse.move(d2.x + d2.width / 2 - 40, d2.y + d2.height / 2, { steps: 6 });
@@ -101,32 +93,61 @@ try {
   console.log('key times after dragging the second diamond left:', JSON.stringify(dragged));
   assert.equal(dragged[0], 0);
   assert.ok(dragged[1] < 60 && dragged[1] > 20, 'the diamond moved in time');
+  await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur()); // shortcut keys are not typed into a field
   await page.keyboard.press('Control+z');
   assert.deepEqual(await keyTimes(), [0, 60], 'undo restores the key time');
   await page.keyboard.press('Control+Shift+z');
   const afterRedo = await keyTimes();
   assert.ok(afterRedo[1] < 60);
 
-  // next / previous keyframe
+  // next / previous keyframe: they follow the setting you worked on last
   await page.evaluate(() => window.turbocutApp.store.seek(5));
+  await xRow.getByLabel('X', { exact: true }).focus();
+  await page.keyboard.press('Tab'); // leave the field so the shortcut keys are not typed into it
+  await page.locator('body').click({ position: { x: 5, y: 5 } }).catch(() => {});
+  await xRow.getByRole('button', { name: 'Next X keyframe' }).click();
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.playhead), afterRedo[1], 'the Next button jumps to the next X keyframe');
+  await xRow.getByRole('button', { name: 'Previous X keyframe' }).click();
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.playhead), 0, 'and Previous goes back');
+  assert.equal(await xRow.getByRole('button', { name: 'Previous X keyframe' }).isDisabled(), true, 'nothing before the first key');
+  // a key on Y in between: X keys skip it, Y keys find only it, and the keyboard follows the setting you touched last
+  const yRow = page.locator('.prop-block[data-param="y"]');
+  await page.evaluate(() => window.turbocutApp.store.seek(10));
+  await yRow.getByRole('button', { name: 'Keyframe Y' }).click();
+  await page.evaluate(() => window.turbocutApp.store.seek(0));
+  await yRow.getByRole('button', { name: 'Next Y keyframe' }).click();
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.playhead), 10, 'Y jumps to its own key');
+  await xRow.getByRole('button', { name: 'Next X keyframe' }).click();
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.playhead), afterRedo[1], 'X skips the Y key at frame 10');
+  await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur());
+  await page.keyboard.press(',');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.playhead), 0, 'the , key follows X, the setting touched last, not every setting (that would stop at 10)');
+  await page.keyboard.press(',');
+  assert.match(await page.locator('.status').textContent(), /No earlier X keyframe/);
+  await yRow.getByRole('button', { name: 'Keyframe Y' }).scrollIntoViewIfNeeded();
+  await yRow.getByLabel('Y', { exact: true }).focus();
+  await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur());
+  await page.evaluate(() => window.turbocutApp.store.seek(0));
+  await yRow.getByRole('button', { name: 'Next Y keyframe' }).click(); // touching Y makes it the active one
+  await page.evaluate(() => window.turbocutApp.store.seek(0));
   await page.keyboard.press('.');
-  assert.equal(await page.evaluate(() => window.turbocutApp.store.playhead), afterRedo[1], '. jumps to the next keyframe');
-  await page.keyboard.press(',');
-  assert.equal(await page.evaluate(() => window.turbocutApp.store.playhead), 0, ', jumps back to the previous one');
-  await page.keyboard.press(',');
-  assert.match(await page.locator('.status').textContent(), /No earlier keyframe/);
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.playhead), 10, 'now . follows Y');
+  // take the Y key away again so the rest of the test only deals with X
+  await yRow.getByRole('button', { name: 'Keyframe Y' }).click();
+  await page.evaluate(() => window.turbocutApp.store.seek(0));
+  await xRow.getByRole('button', { name: 'Previous X keyframe' }).scrollIntoViewIfNeeded();
   // easing "hold" makes it step instead of glide
-  await xRow.locator('.ks-key').nth(0).click();
-  await page.getByLabel('Easing to the next keyframe').selectOption('hold');
+  await xRow.locator('.kf-dot').nth(0).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: /Hold \(step\)/ }).click();
   const held = await look(page, Math.round(afterRedo[1] / 2));
   assert.ok(held.cx < 0.35, `with Hold the text stays at the first key until the next one (x=${held.cx.toFixed(2)})`);
   await page.screenshot({ path: `${out}keys-panel.png` });
 
   // deleting the last keyframe keeps its value as the static one
-  await xRow.locator('.ks-key').nth(1).click();
-  await page.getByRole('button', { name: 'Delete keyframe' }).click();
-  await xRow.locator('.ks-key').nth(0).click();
-  await page.getByRole('button', { name: 'Delete keyframe' }).click();
+  await xRow.locator('.kf-dot').nth(1).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Delete keyframe' }).click();
+  await xRow.locator('.kf-dot').nth(0).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Delete keyframe' }).click();
   assert.equal(await page.evaluate(() => window.turbocutApp.store.project.tracks[0].clips[0].keys.x), undefined, 'no keys left');
   assert.equal(await page.evaluate(() => window.turbocutApp.store.project.tracks[0].clips[0].base.x), -300, 'the last value stays as the position');
 
@@ -138,16 +159,13 @@ try {
   });
   const clipIds = await page.evaluate(() => window.turbocutApp.store.project.tracks.map((t) => t.clips[0].id));
   await page.evaluate((id) => window.turbocutApp.store.select(id), clipIds[0]);
-  await page.getByRole('tab', { name: 'Clip', exact: true }).click(); // keyframes now sit under the Clip settings, in a fold
-  await openFold(page);
-  const blurRow = page.locator('.ks-row[data-param="blur"]');
+  await page.getByRole('tab', { name: 'Clip', exact: true }).click(); // each setting carries its own keyframe controls
+  const blurRow = page.locator('.prop-block[data-param="blur"]');
   await page.evaluate(() => window.turbocutApp.store.seek(0));
-  await blurRow.getByRole('button').first().click();
+  await blurRow.getByRole('button', { name: 'Keyframe Blur' }).click();
   await page.evaluate(() => window.turbocutApp.store.seek(40));
-  await blurRow.getByRole('button').first().click();
-  await blurRow.locator('.ks-key').nth(1).click();
-  await page.getByLabel('Keyframe value').fill('60');
-  await page.getByLabel('Keyframe value').dispatchEvent('change');
+  await blurRow.getByRole('button', { name: 'Keyframe Blur' }).click();
+  await page.getByLabel('Blur', { exact: true }).fill('60');
   const sharp0 = await look(page, 0), sharp40 = await look(page, 40);
   console.log(`sharpness at 0 / 40 with blur keyed 0 -> 60: ${sharp0.sharp.toFixed(2)} / ${sharp40.sharp.toFixed(2)}`);
   assert.ok(sharp40.sharp < sharp0.sharp * 0.6, 'the picture blurs as the blur keyframes rise');
@@ -155,15 +173,13 @@ try {
 
   // audio volume: fades from full to silent over two seconds
   await page.evaluate((id) => window.turbocutApp.store.select(id), clipIds[1]);
-  assert.equal(await page.locator('.ks-row').count(), 1, 'an audio clip shows just Volume');
-  const volRow = page.locator('.ks-row[data-param="volume"]');
+  assert.equal(await page.locator('.prop-block').count(), 1, 'an audio clip shows just Volume');
+  const volRow = page.locator('.prop-block[data-param="volume"]');
   await page.evaluate(() => window.turbocutApp.store.seek(0));
-  await volRow.getByRole('button').first().click();
+  await volRow.getByRole('button', { name: 'Keyframe Volume' }).click();
   await page.evaluate(() => window.turbocutApp.store.seek(60));
-  await volRow.getByRole('button').first().click();
-  await volRow.locator('.ks-key').nth(1).click();
-  await page.getByLabel('Keyframe value').fill('0');
-  await page.getByLabel('Keyframe value').dispatchEvent('change');
+  await volRow.getByRole('button', { name: 'Keyframe Volume' }).click();
+  await page.getByLabel('Volume %', { exact: true }).fill('0');
   const exp = await page.evaluate(() => window.turbocutApp.exportForTest());
   const file = `${out}keys-volume.${exp.container}`;
   writeFileSync(file, Buffer.from(exp.b64, 'base64'));

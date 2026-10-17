@@ -16,7 +16,6 @@ import { Hotkeys, type HotkeyAction } from './hotkeys.ts';
 import { openHome } from './home.ts';
 import { Inspector } from './inspector.ts';
 import { applyLayout, findLayout, type TabName } from './layout.ts';
-import { KeysPanel } from './keysPanel.ts';
 import { icon, setIcon, type IconName } from './icons.ts';
 import { pickFiles, platform } from './platform.ts';
 import { Player } from './player.ts';
@@ -44,7 +43,6 @@ const timeline = new TimelineView(store, {
 });
 const inspector = new Inspector(store);
 const captions = new CaptionsPanel(store);
-const keys = new KeysPanel(store, (dir) => inspector.jumpKey(dir));
 const hotkeys = new Hotkeys(() => store.settings.hotkeys, (o) => store.updateSettings({ hotkeys: o }));
 const touch = timeline.touch;
 const settings = (tab?: SettingsTab) => openSettings({ store, hotkeys, touch }, tab);
@@ -105,7 +103,7 @@ zoom.addEventListener('input', () => store.setZoom(Math.exp(Number(zoom.value)))
 store.on('view', () => (zoom.value = String(Math.log(store.zoom))));
 const status = h('div', { class: 'status', role: 'status' });
 
-const tabs: Record<string, HTMLElement> = { Clip: h('div', { class: 'clip-tab' }, inspector.el, keys.el), Media: bin.el, Captions: captions.el, Project: projectPanel() };
+const tabs: Record<string, HTMLElement> = { Clip: h('div', { class: 'clip-tab' }, inspector.el), Media: bin.el, Captions: captions.el, Project: projectPanel() };
 const tabBar = h('div', { class: 'tabs', role: 'tablist' });
 const tabBody = h('div', { class: 'tab-body' });
 let activeTab = 'Clip';
