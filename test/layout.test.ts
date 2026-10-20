@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AUTO_LAYOUT, BUILTIN_LAYOUTS, applyLayout, cleanLayout, column, exportLayout, findLayout, importLayout, layoutTabs, normalizeSizes, uniqueDivisionName, uniqueLayoutName } from '../src/app/layout.ts';
 import { DEFAULT_SETTINGS, mergeSettings } from '../src/app/settings.ts';
+import { previewStride } from '../src/app/player.ts';
 
 describe('layouts', () => {
   const auto = BUILTIN_LAYOUTS[0]!;
@@ -102,6 +103,11 @@ describe('layouts', () => {
     // "top" is in line on a computer, and a row just under the play bar (above the panel) on a phone
     expect(applyLayout({ ...auto, tools: 'top' }, false, false).tools).toBe('inline');
     expect(applyLayout({ ...auto, tools: 'top' }, true, true).tools).toBe('stage');
+    expect(applyLayout({ ...auto, tools: 'row' }, false, false).tools).toBe('stage');
+    expect(applyLayout({ ...auto, tools: 'left' }, false, false).tools).toBe('left');
+    expect(applyLayout({ ...auto, tools: 'right' }, false, true).tools).toBe('bottom'); // a phone has no room for a column
+    expect(cleanLayout({ name: 'x', tools: 'right' })?.tools).toBe('right');
+    expect(cleanLayout({ name: 'x', tools: 'nonsense' })?.tools).toBe('auto');
   });
 });
 
@@ -124,6 +130,19 @@ describe('settings that used to be layout parts', () => {
     const s = mergeSettings({ previewScale: 50, previewFps: 'half' }, DEFAULT_SETTINGS(false));
     expect([s.previewScale, s.previewFps]).toEqual([50, 'half']);
     const bad = mergeSettings({ previewScale: 333, previewFps: 'turbo' }, DEFAULT_SETTINGS(false));
-    expect([bad.previewScale, bad.previewFps]).toEqual(['auto', 'full']);
+    expect([bad.previewScale, bad.previewFps]).toEqual(['auto', 'auto']);
+  });
+});
+
+describe('preview rate and settings upgrade', () => {
+  it('automatic: half of a 60 fps project on a touch screen, every frame elsewhere', () => {
+    expect(previewStride('auto', 60, true)).toBe(2);
+    expect(previewStride('auto', 30, true)).toBe(1);
+    expect(previewStride('auto', 60, false)).toBe(1);
+    expect(previewStride('third', 60, true)).toBe(3);
+  });
+  it('a stored "full" from before version 3 was the old default, not a choice', () => {
+    expect(mergeSettings({ previewFps: 'full' }, DEFAULT_SETTINGS(true)).previewFps).toBe('auto');
+    expect(mergeSettings({ previewFps: 'full', settingsVersion: 3 }, DEFAULT_SETTINGS(true)).previewFps).toBe('full');
   });
 });

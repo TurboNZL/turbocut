@@ -59,12 +59,19 @@ try {
 
   // a preset is never edited: the first change saves a copy of it and switches to the copy
   assert.deepEqual(await saved(), []);
-  await pick(page, 'Editing tools', 'float', dlg());
+  await pick(page, 'Position', 'float', dlg());
   const mine = await saved();
   assert.deepEqual(mine.map((l) => l.name), ['Bottom sheet (edited)'], 'editing a preset made your own copy');
   assert.equal(mine[0].tools, 'float');
   assert.equal((await attrs()).tools, 'float');
-  await pick(page, 'Editing tools', 'auto', dlg());
+  await pick(page, 'Position', 'left', dlg());
+  assert.equal((await attrs()).tools, 'left');
+  const rail = await box('.stage > .edit-bar');
+  const prev = await box('.stage .preview');
+  assert.ok(rail.x + rail.w <= prev.x + 1 && rail.h > rail.w, 'a column left of the preview');
+  await pick(page, 'Position', 'right', dlg());
+  assert.ok((await box('.stage > .edit-bar')).x >= (await box('.stage .preview')).x, 'a column right of the preview');
+  await pick(page, 'Position', 'auto', dlg());
   assert.equal((await attrs()).tools, 'inline', 'automatic is in line with the play button on a computer');
 
   // ---- panels: add one, name it, move it to the left, put a tab in it

@@ -6,6 +6,7 @@ interface DesktopWindow {
   control(action: 'minimize' | 'maximize' | 'close'): void;
   setCustomFrame(on: boolean): Promise<void>;
   onState(fn: (maximized: boolean) => void): void;
+  setBackground?(colour: string): void;
 }
 
 /** The desktop shell's window controls, or undefined in a browser and the Android app. */
@@ -31,5 +32,18 @@ export function windowFrame(): HTMLElement | null {
   close.addEventListener('dblclick', stop);
   const bar = h('div', { class: 'bt-wf', ondblclick: () => w.control('maximize') }, h('span', { class: 'bt-wf-title' }, 'TurboCut'), h('div', { class: 'bt-wf-btns' }, min, maxBtn, close));
   document.body.classList.add('has-frame');
+  syncWindowBackground(w);
+  new MutationObserver(() => syncWindowBackground(w)).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-ui', 'data-palette', 'class', 'style'] });
   return bar;
+}
+
+/** Tell the shell the page colour, as #rrggbb, so the window behind the page matches the look. */
+function syncWindowBackground(w: DesktopWindow): void {
+  const probe = document.createElement('i');
+  probe.style.cssText = 'position:fixed;width:0;height:0;background:hsl(var(--bg))';
+  document.body.append(probe);
+  const m = getComputedStyle(probe).backgroundColor.match(/\d+(\.\d+)?/g);
+  probe.remove();
+  if (!m || m.length < 3) return;
+  w.setBackground?.('#' + m.slice(0, 3).map((n) => Math.round(Number(n)).toString(16).padStart(2, '0')).join(''));
 }

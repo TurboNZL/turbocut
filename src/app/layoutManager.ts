@@ -9,7 +9,10 @@ const DENSITIES: [Density, string][] = [['auto', 'Automatic (large on a touch sc
 const TOOLS: [ToolsPlacement, string][] = [
   ['auto', 'Automatic (in line with the play button; under the timeline on a phone)'],
   ['top', 'In line with the play button (a row under it on a phone)'],
+  ['row', 'A row of their own under the play button'],
   ['bottom', 'Under the timeline'],
+  ['left', 'A column left of the preview (not on a phone)'],
+  ['right', 'A column right of the preview (not on a phone)'],
   ['float', 'Floating buttons at the bottom right'],
 ];
 
@@ -28,6 +31,7 @@ export function schematic(l: Layout): SVGElement {
   const H = 76;
   const head = 6;
   const tools = l.tools === 'bottom' ? 5 : 0;
+  const rail = l.tools === 'left' || l.tools === 'right' ? 5 : 0;
   const rest = H - head - tools;
   const tl = Math.round((rest * l.timelineHeight) / 100);
   const main = rest - tl;
@@ -44,7 +48,10 @@ export function schematic(l: Layout): SVGElement {
     const right = column(l, 'right');
     const lw = left.length ? wOf(l.leftWidth) : 0;
     const rw = right.length ? wOf(l.panelWidth) : 0;
-    r(2 + (lw ? lw + 2 : 0), head + 1, W - 4 - (lw ? lw + 2 : 0) - (rw ? rw + 2 : 0), main - 2, 'sc-stage');
+    const sx = 2 + (lw ? lw + 2 : 0);
+    const sw = W - 4 - (lw ? lw + 2 : 0) - (rw ? rw + 2 : 0);
+    r(sx + (l.tools === 'left' ? rail + 1.5 : 0), head + 1, sw - (rail ? rail + 1.5 : 0), main - 2, 'sc-stage');
+    if (rail) r(l.tools === 'left' ? sx : sx + sw - rail, head + 1, rail, main - 2, 'sc-tools');
     const col = (divs: Division[], x: number, w: number) => {
       const gap = 1.5;
       const total = main - 2 - gap * (divs.length - 1);
@@ -204,6 +211,9 @@ export function layoutManager(store: Store, redraw: () => void): HTMLElement {
   const autoSwitch = h('input', { type: 'checkbox', checked: s.autoSwitch, 'aria-label': 'Switch tabs when you select something' });
   autoSwitch.addEventListener('change', () => store.updateSettings({ autoSwitch: autoSwitch.checked }));
 
+  const dock = h('input', { type: 'checkbox', checked: s.dock, 'aria-label': 'Bottom dock with Home, Edit and Settings' });
+  dock.addEventListener('change', () => (store.updateSettings({ dock: dock.checked }), redraw()));
+
   return h('div', { class: 'stack layout-manager' },
     panel('Layouts',
       h('p', { class: 'hint' }, 'Pick one. Drag the bars between the preview, the panels and the timeline to resize them; any change saves your own copy, the presets stay as they are.'),
@@ -214,13 +224,17 @@ export function layoutManager(store: Store, redraw: () => void): HTMLElement {
       ...(custom ? [] : [h('p', { class: 'hint' }, `Changing anything here saves your own copy of “${active.name}”.`)]),
       h('div', { class: 'divisions' }, ...active.divisions.map(panelRow)),
       h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: addPanel }, 'Add a panel'))),
+    panel('Editing tools',
+      h('p', { class: 'hint' }, 'Trim, Split, Delete, Text, Snapping and the timeline zoom. Put them where your hand is: beside the play button, in a row of their own, under the timeline, in a column beside the preview, or as floating buttons.'),
+      ...(custom ? [] : [h('p', { class: 'hint' }, `Changing this saves your own copy of “${active.name}”.`)]),
+      select('Position', TOOLS, active.tools, (v) => change({ tools: v }))),
     panel('Panel behaviour',
+      h('label', { class: 'setting' }, dock, h('span', {}, 'Bottom dock with Home, Edit and Settings', h('small', { class: 'hint' }, 'A bar along the bottom of the window, drawn by the look. Settings opens as a page instead of a window. The same switch is in Settings → Look.'))),
       field('Tab that opens first', openTab),
       h('label', { class: 'setting' }, autoSwitch, h('span', {}, 'Switch tabs when you select something', h('small', { class: 'hint' }, 'Selecting a clip shows Clip; selecting a caption shows Captions. Turn this off to stay where you are.')))),
     panel(custom ? `Adjust “${active.name}”` : `Adjust (saves your own copy of “${active.name}”)`,
       ...(custom ? [field('Name', nameBox)] : []),
       select('Panel position', PANELS, active.panel, (v) => change({ panel: v })),
-      select('Editing tools', TOOLS, active.tools, (v) => change({ tools: v })),
       select('Control size', DENSITIES, active.density, (v) => change({ density: v })),
       slider('Right panel width', active.panelWidth, LIMITS.panelWidth, ' px', 'panelWidth'),
       slider('Left panel width', active.leftWidth, LIMITS.panelWidth, ' px', 'leftWidth'),

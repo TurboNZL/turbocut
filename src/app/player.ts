@@ -6,9 +6,17 @@ import { keepAwake } from './platform.ts';
 import type { PreviewFps } from './settings.ts';
 import type { Store } from './store.ts';
 
-/** Longest edge of the preview canvas when the size is left on automatic. Smaller than the project to keep editing light; export is always full size. */
+/** Longest edge of the preview canvas when the size is left on automatic. Smaller than the project to keep editing light; export is always full size. A phone has a small screen and a slow decoder: it gets less. */
 const PREVIEW_MAX = 960;
-const STRIDE: Record<PreviewFps, number> = { full: 1, half: 2, third: 3, quarter: 4 };
+const PREVIEW_MAX_TOUCH = 640;
+const STRIDE: Record<Exclude<PreviewFps, 'auto'>, number> = { full: 1, half: 2, third: 3, quarter: 4 };
+const touchScreen: { matches: boolean } = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : { matches: false };
+
+/** How many project frames pass per preview frame. Automatic on a touch screen: 30 draws a second at most, which is what phone decoders keep up with. */
+export function previewStride(choice: PreviewFps, fps: number, touch: boolean): number {
+  if (choice !== 'auto') return STRIDE[choice];
+  return touch && fps > 32 ? Math.round(fps / 30) : 1;
+}
 const AUDIO_WINDOW = 6; // seconds mixed ahead of the playhead
 
 /**
@@ -53,7 +61,7 @@ export class Player {
   scale(): number {
     const { width, height } = this.store.project;
     const choice = this.store.settings.previewScale;
-    return choice === 'auto' ? Math.min(1, PREVIEW_MAX / Math.max(width, height)) : choice / 100;
+    return choice === 'auto' ? Math.min(1, (touchScreen.matches ? PREVIEW_MAX_TOUCH : PREVIEW_MAX) / Math.max(width, height)) : choice / 100;
   }
 
   /** Match the canvas to the project's aspect ratio at preview size. */
@@ -119,7 +127,7 @@ export class Player {
     const now = () => startSec + (performance.now() - wall0) / 1000 - latency;
     void this.scheduleAudio(ac, token, startSec, clockStart);
 
-    const step = STRIDE[store.settings.previewFps] ?? 1; // a lower preview rate draws and decodes only every step-th frame
+    const step = previewStride(store.settings.previewFps, p.fps, touchScreen.matches); // a lower preview rate draws and decodes only every step-th frame
     let feed = store.lib.sequential(p, startFrame, step);
     let next = startFrame; // next frame the feed will deliver
     while (this.run === token) {

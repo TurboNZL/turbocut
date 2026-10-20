@@ -90,3 +90,9 @@ The vanilla CommonJS .deb updater (`electron/updater.cjs`, `electron/debInstall.
 - **Home screen as two snapping screens** (`home.ts`, `.home { scroll-snap-type: y mandatory }`, `.home-page { flex: 0 0 100% }`): what you start with first, the rest below the edge.
 - **Cancel that cancels**: race the work against the abort signal and reset the UI at once; also pass the signal into the long loops (`renderPcm16k`) and check `signal.aborted` before listening for an `abort` event (an already-aborted signal never fires it).
 - **Frame-stride playback** (`MediaLibrary.sequential(p, start, stride)`): a lower preview frame rate decodes only every stride-th frame instead of decoding all and drawing some.
+
+## 6. Added 2026-10-20 (ready to port)
+- **Touch-aware preview defaults** (`player.ts` `previewStride`, `PREVIEW_MAX_TOUCH`): automatic preview is 640 px and 30 draws a second on a coarse pointer; the inspector does not refresh per frame during playback on a phone.
+- **Dialog padding for rounded looks** (`.dlg { --dlg-pad }` in `styles.css`): body and footer padding follow `--win-r`; the footer rule sits in `:where()` so a look's own footer still wins.
+- **Window frame backing** (`.bt-wf::before` plus the shell's `setBackgroundColor` following `--bg`): a look whose title bar is transparent no longer shows the dark window colour as a bar. Not run in real Electron here.
+- **Tool bar positions** (`ToolsPlacement` `row`, `left`, `right`) and `@container stage` rules that wrap the bar when the stage is narrow.

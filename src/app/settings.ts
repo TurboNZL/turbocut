@@ -19,13 +19,13 @@ export type CaptionGrouping = 'auto' | 'short' | 'sentence';
 
 /** How sharp the preview is drawn: a share of the project's size. `auto` follows the device (half on a phone, full elsewhere). */
 export type PreviewScale = 'auto' | 100 | 75 | 50 | 25;
-/** How many frames the preview draws a second while playing: a share of the project's rate. */
-export type PreviewFps = 'full' | 'half' | 'third' | 'quarter';
+/** How many frames the preview draws a second while playing: a share of the project's rate. `auto` is half of a 50 or 60 fps project on a touch screen, every frame elsewhere. */
+export type PreviewFps = 'auto' | 'full' | 'half' | 'third' | 'quarter';
 export const PREVIEW_SCALES: PreviewScale[] = ['auto', 100, 75, 50, 25];
-export const PREVIEW_FPS: PreviewFps[] = ['full', 'half', 'third', 'quarter'];
+export const PREVIEW_FPS: PreviewFps[] = ['auto', 'full', 'half', 'third', 'quarter'];
 
 export interface Settings {
-  /** 2: the letter-hole default became 'filled'; older stored 'rim' values came from the old default and are upgraded once. */
+  /** 2: the letter-hole default became 'filled'; older stored 'rim' values came from the old default and are upgraded once. 3: the preview frame rate became 'auto'; a stored 'full' from before was the old default. */
   settingsVersion: number;
   /** Clips and edges jump to the playhead and to each other when dragged close. */
   snapping: boolean;
@@ -62,7 +62,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS = (touch: boolean): Settings => ({
-  settingsVersion: 2,
+  settingsVersion: 3,
   snapping: true,
   waveforms: !touch, // a phone has less to spare
   videoOnTop: true,
@@ -78,7 +78,7 @@ export const DEFAULT_SETTINGS = (touch: boolean): Settings => ({
   openTab: 'Media',
   autoSwitch: true,
   previewScale: 'auto',
-  previewFps: 'full',
+  previewFps: 'auto',
   transcribe: { lang: 'english', model: recommendedModel(touch), compute: 'auto', modelChosen: false, grouping: 'auto' },
   hotkeys: {},
 });
@@ -92,7 +92,7 @@ export function mergeSettings(stored: unknown, defaults: Settings): Settings {
   const s = stored as Record<string, any>;
   for (const k of ['snapping', 'waveforms', 'videoOnTop', 'autoCheckUpdates', 'showHome', 'dock', 'autoSwitch', 'shareEnabled'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
   if (typeof s.defaultFont === 'string' && s.defaultFont.trim()) out.defaultFont = s.defaultFont.trim();
-  if (s.counters === 'filled' || s.counters === 'rim' || s.counters === 'clear') out.counters = s.counters === 'rim' && s.settingsVersion !== 2 ? 'filled' : s.counters;
+  if (s.counters === 'filled' || s.counters === 'rim' || s.counters === 'clear') out.counters = s.counters === 'rim' && !(s.settingsVersion >= 2) ? 'filled' : s.counters;
   if (Array.isArray(s.layouts)) out.layouts = s.layouts.map((l: unknown) => cleanLayout(l)).filter((l: Layout | null): l is Layout => !!l).slice(0, 30);
   if (typeof s.layout === 'string') out.layout = s.layout;
   // The dock used to be a layout ("Bottom dock"); it is a setting now.
@@ -100,7 +100,8 @@ export function mergeSettings(stored: unknown, defaults: Settings): Settings {
   if (typeof s.deviceName === 'string') out.deviceName = s.deviceName.trim().slice(0, 60);
   if ((TAB_NAMES as readonly string[]).includes(s.openTab)) out.openTab = s.openTab;
   if (PREVIEW_SCALES.includes(s.previewScale)) out.previewScale = s.previewScale;
-  if (PREVIEW_FPS.includes(s.previewFps)) out.previewFps = s.previewFps;
+  // Before version 3 'full' was the default, not a choice: it made phones draw every frame of a 60 fps project.
+  if (PREVIEW_FPS.includes(s.previewFps)) out.previewFps = s.previewFps === 'full' && !(s.settingsVersion >= 3) ? 'auto' : s.previewFps;
   if (s.transcribe && typeof s.transcribe === 'object') {
     const t = s.transcribe;
     for (const k of ['lang', 'model'] as const) if (typeof t[k] === 'string') out.transcribe[k] = t[k];

@@ -166,10 +166,10 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
     h('option', { value: 'audio', selected: !s.videoOnTop }, 'Audio tracks on top, video below'));
   trackOrder.addEventListener('change', () => store.updateSettings({ videoOnTop: trackOrder.value === 'video' }));
 
-  const SCALE_LABEL: Record<string, string> = { auto: 'Automatic (up to 960 px on the long side)', '100': 'Full size of the project', '75': '75 %', '50': '50 %', '25': '25 %, draft' };
+  const SCALE_LABEL: Record<string, string> = { auto: 'Automatic (up to 960 px on the long side, 640 px on a phone)', '100': 'Full size of the project', '75': '75 %', '50': '50 %', '25': '25 %, draft' };
   const previewScale = h('select', { class: 'input', 'aria-label': 'Preview sharpness' }, ...PREVIEW_SCALES.map((v) => h('option', { value: String(v), selected: s.previewScale === v }, SCALE_LABEL[String(v)]!)));
   previewScale.addEventListener('change', () => store.updateSettings({ previewScale: (previewScale.value === 'auto' ? 'auto' : Number(previewScale.value)) as PreviewScale }));
-  const FPS_LABEL: Record<PreviewFps, string> = { full: 'Every frame', half: 'Half of the frames', third: 'A third of the frames', quarter: 'A quarter of the frames' };
+  const FPS_LABEL: Record<PreviewFps, string> = { auto: 'Automatic (30 a second on a phone, every frame on a computer)', full: 'Every frame', half: 'Half of the frames', third: 'A third of the frames', quarter: 'A quarter of the frames' };
   const previewFps = h('select', { class: 'input', 'aria-label': 'Preview frame rate' }, ...PREVIEW_FPS.map((v) => h('option', { value: v, selected: s.previewFps === v }, FPS_LABEL[v])));
   previewFps.addEventListener('change', () => store.updateSettings({ previewFps: previewFps.value as PreviewFps }));
 

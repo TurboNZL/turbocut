@@ -53,6 +53,10 @@ function createWindow() {
 ipcMain.on('window:info', (e) => {
   e.returnValue = loadFrame(app.getPath('userData'));
 });
+// The window's own colour (what shows behind the page) follows the look, so a window that is not maximised never shows a dark bar.
+ipcMain.on('window:background', (e, colour) => {
+  if (typeof colour === 'string' && /^#[0-9a-f]{6}$/i.test(colour)) BrowserWindow.fromWebContents(e.sender)?.setBackgroundColor(colour);
+});
 ipcMain.on('window:control', (e, action) => {
   const w = BrowserWindow.fromWebContents(e.sender);
   if (!w) return;
