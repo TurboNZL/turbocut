@@ -126,7 +126,7 @@ export async function resolveClip(slug: string, fetchImpl: typeof fetch = fetch,
     res = await fetchImpl(TWITCH_GQL, { method: 'POST', headers: { 'Client-ID': TWITCH_CLIENT_ID, 'Content-Type': 'text/plain;charset=UTF-8' }, body: clipRequestBody(slug), signal });
   } catch (e) {
     if (signal?.aborted) throw e;
-    throw new Error('Could not reach Twitch from this page. A browser may block the request; the desktop app can do it.');
+    throw new Error(`Could not reach Twitch from this page (${e instanceof Error ? e.message : e}). A browser may block the request; the desktop app can do it.`);
   }
   if (!res.ok) throw new Error(`Twitch answered ${res.status}.`);
   return parseClipResponse(slug, await res.json());
@@ -139,7 +139,7 @@ export async function downloadClip(c: ResolvedClip, onProgress?: (f?: number) =>
     res = await fetchImpl((c.sources[rank] ?? c.sources[0]!).url, { signal });
   } catch (e) {
     if (signal?.aborted) throw e;
-    throw new Error('Could not download the clip from this page. A browser may block it; the desktop app can do it.');
+    throw new Error(`Could not download the clip from this page (${e instanceof Error ? e.message : e}). A browser may block it; the desktop app can do it.`);
   }
   if (!res.ok || !res.body) throw new Error(`Twitch answered ${res.status} for the video file.`);
   const total = num(res.headers.get('content-length'));
