@@ -52,7 +52,7 @@ importers:
         specifier: ^1.64.0
         version: 1.64.0
       turbothemes:
-        specifier: github:TurboNZL/turboengine#path:/themes
+        specifier: git+https://github.com/TurboNZL/turboengine.git#path:/themes
         version: https://codeload.github.com/TurboNZL/turboengine/tar.gz/c7950820b2738bb3b90a9e8f1cb37f9d80c0782d#path:/themes
       typescript:
         specifier: ^5.7.2
