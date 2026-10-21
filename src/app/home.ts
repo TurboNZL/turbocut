@@ -56,7 +56,7 @@ export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement }
   };
   const startCard = (title: string, sub: string, w: number, hh: number) =>
     h('button', { class: 'home-start btn', onclick: () => start(w, hh) },
-      h('span', { class: 'home-frame', 'aria-hidden': 'true' }, h('span', { class: 'home-ratio', style: { aspectRatio: `${w} / ${hh}` } })),
+      h('span', { class: 'home-frame', 'aria-hidden': 'true' }, h('span', { class: 'home-ratio', style: `--r: ${(w / hh).toFixed(4)}` })),
       h('strong', {}, title), h('small', { class: 'hint' }, sub));
 
   // ---- recent projects

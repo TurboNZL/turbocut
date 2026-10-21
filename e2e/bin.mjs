@@ -1,6 +1,6 @@
 // Media bin and multi-track editing in a desktop browser.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
 import { launch } from './browser.mjs';
@@ -28,6 +28,21 @@ try {
   let t = await tracks();
   assert.deepEqual(t.find((x) => x.name === 'V1').clips, [[0, 180, 1]], 'first import placed with its sound, linked');
   assert.equal(await app(() => Object.keys(window.turbocutApp.store.project.assets).length), 3, 'three assets in the bin');
+
+  // A video this device cannot decode (H.264 in open-source Chromium, as with a Twitch clip) used to import "fine" and show black:
+  // the import must say so and leave the bin alone. Where the device can decode H.264 the clip is simply added.
+  if (existsSync(`${root}e2e/.media/h264.mp4`)) {
+    const canH264 = await app(async () => (await VideoDecoder.isConfigSupported({ codec: 'avc1.640028', codedWidth: 640, codedHeight: 360 })).supported);
+    await importFile('/e2e/.media/h264.mp4', 'twitch-like.mp4');
+    const status = await app(() => window.turbocutApp.store.status);
+    const count = await app(() => Object.keys(window.turbocutApp.store.project.assets).length);
+    if (canH264) assert.equal(count, 4, 'H.264 decodes here, so it is imported');
+    else {
+      assert.equal(count, 3, 'an undecodable video is not added to the bin');
+      assert.match(status, /twitch-like\.mp4.*cannot decode/, 'the import says why');
+    }
+    if (canH264) await app(() => { const p = window.turbocutApp.store; for (const id of Object.keys(p.project.assets)) if (p.project.assets[id].name === 'twitch-like.mp4') p.edit((x) => delete x.assets[id]); });
+  } else console.log('no h264.mp4: skipped the undecodable-video check');
 
   // ---- 2. the Media tab lists them with thumbnails
   await page.getByRole('tab', { name: 'Media', exact: true }).click();
