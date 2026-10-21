@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('turbocut', {
     customFrame: ipcRenderer.sendSync('window:info'),
     control: (action) => ipcRenderer.send('window:control', action),
     setCustomFrame: (on) => ipcRenderer.invoke('window:set-frame', on),
+    setBackground: (colour) => ipcRenderer.send('window:background', colour),
     onState: (fn) => ipcRenderer.on('window:state', (_e, max) => fn(max)),
   },
   twitch: {

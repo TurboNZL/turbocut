@@ -12,7 +12,7 @@ Pinned to TurboNZL/turboengine (`.turboengine.json`; `docs/development/ENGINE.md
 ## User preferences
 - Don't waste their usage. Fact-check and double-check yourself; use web search liberally.
 - Reply in normal capitalised prose, not lowercase or slang, even when they write casually.
-- Do not create a pull request unless asked. Commit trailers: `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` and the `Claude-Session` line the harness provides.
+- Do not create a pull request by hand unless asked; `.github/workflows/auto-pr.yml` opens one for every pushed branch, and that is wanted. Commit trailers: `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` and the `Claude-Session` line the harness provides.
 
 ## Decisions (don't re-ask)
 - One TypeScript web app; Electron for Windows and Ubuntu, Capacitor for Android. No platform-specific app code.

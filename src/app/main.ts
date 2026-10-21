@@ -273,7 +273,7 @@ const transportMain = h('div', { class: 'transport-main' },
 const transport = h('div', { class: 'transport' }, transportMain);
 
 // The editing tools. One bar, moved to where the layout wants it (see `placeTools`): in line with the play button, a row under it,
-// under the timeline, or as round buttons floating at the bottom right.
+// under the timeline, in a column beside the preview, or as round buttons floating at the bottom right.
 const snapBtn = keyTip(h('button', { class: 'btn btn-ghost tool', 'aria-label': 'Snapping', onclick: () => actions.toggleSnapping() }, icon('magnet')), 'Snapping', 'snap');
 const syncSnap = () => {
   snapBtn.setAttribute('aria-pressed', String(store.settings.snapping));
@@ -306,8 +306,8 @@ fabToggle.addEventListener('click', () => {
   fabToggle.setAttribute('aria-expanded', String(!open));
 });
 /** Put the tool bar where the layout wants it. Moving the same element keeps its listeners and state. */
-function placeTools(where: 'inline' | 'stage' | 'bottom' | 'float'): void {
-  const dest = where === 'inline' ? transport : where === 'stage' ? stage : app;
+function placeTools(where: 'inline' | 'stage' | 'bottom' | 'left' | 'right' | 'float'): void {
+  const dest = where === 'inline' ? transport : where === 'stage' || where === 'left' || where === 'right' ? stage : app;
   if (editBar.parentElement !== dest) dest.append(editBar);
 }
 

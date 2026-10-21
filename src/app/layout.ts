@@ -12,10 +12,12 @@ export type PanelPlacement = 'auto' | 'sheet';
 export type Density = 'auto' | 'compact' | 'normal' | 'large';
 /**
  * Where Split, Trim and the other editing tools sit. `auto`: in line with the play button on a computer, under the timeline on a
- * phone. `top`: in line with the play button, or on a phone in a row just under it (above the panel). `bottom`: under the timeline.
- * `float`: round buttons floating at the bottom right of the screen.
+ * phone. `top`: in line with the play button, or on a phone in a row just under it (above the panel). `row`: always a row of their
+ * own under the play button. `bottom`: under the timeline. `left` / `right`: a column beside the preview (a phone has no room for one
+ * and uses `bottom`). `float`: round buttons floating at the bottom right of the screen.
  */
-export type ToolsPlacement = 'auto' | 'top' | 'bottom' | 'float';
+export type ToolsPlacement = 'auto' | 'top' | 'row' | 'bottom' | 'left' | 'right' | 'float';
+const TOOLS_PLACEMENTS: readonly string[] = ['auto', 'top', 'row', 'bottom', 'left', 'right', 'float'];
 export type Side = 'left' | 'right';
 
 export const MAX_DIVISIONS = 6;
@@ -117,7 +119,7 @@ export function cleanLayout(raw: unknown, fallback: Layout = BUILTIN_LAYOUTS[0]!
   const legacySide: Side = r.panel === 'left' ? 'left' : 'right';
   const panel: PanelPlacement = r.panel === 'sheet' ? 'sheet' : r.panel === 'auto' ? 'auto' : r.panel === 'left' || r.panel === 'right' ? 'auto' : fallback.panel;
   const density: Density = r.density === 'compact' || r.density === 'normal' || r.density === 'large' || r.density === 'auto' ? r.density : fallback.density;
-  const tools: ToolsPlacement = r.tools === 'top' || r.tools === 'bottom' || r.tools === 'float' || r.tools === 'auto' ? r.tools : fallback.tools;
+  const tools: ToolsPlacement = TOOLS_PLACEMENTS.includes(r.tools as string) ? (r.tools as ToolsPlacement) : fallback.tools;
   const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
   const seen = new Set<string>();
   const known = (t: unknown): t is TabName => (TAB_NAMES as readonly string[]).includes(t as string) && !seen.has(t as string) && !!seen.add(t as string);
@@ -157,8 +159,8 @@ export interface AppliedLayout {
   density: 'compact' | 'normal' | 'large';
   left: Division[];
   right: Division[];
-  /** `inline`: in the transport row; `stage`: a row under it; `bottom`: under the timeline; `float`: round buttons at the bottom right. */
-  tools: 'inline' | 'stage' | 'bottom' | 'float';
+  /** `inline`: in the transport row; `stage`: a row under it; `bottom`: under the timeline; `left` / `right`: a column beside the preview; `float`: round buttons at the bottom right. */
+  tools: 'inline' | 'stage' | 'bottom' | 'left' | 'right' | 'float';
 }
 
 export function applyLayout(l: Layout, narrow: boolean, touch: boolean): AppliedLayout {
@@ -174,7 +176,7 @@ export function applyLayout(l: Layout, narrow: boolean, touch: boolean): Applied
     density: l.density === 'auto' ? (touch ? 'large' : 'normal') : l.density,
     left: sheet ? [] : column(l, 'left'),
     right: sheet ? [flat] : column(l, 'right'),
-    tools: l.tools === 'bottom' ? 'bottom' : l.tools === 'float' ? 'float' : l.tools === 'top' ? (phone ? 'stage' : 'inline') : phone ? 'bottom' : 'inline',
+    tools: l.tools === 'bottom' || l.tools === 'float' ? l.tools : l.tools === 'row' ? 'stage' : l.tools === 'left' || l.tools === 'right' ? (phone ? 'bottom' : l.tools) : l.tools === 'top' ? (phone ? 'stage' : 'inline') : phone ? 'bottom' : 'inline',
   };
 }
 

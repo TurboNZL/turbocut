@@ -20,7 +20,8 @@ export class Inspector {
   constructor(private store: Store) {
     store.on('selection', () => this.build());
     store.on('project', () => this.refresh());
-    store.on('playhead', () => this.refresh());
+    store.on('playhead', () => !(store.playing && matchMedia('(pointer: coarse)').matches) && this.refresh()); // a phone is busy decoding during playback; the values catch up when it stops
+    store.on('play', () => !store.playing && this.refresh());
     this.build();
   }
 
