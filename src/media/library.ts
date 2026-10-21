@@ -23,6 +23,13 @@ export class MediaLibrary implements FrameSource {
   async importFile(file: Blob, name: string, fps: number): Promise<Asset> {
     const id = newId('a');
     const o = await this.open(id, file, name);
+    try {
+      await this.checkPicture(o, name);
+    } catch (e) {
+      this.opened.delete(id);
+      this.files.delete(id);
+      throw e;
+    }
     return {
       id,
       name,
@@ -34,6 +41,25 @@ export class MediaLibrary implements FrameSource {
       width: o.video ? await o.video.getDisplayWidth() : 0,
       height: o.video ? await o.video.getDisplayHeight() : 0,
     };
+  }
+
+  /**
+   * A video track this device cannot decode still opens, reads its length and plays its sound: the picture is just black. Say so
+   * at import (with the codec, so a report says what it was) instead of leaving a clip that looks broken.
+   */
+  private async checkPicture(o: Opened, name: string): Promise<void> {
+    if (!o.video || !o.videoSink) return;
+    const codec = (await o.video.getCodec()) ?? 'unknown';
+    const sorry = (why: string) => new Error(`the picture of ${name} (${codec}) ${why}`);
+    if (!(await o.video.canDecode())) throw sorry('uses a format this device cannot decode, although its sound and length read fine');
+    let frame: VideoSample | null;
+    try {
+      frame = await o.videoSink.getSample(await o.video.getFirstTimestamp());
+    } catch (e) {
+      throw sorry(`could not be decoded (${e instanceof Error ? e.message : e})`);
+    }
+    if (!frame) throw sorry('has no frames this device can decode');
+    frame.close();
   }
 
   private async open(id: string, file: Blob, name: string): Promise<Opened> {
