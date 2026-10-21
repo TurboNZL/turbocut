@@ -38,6 +38,9 @@ try {
   const edge = await win.evaluate(() => ({ html: getComputedStyle(document.documentElement).backgroundColor, body: getComputedStyle(document.body).backgroundColor }));
   assert.notEqual(edge.html, 'rgba(0, 0, 0, 0)', 'the page paints its own background');
   // With the drawn title bar the home page and everything else start under it.
+  // the real app opens on the home screen: pick a shape to get to the editor, then use the dock
+  if (await win.locator('.home').count()) await win.locator('.home-start').first().click();
+  await win.locator('.home').waitFor({ state: 'detached' });
   await win.evaluate(() => window.turbocutApp.store.updateSettings({ dock: true }));
   await win.locator('.dock .bt-tab', { hasText: 'Home' }).click();
   await win.locator('.home.docked').waitFor();
