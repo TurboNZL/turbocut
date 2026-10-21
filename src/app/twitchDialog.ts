@@ -1,4 +1,4 @@
-import { downloadClip, parseClipSlug, resolveClip } from '../twitch/clip.ts';
+import { downloadClip, parseClipSlug, resolveClip, type ResolvedClip } from '../twitch/clip.ts';
 import type { Actions } from './actions.ts';
 import { dialog, h } from './dom.ts';
 
@@ -6,6 +6,7 @@ interface DesktopTwitch {
   download(slug: string, id: string, onProgress: (f: number | null) => void, rank?: number): Promise<{ ok: true; name: string; bytes: Uint8Array; clip: { sources: unknown[] } } | { ok: false; cancelled: boolean; message: string }>;
   cancel(id: string): void;
 }
+const pageClips = new Map<string, { at: number; clip: ResolvedClip }>();
 const desktop: DesktopTwitch | undefined = (globalThis as any).turbocut?.twitch;
 
 /**
@@ -28,9 +29,11 @@ export async function fetchTwitchClip(input: string, onProgress: (f?: number) =>
       signal?.removeEventListener('abort', stop);
     }
   }
-  const clip = await resolveClip(slug, fetch, signal);
+  // Stepping down to the next version must not ask Twitch again: a second request in a few seconds can be refused, and the link is still good.
+  let clip = pageClips.get(slug);
+  if (!clip || Date.now() - clip.at > 120_000) pageClips.set(slug, (clip = { at: Date.now(), clip: await resolveClip(slug, fetch, signal) }));
   onProgress(0);
-  return { file: await downloadClip(clip, onProgress, fetch, signal, rank), count: clip.sources.length };
+  return { file: await downloadClip(clip.clip, onProgress, fetch, signal, rank), count: clip.clip.sources.length };
 }
 
 /** The "Twitch clip" window of the media bin: paste a link, the landscape clip lands in the bin. */
