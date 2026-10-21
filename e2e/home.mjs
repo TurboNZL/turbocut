@@ -30,6 +30,8 @@ try {
   assert.equal(await page.locator('.home-start').count(), 4, 'four starting shapes');
   await page.waitForFunction(() => /available/.test(document.querySelector('.home').textContent));
   assert.match(await page.locator('.home').textContent(), /2026\.10\.12 is available/, 'newest by version number');
+  // the page takes focus when it opens; a focus ring round the whole screen (seen on a phone) must not be drawn
+  assert.equal(await page.locator('.home').evaluate((el) => (el === document.activeElement || el.contains(document.activeElement)) && getComputedStyle(el).outlineStyle), 'none', 'no focus ring round the home screen');
   const links = await page.$$eval('.home-download a', (as) => as.map((a) => a.getAttribute('href')));
   assert.equal(links.length, 6, 'one download per file');
   assert.ok(links.includes('https://example.com/turbocut-2026.10.12-android.apk'));

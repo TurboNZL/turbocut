@@ -253,6 +253,8 @@ textarea.input { width: 100%; resize: vertical; font: inherit; }
 
 /* Home screen */
 .home { position: fixed; inset: 0; z-index: 40; overflow-y: auto; color: hsl(var(--fg)); padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); background: radial-gradient(60rem 28rem at 50% -6rem, hsl(var(--accent) / 0.16), transparent 70%), hsl(var(--bg)); animation: tk-fade 220ms ease-out backwards; display: flex; flex-direction: column; scroll-snap-type: y mandatory; overscroll-behavior: contain; }
+/* The page itself takes focus when it opens (so keys work); a browser or look that outlines :focus-visible drew a ring round the whole screen. */
+.home:focus, .home:focus-visible, .view-layer:focus, .view-layer:focus-visible { outline: none; }
 .home.docked { bottom: var(--dock-h, 0px); z-index: 20; }
 .home-page { flex: 0 0 100%; min-height: 100%; scroll-snap-align: start; display: flex; flex-direction: column; }
 .home-page > .home-inner { flex: 1; width: 100%; box-sizing: border-box; }
