@@ -19,18 +19,25 @@ export class Actions {
    * until the person adds them (pass `place` to add them straight away, for tests and automation).
    */
   async importMedia(files: File[], place = false, folder?: string): Promise<void> {
-    const { store } = this;
     for (const file of files) {
-      try {
-        store.say(`Importing ${file.name}…`);
-        const asset = await store.lib.importFile(file, file.name, store.project.fps);
-        if (folder && store.project.folders?.some((f) => f.id === folder)) asset.folder = folder;
-        store.edit((p) => (p.assets[asset.id] = asset));
-        if (place) this.addAsset(asset.id);
-        store.say(place ? `Imported ${file.name}.` : `${file.name} is in the media bin. Add it to the timeline from there.`);
-      } catch (e) {
-        store.say(`Could not open ${file.name}: ${e instanceof Error ? e.message : e}. This device may not support its format.`);
-      }
+      const failed = await this.importOne(file, place, folder);
+      if (failed) this.store.say(`Could not open ${file.name}: ${failed}. This device may not support its format.`);
+    }
+  }
+
+  /** Import one file; resolves to null when it is in the bin, or to the reason it could not be opened (nothing is said about a failure). */
+  async importOne(file: File, place = false, folder?: string): Promise<string | null> {
+    const { store } = this;
+    try {
+      store.say(`Importing ${file.name}…`);
+      const asset = await store.lib.importFile(file, file.name, store.project.fps);
+      if (folder && store.project.folders?.some((f) => f.id === folder)) asset.folder = folder;
+      store.edit((p) => (p.assets[asset.id] = asset));
+      if (place) this.addAsset(asset.id);
+      store.say(place ? `Imported ${file.name}.` : `${file.name} is in the media bin. Add it to the timeline from there.`);
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
     }
   }
 

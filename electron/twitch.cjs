@@ -16,19 +16,25 @@ function parseClipResponse(slug, json) {
   const asset = Array.isArray(clip.assets) ? clip.assets[0] : undefined; // the second asset is the portrait version
   const qualities = Array.isArray(asset?.videoQualities) ? asset.videoQualities.filter((q) => typeof q?.sourceURL === 'string') : [];
   if (!qualities.length) throw new Error('Twitch lists no video file for that clip.');
-  const best = [...qualities].sort((a, b) => num(b.quality) - num(a.quality) || num(b.frameRate) - num(a.frameRate))[0];
-  const url = new URL(best.sourceURL);
-  url.searchParams.set('sig', token.signature);
-  url.searchParams.set('token', token.value);
-  const height = Math.round(num(best.quality, 720));
+  const ranked = [...qualities].sort((a, b) => num(b.quality) - num(a.quality) || num(b.frameRate) - num(a.frameRate));
+  // every version, best first: the best can be HEVC, which a device may not decode, so the page asks for the next one down
+  const sources = ranked.map((q) => {
+    const u = new URL(q.sourceURL);
+    u.searchParams.set('sig', token.signature);
+    u.searchParams.set('token', token.value);
+    return { url: u.toString(), height: Math.round(num(q.quality, 720)), fps: Math.round(num(q.frameRate, 30)) || 30 };
+  });
+  const best = sources[0];
+  const height = best.height;
   const ratio = num(asset?.aspectRatio, 16 / 9) || 16 / 9;
   return {
     slug,
     title: typeof clip.title === 'string' && clip.title.trim() ? clip.title.trim() : slug,
-    url: url.toString(),
+    url: best.url,
+    sources,
     width: Math.round(height * ratio),
     height,
-    fps: Math.round(num(best.frameRate, 30)) || 30,
+    fps: best.fps,
     durationSec: num(clip.durationSeconds),
   };
 }
@@ -52,11 +58,11 @@ async function resolveClip(slug, fetchImpl = fetch, signal) {
 }
 
 /** Resolve and download. Returns the file's bytes and what Twitch said about it. `onProgress(fraction | undefined)`. */
-async function downloadClip(slug, { onProgress, signal, fetchImpl = fetch } = {}) {
+async function downloadClip(slug, { onProgress, signal, fetchImpl = fetch, rank = 0 } = {}) {
   const clip = await resolveClip(slug, fetchImpl, signal);
   let res;
   try {
-    res = await fetchImpl(clip.url, { signal });
+    res = await fetchImpl((clip.sources[rank] ?? clip.sources[0]).url, { signal });
   } catch (e) {
     if (signal?.aborted) throw e;
     throw new Error('Could not download the clip. Check the internet connection.');

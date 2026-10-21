@@ -66,11 +66,11 @@ ipcMain.on('window:control', (e, action) => {
 });
 // Twitch clips: the page cannot fetch them (CORS), the main process can.
 const twitchJobs = new Map();
-ipcMain.handle('twitch:download', async (e, slug, id) => {
+ipcMain.handle('twitch:download', async (e, slug, id, rank) => {
   const ctrl = new AbortController();
   twitchJobs.set(id, ctrl);
   try {
-    const { clip, name, bytes } = await downloadClip(String(slug), { signal: ctrl.signal, onProgress: (f) => e.sender.send('twitch:progress', id, f ?? null) });
+    const { clip, name, bytes } = await downloadClip(String(slug), { rank: Number.isInteger(rank) && rank > 0 ? rank : 0, signal: ctrl.signal, onProgress: (f) => e.sender.send('twitch:progress', id, f ?? null) });
     return { ok: true, name, bytes, clip };
   } catch (err) {
     return { ok: false, cancelled: ctrl.signal.aborted, message: err instanceof Error ? err.message : String(err) };

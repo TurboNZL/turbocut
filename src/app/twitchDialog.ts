@@ -3,16 +3,17 @@ import type { Actions } from './actions.ts';
 import { dialog, h } from './dom.ts';
 
 interface DesktopTwitch {
-  download(slug: string, id: string, onProgress: (f: number | null) => void): Promise<{ ok: true; name: string; bytes: Uint8Array } | { ok: false; cancelled: boolean; message: string }>;
+  download(slug: string, id: string, onProgress: (f: number | null) => void, rank?: number): Promise<{ ok: true; name: string; bytes: Uint8Array; clip: { sources: unknown[] } } | { ok: false; cancelled: boolean; message: string }>;
   cancel(id: string): void;
 }
 const desktop: DesktopTwitch | undefined = (globalThis as any).turbocut?.twitch;
 
 /**
  * Get a Twitch clip as a file. The desktop app asks the shell to do it (a page is not allowed to fetch Twitch); anywhere else the
- * page tries itself, and says so when the browser blocks it. Resolves the landscape version of the clip.
+ * page tries itself, and says so when the browser blocks it. Resolves the landscape version of the clip: `rank` 0 is the best one,
+ * 1 the next one down. `count` is how many versions Twitch has, so a caller can step down when a version cannot be decoded here.
  */
-export async function fetchTwitchClip(input: string, onProgress: (f?: number) => void, signal?: AbortSignal): Promise<File> {
+export async function fetchTwitchClip(input: string, onProgress: (f?: number) => void, signal?: AbortSignal, rank = 0): Promise<{ file: File; count: number }> {
   const slug = parseClipSlug(input);
   if (!slug) throw new Error('That does not look like a Twitch clip link. Paste the address of a clip (clips.twitch.tv/... or twitch.tv/name/clip/...).');
   if (desktop) {
@@ -20,16 +21,16 @@ export async function fetchTwitchClip(input: string, onProgress: (f?: number) =>
     const stop = () => desktop.cancel(id);
     signal?.addEventListener('abort', stop, { once: true });
     try {
-      const r = await desktop.download(slug, id, (f) => onProgress(f ?? undefined));
+      const r = await desktop.download(slug, id, (f) => onProgress(f ?? undefined), rank);
       if (!r.ok) throw r.cancelled ? new DOMException('Cancelled', 'AbortError') : new Error(r.message);
-      return new File([r.bytes as BlobPart], r.name, { type: 'video/mp4' });
+      return { file: new File([r.bytes as BlobPart], r.name, { type: 'video/mp4' }), count: r.clip.sources.length };
     } finally {
       signal?.removeEventListener('abort', stop);
     }
   }
   const clip = await resolveClip(slug, fetch, signal);
   onProgress(0);
-  return downloadClip(clip, onProgress, fetch, signal);
+  return { file: await downloadClip(clip, onProgress, fetch, signal, rank), count: clip.sources.length };
 }
 
 /** The "Twitch clip" window of the media bin: paste a link, the landscape clip lands in the bin. */
@@ -52,9 +53,15 @@ export function openTwitchImport(actions: Actions): void {
     progress.removeAttribute('value');
     note.textContent = 'Asking Twitch…';
     try {
-      const file = await fetchTwitchClip(input.value, (f) => (f == null ? progress.removeAttribute('value') : ((progress.value = f), (note.textContent = `Downloading… ${Math.round(f * 100)}%`))), abort.signal);
-      note.textContent = 'Adding it to the media bin…';
-      await actions.importMedia([file]);
+      // The best version can be one this device cannot decode (HEVC passed through from the streamer): step down until one opens.
+      for (let rank = 0; ; rank++) {
+        const { file, count } = await fetchTwitchClip(input.value, (f) => (f == null ? progress.removeAttribute('value') : ((progress.value = f), (note.textContent = `Downloading${rank ? ' a smaller version' : ''}… ${Math.round(f * 100)}%`))), abort.signal, rank);
+        note.textContent = 'Adding it to the media bin…';
+        const failed = await actions.importOne(file);
+        if (!failed) break;
+        if (rank + 1 >= count) throw new Error(`None of the versions Twitch has of this clip can be opened on this device. The last one: ${failed}.`);
+        note.textContent = 'This device cannot decode the best version. Trying the next one down…';
+      }
       dlg.close();
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
