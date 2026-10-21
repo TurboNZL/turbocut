@@ -25,6 +25,11 @@ export class Actions {
     }
   }
 
+  /** Say something in the status line. */
+  tell(message: string): void {
+    this.store.say(message);
+  }
+
   /** Import one file; resolves to null when it is in the bin, or to the reason it could not be opened (nothing is said about a failure). */
   async importOne(file: File, place = false, folder?: string): Promise<string | null> {
     const { store } = this;
