@@ -128,6 +128,24 @@ try {
   await offline.waitForFunction(() => /Could not check/.test(document.querySelector('.home').textContent));
   assert.ok((await offline.locator('.home a', { hasText: 'All releases' }).getAttribute('href')).endsWith('/releases'));
   assert.deepEqual(errors, []);
+  // ---- a phone: every shape tile keeps its picture inside, and the whole first screen fits (two screens, as on a computer)
+  {
+    const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, home: true })).newPage();
+    phone.on('pageerror', (e) => errors.push(e.message));
+    await phone.route('https://api.github.com/**', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await phone.goto('http://localhost:5217/');
+    await phone.waitForSelector('.home-start');
+    await phone.waitForTimeout(1200);
+    const m = await phone.evaluate(() => ({
+      outside: [...document.querySelectorAll('.home-ratio')].filter((r) => { const a = r.getBoundingClientRect(); const b = r.closest('.home-start').getBoundingClientRect(); return a.left < b.left || a.right > b.right || a.bottom > b.bottom; }).length,
+      overflow: document.querySelector('.home-first .home-inner').scrollHeight - document.querySelector('.home').clientHeight,
+      snap: getComputedStyle(document.querySelector('.home')).scrollSnapType,
+    }));
+    assert.equal(m.outside, 0, 'no shape picture escapes its tile on a phone');
+    assert.ok(m.overflow <= 0, `the first screen fits a tall phone (over by ${m.overflow}px)`);
+    assert.equal(m.snap, 'y mandatory', 'two stops on a tall phone, as on a computer');
+    await phone.context().close();
+  }
   console.log('home e2e passed');
 } finally {
   await browser.close();

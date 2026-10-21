@@ -468,8 +468,8 @@ body.resizing-y, body.resizing-y * { cursor: row-resize !important; }
 .home-start { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 0.35rem; padding: 1.1rem 0.6rem 0.9rem; height: auto; border-radius: calc(var(--radius, 6px) * 2); text-align: center; transition: transform 200ms cubic-bezier(0.22, 0.8, 0.3, 1), border-color 160ms ease, box-shadow 200ms ease; }
 .home-start:hover, .home-start:focus-visible { transform: translateY(-3px); border-color: hsl(var(--accent) / 0.7); box-shadow: 0 10px 28px hsl(var(--accent) / 0.16); }
 .home-start strong { font-size: 1.02rem; margin-top: 0.4rem; }
-.home-frame { display: grid; place-items: center; height: 6.4rem; width: 100%; }
-.home-ratio { display: block; height: 100%; max-width: 100%; border-radius: 0.5rem; border: 2px solid hsl(var(--accent) / 0.85); background: linear-gradient(160deg, hsl(var(--accent) / 0.28), hsl(var(--accent) / 0.05)); transition: transform 260ms cubic-bezier(0.22, 0.8, 0.3, 1); }
+.home-frame { --frame-h: 6.4rem; display: grid; place-items: center; height: var(--frame-h); width: 100%; min-width: 0; }
+.home-ratio { display: block; aspect-ratio: var(--r, 1); height: auto; max-height: 100%; width: min(100%, calc(var(--frame-h, 6.4rem) * var(--r, 1))); border-radius: 0.5rem; border: 2px solid hsl(var(--accent) / 0.85); background: linear-gradient(160deg, hsl(var(--accent) / 0.28), hsl(var(--accent) / 0.05)); transition: transform 260ms cubic-bezier(0.22, 0.8, 0.3, 1); }
 .home-start:hover .home-ratio { transform: scale(1.05) rotate(-1.5deg); }
 .home-quicks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8rem; }
 .home-more .home-card { margin-bottom: 1.2rem; }
@@ -503,9 +503,24 @@ body.resizing-y, body.resizing-y * { cursor: row-resize !important; }
 .home-recent-item:hover .home-recent-del, .home-recent-del:focus-visible { opacity: 1; }
 .home-frame.mini { height: 2.6rem; width: 2.6rem; flex: none; }
 @media (max-width: 720px) {
-  .home-starts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .home-quicks, .home-cols { grid-template-columns: 1fr; }
+  .home-starts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+  .home-cols { grid-template-columns: 1fr; }
+  /* the three quick actions sit in one row on a phone: an icon and a name each (the one-line description hides) */
+  .home-quicks { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+  .home-quick { flex-direction: column; text-align: center; gap: 0.35rem; padding: 0.7rem 0.3rem; }
+  .home-quick-text small { display: none; }
+  .home-quick-text strong { font-size: 0.85rem; }
+  /* A phone cannot fit the whole first screen: snap softly (a mandatory snap fights a page taller than the display and the scroll jumps),
+     and make the tiles and the gaps smaller so most of it fits. */
+  .home { scroll-snap-type: y proximity; }
+  .home-recents > :nth-child(n + 3) { display: none; } /* only two recent projects on a phone, so the first screen stays one screen */
+  .home-inner { gap: 1rem; padding-bottom: 1.5rem; }
+  .home-frame { --frame-h: 4.4rem; }
+  .home-start { padding: 0.7rem 0.4rem 0.6rem; }
 }
+
+/* A tall phone fits the whole first screen: snap hard, like the desktop, so the two screens are two stops. */
+@media (max-width: 720px) and (min-height: 780px) { .home { scroll-snap-type: y mandatory; } }
 
 /* Drawn window frame (desktop app): the title bar sits above #app, which takes the rest of the height. #app is a containing block
    (transform), so a look that pins its bars or dock with position:fixed pins them to the editor below the title bar, never over it. */
