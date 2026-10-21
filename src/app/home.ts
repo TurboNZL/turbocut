@@ -67,7 +67,7 @@ export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement }
       h('h2', { class: 'home-h' }, 'Recent projects'),
       h('div', { class: 'home-recents' }, ...rows.slice(0, 6).map((r) => {
         const open = h('button', { class: 'home-recent-open', type: 'button', 'data-key': r.key, onclick: async () => ((await deps.openRecent(r.key)) && close()) },
-          h('span', { class: 'home-frame mini', 'aria-hidden': 'true' }, h('span', { class: 'home-ratio', style: { aspectRatio: `${r.width} / ${r.height}` } })),
+          h('span', { class: 'home-frame mini', 'aria-hidden': 'true' }, h('span', { class: 'home-ratio', style: `--r: ${(r.width / Math.max(1, r.height)).toFixed(4)}` })),
           h('span', { class: 'home-recent-text' }, h('strong', {}, r.name), h('small', {}, `${ago(r.at)} · ${clock(r.seconds)} · ${r.width}×${r.height}`)));
         const del = h('button', { class: 'btn btn-ghost icon-btn home-recent-del', type: 'button', 'aria-label': `Remove ${r.name} from the list`, title: 'Remove from the list', onclick: async () => (await forgetRecent(r.key), drawRecent(await listRecent())) }, icon('close', 14));
         return h('div', { class: 'home-recent-item' }, open, del);

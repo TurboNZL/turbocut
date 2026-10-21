@@ -54,13 +54,15 @@ export function openTwitchImport(actions: Actions): void {
     note.textContent = 'Asking Twitch…';
     try {
       // The best version can be one this device cannot decode (HEVC passed through from the streamer): step down until one opens.
+      const tried: string[] = [];
       for (let rank = 0; ; rank++) {
         const { file, count } = await fetchTwitchClip(input.value, (f) => (f == null ? progress.removeAttribute('value') : ((progress.value = f), (note.textContent = `Downloading${rank ? ' a smaller version' : ''}… ${Math.round(f * 100)}%`))), abort.signal, rank);
         note.textContent = 'Adding it to the media bin…';
         const failed = await actions.importOne(file);
         if (!failed) break;
-        if (rank + 1 >= count) throw new Error(`None of the versions Twitch has of this clip can be opened on this device. The last one: ${failed}.`);
-        note.textContent = 'This device cannot decode the best version. Trying the next one down…';
+        tried.push(`version ${rank + 1} of ${count}: ${failed}`);
+        if (rank + 1 >= count) throw new Error(`None of the ${count} versions Twitch has of this clip can be opened on this device. ${tried.join(' | ')}`);
+        note.textContent = `Version ${rank + 1} of ${count} could not be decoded here (${failed.replace(/^the picture of .*? \(/, '(')}). Trying the next one down…`;
       }
       dlg.close();
     } catch (e) {

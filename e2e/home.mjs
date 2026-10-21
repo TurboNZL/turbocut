@@ -111,6 +111,9 @@ try {
   const recent = page.locator('.home-recent-open', { hasText: 'My short' });
   await recent.waitFor();
   assert.match(await recent.textContent(), /1080×1920/);
+  // every recent project's picture stays inside its little frame, whatever the shape
+  const escaping = await page.evaluate(() => [...document.querySelectorAll('.home-frame.mini .home-ratio')].filter((r) => { const a = r.getBoundingClientRect(); const b = r.parentElement.getBoundingClientRect(); return a.width > b.width + 0.5 || a.height > b.height + 0.5; }).length);
+  assert.equal(escaping, 0, 'recent project pictures stay inside their frames');
   await page.screenshot({ path: `${out}home-recent.png` });
   await recent.click();
   await page.waitForFunction(() => window.turbocutApp.store.project.name === 'My short');

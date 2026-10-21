@@ -45,21 +45,23 @@ export class MediaLibrary implements FrameSource {
 
   /**
    * A video track this device cannot decode still opens, reads its length and plays its sound: the picture is just black. Say so
-   * at import (with the codec, so a report says what it was) instead of leaving a clip that looks broken.
+   * at import (with the codec, so a report says what it was) instead of leaving a clip that looks broken. The test is the decode
+   * itself: `canDecode()` only asks whether the configuration looks supported and can be stricter than the decoder really is, so it
+   * is reported (not trusted) when the first frame fails.
    */
   private async checkPicture(o: Opened, name: string): Promise<void> {
     if (!o.video || !o.videoSink) return;
     const codec = (await o.video.getCodec()) ?? 'unknown';
-    const sorry = (why: string) => new Error(`the picture of ${name} (${codec}) ${why}`);
-    if (!(await o.video.canDecode())) throw sorry('uses a format this device cannot decode, although its sound and length read fine');
-    let frame: VideoSample | null;
+    let reason = '';
     try {
-      frame = await o.videoSink.getSample(await o.video.getFirstTimestamp());
+      const frame = await o.videoSink.getSample(await o.video.getFirstTimestamp());
+      if (frame) return void frame.close();
+      reason = 'gave no frame';
     } catch (e) {
-      throw sorry(`could not be decoded (${e instanceof Error ? e.message : e})`);
+      reason = e instanceof Error ? e.message : String(e);
     }
-    if (!frame) throw sorry('has no frames this device can decode');
-    frame.close();
+    const supported = await o.video.canDecode().catch(() => false);
+    throw new Error(`the picture of ${name} (${codec}, ${await o.video.getDisplayWidth()}×${await o.video.getDisplayHeight()}) cannot be decoded on this device (${supported ? 'the first frame failed' : 'not supported'}: ${reason}), although its sound and length read fine`);
   }
 
   private async open(id: string, file: Blob, name: string): Promise<Opened> {

@@ -501,7 +501,7 @@ body.resizing-y, body.resizing-y * { cursor: row-resize !important; }
 .home-recent-text small { color: hsl(var(--muted)); }
 .home-recent-del { position: absolute; right: 0.3rem; top: 50%; transform: translateY(-50%); opacity: 0.55; }
 .home-recent-item:hover .home-recent-del, .home-recent-del:focus-visible { opacity: 1; }
-.home-frame.mini { height: 2.6rem; width: 2.6rem; flex: none; }
+.home-frame.mini { --frame-h: 2.6rem; height: 2.6rem; width: 2.6rem; flex: none; }
 @media (max-width: 720px) {
   .home-starts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
   .home-cols { grid-template-columns: 1fr; }

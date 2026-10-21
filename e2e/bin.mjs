@@ -39,7 +39,7 @@ try {
     if (canH264) assert.equal(count, 4, 'H.264 decodes here, so it is imported');
     else {
       assert.equal(count, 3, 'an undecodable video is not added to the bin');
-      assert.match(status, /twitch-like\.mp4.*cannot decode/, 'the import says why');
+      assert.match(status, /twitch-like\.mp4.*cannot be decoded/, 'the import says why');
     }
     if (canH264) await app(() => { const p = window.turbocutApp.store; for (const id of Object.keys(p.project.assets)) if (p.project.assets[id].name === 'twitch-like.mp4') p.edit((x) => delete x.assets[id]); });
   } else console.log('no h264.mp4: skipped the undecodable-video check');
