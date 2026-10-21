@@ -22,10 +22,10 @@ contextBridge.exposeInMainWorld('turbocut', {
     onState: (fn) => ipcRenderer.on('window:state', (_e, max) => fn(max)),
   },
   twitch: {
-    download: async (slug, id, onProgress) => {
+    download: async (slug, id, onProgress, rank = 0) => {
       twitchProgress.set(id, onProgress);
       try {
-        return await ipcRenderer.invoke('twitch:download', slug, id);
+        return await ipcRenderer.invoke('twitch:download', slug, id, rank);
       } finally {
         twitchProgress.delete(id);
       }

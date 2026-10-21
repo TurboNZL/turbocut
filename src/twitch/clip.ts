@@ -9,11 +9,23 @@
  * web endpoints and can break when they change. Keep all of that inside one resolver implementation.
  */
 
+/** One downloadable version of a clip. */
+export interface ClipSource {
+  url: string;
+  height: number;
+  fps: number;
+}
+
 export interface ResolvedClip {
   slug: string;
   title: string;
-  /** Direct URL to the highest quality MP4. */
+  /** Direct URL to the highest quality MP4 (the first of `sources`). */
   url: string;
+  /**
+   * Every landscape version, best first. The best one can be a codec this device cannot decode (Twitch passes the streamer's HEVC
+   * through as the top version), so the import tries the next one down when it must.
+   */
+  sources: ClipSource[];
   width: number;
   height: number;
   fps: number;
@@ -79,19 +91,24 @@ export function parseClipResponse(slug: string, json: unknown): ResolvedClip {
   const asset = Array.isArray(clip.assets) ? clip.assets[0] : undefined;
   const qualities: any[] = Array.isArray(asset?.videoQualities) ? asset.videoQualities.filter((q: any) => typeof q?.sourceURL === 'string') : [];
   if (!qualities.length) throw new Error('Twitch lists no video file for that clip.');
-  const best = [...qualities].sort((a, b) => num(b.quality) - num(a.quality) || num(b.frameRate) - num(a.frameRate))[0]!;
-  const url = new URL(best.sourceURL);
-  url.searchParams.set('sig', token.signature);
-  url.searchParams.set('token', token.value);
-  const height = Math.round(num(best.quality, 720));
+  const ranked = [...qualities].sort((a, b) => num(b.quality) - num(a.quality) || num(b.frameRate) - num(a.frameRate));
+  const sources: ClipSource[] = ranked.map((q) => {
+    const u = new URL(q.sourceURL);
+    u.searchParams.set('sig', token.signature);
+    u.searchParams.set('token', token.value);
+    return { url: u.toString(), height: Math.round(num(q.quality, 720)), fps: Math.round(num(q.frameRate, 30)) || 30 };
+  });
+  const best = sources[0]!;
+  const height = best.height;
   const ratio = num(asset?.aspectRatio, 16 / 9) || 16 / 9;
   return {
     slug,
     title: typeof clip.title === 'string' && clip.title.trim() ? clip.title.trim() : slug,
-    url: url.toString(),
+    url: best.url,
+    sources,
     width: Math.round(height * ratio),
     height,
-    fps: Math.round(num(best.frameRate, 30)) || 30,
+    fps: best.fps,
     durationSec: num(clip.durationSeconds),
   };
 }
@@ -115,11 +132,11 @@ export async function resolveClip(slug: string, fetchImpl: typeof fetch = fetch,
   return parseClipResponse(slug, await res.json());
 }
 
-/** Download a resolved clip, reporting progress (0..1, or undefined when the size is not known). */
-export async function downloadClip(c: ResolvedClip, onProgress?: (f?: number) => void, fetchImpl: typeof fetch = fetch, signal?: AbortSignal): Promise<File> {
+/** Download a resolved clip, reporting progress (0..1, or undefined when the size is not known). `rank` 0 is the best version, 1 the next one down, and so on. */
+export async function downloadClip(c: ResolvedClip, onProgress?: (f?: number) => void, fetchImpl: typeof fetch = fetch, signal?: AbortSignal, rank = 0): Promise<File> {
   let res: Response;
   try {
-    res = await fetchImpl(c.url, { signal });
+    res = await fetchImpl((c.sources[rank] ?? c.sources[0]!).url, { signal });
   } catch (e) {
     if (signal?.aborted) throw e;
     throw new Error('Could not download the clip from this page. A browser may block it; the desktop app can do it.');

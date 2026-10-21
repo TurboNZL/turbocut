@@ -46,6 +46,11 @@ describe('twitch clips', () => {
       expect([c.width, c.height, c.fps, c.durationSec]).toEqual([1920, 1080, 60, 28]);
       expect(c.title).toBe('Clutch: 1v4 / wow?');
     });
+    it(`${name}: lists every landscape version best first, so a version this device cannot decode can be stepped over`, () => {
+      const c = parse('slug1234', answer());
+      expect(c.sources.map((s: { height: number; fps: number }) => [s.height, s.fps])).toEqual([[1080, 60], [720, 60], [360, 30]]);
+      expect(c.sources.every((s: { url: string }) => new URL(s.url).searchParams.get('sig') === 'SIG123')).toBe(true);
+    });
     it(`${name}: says what went wrong in plain words`, () => {
       expect(() => parse('x', [{ data: { clip: null } }])).toThrow(/no clip with that link/);
       expect(() => parse('x', [{ errors: [{ message: 'PersistedQueryNotFound' }] }])).toThrow(/Twitch refused/);
