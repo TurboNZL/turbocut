@@ -414,7 +414,7 @@ store.on('status', () => {
   status.textContent = store.status;
   status.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => status.classList.remove('show'), 4500);
+  toastTimer = setTimeout(() => status.classList.remove('show'), Math.min(20000, Math.max(4500, store.status.length * 70))); // a long message stays long enough to read
 });
 tick();
 store.say('Import a clip to start. Press ? for shortcuts.');

@@ -62,8 +62,12 @@ export function openTwitchImport(actions: Actions): void {
         const { file, count } = await fetchTwitchClip(input.value, (f) => (f == null ? progress.removeAttribute('value') : ((progress.value = f), (note.textContent = `Downloading${rank ? ' a smaller version' : ''}… ${Math.round(f * 100)}%`))), abort.signal, rank);
         note.textContent = 'Adding it to the media bin…';
         const failed = await actions.importOne(file);
-        if (!failed) break;
-        tried.push(`version ${rank + 1} of ${count}: ${failed}`);
+        if (!failed) {
+          // Say what was skipped, so a clip that came in smaller than expected explains itself (the codec and size of each refused version).
+          if (tried.length) actions.tell(`${file.name} is in the media bin, but ${tried.length === 1 ? 'a better version' : `${tried.length} better versions`} could not be decoded on this device: ${tried.join(' | ')}`);
+          break;
+        }
+        tried.push(`version ${rank + 1} of ${count}: ${failed.replace(/^the picture of .*? \(/, "(").replace(/, although its sound and length read fine$/, "")}`);
         if (rank + 1 >= count) throw new Error(`None of the ${count} versions Twitch has of this clip can be opened on this device. ${tried.join(' | ')}`);
         note.textContent = `Version ${rank + 1} of ${count} could not be decoded here (${failed.replace(/^the picture of .*? \(/, '(')}). Trying the next one down…`;
       }
