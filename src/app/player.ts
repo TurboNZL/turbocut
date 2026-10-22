@@ -17,7 +17,9 @@ export function previewStride(choice: PreviewFps, fps: number, touch: boolean): 
   if (choice !== 'auto') return STRIDE[choice];
   return touch && fps > 32 ? Math.round(fps / 30) : 1;
 }
-const AUDIO_WINDOW = 6; // seconds mixed ahead of the playhead
+const AUDIO_WINDOW = 6; // the longest piece of sound mixed in one go, in seconds
+const AUDIO_FIRST = 1; // the first piece is short so that playback can start at once
+const PREFETCH_SECONDS = 0.75; // how far ahead a clip's decoder is opened
 
 /**
  * Draws the project into a canvas. Paused: random-access decode for the exact frame (latest request wins).
@@ -117,6 +119,19 @@ export class Player {
     await ac.resume();
     const startFrame = store.playhead;
     const startSec = startFrame / p.fps;
+    const step = previewStride(store.settings.previewFps, p.fps, touchScreen.matches); // a lower preview rate draws and decodes only every step-th frame
+
+    // Warm up BEFORE the clock starts. The first frame needs a decoder to be opened and brought up to the playhead, and the first
+    // piece of sound has to be mixed; on a phone that takes a good fraction of a second. With the clock already running the video
+    // started late, found itself "far behind" and threw the decoders away to start again, which is why a resumed play took a while
+    // to smooth out.
+    let feed = store.lib.sequential(p, startFrame, step);
+    const [firstSound] = await Promise.all([mixWindow(p, store.lib, startSec, Math.min(projectDuration(p) / p.fps, startSec + AUDIO_FIRST)), this.draw(startFrame, feed)]);
+    if (this.run !== token) {
+      feed.dispose?.();
+      return;
+    }
+
     // The timer is the system clock, not the audio clock: with no sound device (or a sleeping one) the audio clock can
     // stand still or race, and the video would follow it. Audio starts a little in the future and the video clock is
     // held back by that delay plus the device's output latency, so picture and sound line up.
@@ -125,11 +140,10 @@ export class Player {
     const clockStart = ac.currentTime + lead;
     const wall0 = performance.now();
     const now = () => startSec + (performance.now() - wall0) / 1000 - latency;
-    void this.scheduleAudio(ac, token, startSec, clockStart);
+    void this.scheduleAudio(ac, token, startSec, clockStart, firstSound);
 
-    const step = previewStride(store.settings.previewFps, p.fps, touchScreen.matches); // a lower preview rate draws and decodes only every step-th frame
-    let feed = store.lib.sequential(p, startFrame, step);
-    let next = startFrame; // next frame the feed will deliver
+    let next = startFrame + step; // next frame the feed will deliver (the first one is already on screen)
+    const ahead = Math.ceil(p.fps * PREFETCH_SECONDS);
     while (this.run === token) {
       const target = Math.min(total - 1, Math.floor(now() * p.fps));
       if (target - next > 8 * step) {
@@ -139,6 +153,7 @@ export class Player {
         next = target;
       }
       if (next <= target) {
+        feed.prefetch?.(next, ahead); // a clip about to start gets its decoder opened now, not at the cut
         await this.draw(next, feed);
         store.playhead = next;
         store.emit('playhead');
@@ -152,17 +167,27 @@ export class Player {
     if (this.run === token) this.pause();
   }
 
-  private async scheduleAudio(ac: AudioContext, token: number, fromSec: number, clockStart: number): Promise<void> {
+  /**
+   * Sound is mixed a window at a time. The first window is short and already mixed (it is what lets playback start quickly); each
+   * next one is twice as long, up to AUDIO_WINDOW, so every window is mixed while the one before it is still playing.
+   */
+  private async scheduleAudio(ac: AudioContext, token: number, fromSec: number, clockStart: number, first: AudioBuffer): Promise<void> {
     const p = this.store.project;
     const end = projectDuration(p) / p.fps;
-    for (let t = fromSec; t < end && this.run === token; t += AUDIO_WINDOW) {
-      const buf = await mixWindow(p, this.store.lib, t, Math.min(end, t + AUDIO_WINDOW));
-      if (this.run !== token) return;
+    const put = (buf: AudioBuffer, when: number) => {
       const node = ac.createBufferSource();
       node.buffer = buf;
       node.connect(ac.destination);
-      node.start(Math.max(ac.currentTime, clockStart + (t - fromSec)));
+      node.start(Math.max(ac.currentTime, when));
       this.sources.push(node);
+    };
+    put(first, clockStart);
+    let len = AUDIO_FIRST;
+    for (let t = fromSec + AUDIO_FIRST; t < end && this.run === token; t += len) {
+      len = Math.min(AUDIO_WINDOW, len * 2);
+      const buf = await mixWindow(p, this.store.lib, t, Math.min(end, t + len));
+      if (this.run !== token) return;
+      put(buf, clockStart + (t - fromSec));
     }
   }
   private sources: AudioBufferSourceNode[] = [];

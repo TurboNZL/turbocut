@@ -178,28 +178,50 @@ function samplePicture(sample: VideoSample, owned: boolean): Picture {
 }
 
 class SequentialFrames implements FrameSource {
-  private feeds = new Map<string, { it: AsyncGenerator<VideoSample | null>; next: Frame; last: VideoSample | null }>();
+  private feeds = new Map<string, Feed>();
 
   /** `stride` > 1 is the preview playing at a lower frame rate: only every stride-th frame is asked for, and only those are decoded. */
   constructor(private lib: MediaLibrary, private p: Project, private startFrame: Frame, private stride = 1) {}
 
-  async getFrame(clip: Clip, frame: Frame): Promise<Picture | null> {
-    let feed = this.feeds.get(clip.id);
-    if (!feed) {
-      const sink = this.lib.videoSinkFor(clip.assetId);
-      if (!sink) return null;
-      const p = this.p;
-      const from = Math.max(clip.start, this.startFrame, this.stride > 1 ? frame : 0);
-      const stride = this.stride;
-      const times = (function* () {
-        for (let f = from; f < clipEnd(clip); f += stride) yield Math.max(0, sourceSeconds(p, clip, f));
-      })();
-      feed = { it: sink.samplesAtTimestamps(times), next: from, last: null };
-      this.feeds.set(clip.id, feed);
+  /** Open the decoder for `clip`, whose first requested frame is `from`, and start decoding its first picture. */
+  private open(clip: Clip, from: Frame, early: boolean): Feed | null {
+    const sink = this.lib.videoSinkFor(clip.assetId);
+    if (!sink) return null;
+    const p = this.p;
+    const stride = this.stride;
+    const times = (function* () {
+      for (let f = from; f < clipEnd(clip); f += stride) yield Math.max(0, sourceSeconds(p, clip, f));
+    })();
+    const feed: Feed = { it: sink.samplesAtTimestamps(times), next: from, last: null };
+    if (early) feed.pending = feed.it.next(); // the decoder works on the first picture while the clip before this one is still playing
+    this.feeds.set(clip.id, feed);
+    return feed;
+  }
+
+  prefetch(from: Frame, ahead: number): void {
+    for (const track of this.p.tracks) {
+      if (track.kind !== 'video' || track.hidden) continue;
+      for (const clip of track.clips) {
+        if (clip.text || this.feeds.has(clip.id) || clip.start <= from || clip.start > from + ahead) continue;
+        // the playback loop visits from, from + stride, ...: the first of those that is inside the clip
+        this.open(clip, from + Math.ceil((clip.start - from) / this.stride) * this.stride, true);
+      }
     }
+  }
+
+  async getFrame(clip: Clip, frame: Frame): Promise<Picture | null> {
+    let feed = this.feeds.get(clip.id) ?? null;
+    if (feed && feed.next !== frame && feed.pending) {
+      // opened early for a frame the loop did not land on (it skipped ahead): start again from where it is
+      this.drop(clip.id, feed);
+      feed = null;
+    }
+    if (!feed) feed = this.open(clip, Math.max(clip.start, this.startFrame, this.stride > 1 ? frame : 0), false);
+    if (!feed) return null;
     if (frame !== feed.next) throw new Error('Sequential source must be read in frame order');
     feed.next += this.stride;
-    const r = await feed.it.next();
+    const r = await (feed.pending ?? feed.it.next());
+    feed.pending = undefined;
     // Past the end of the source media the decoder yields nothing: hold the last picture. Only one frame is ever held.
     if (!r.done && r.value) {
       feed.last?.close();
@@ -217,14 +239,25 @@ class SequentialFrames implements FrameSource {
 
   private finished: VideoSample[] = [];
 
+  private drop(id: string, feed: Feed): void {
+    this.feeds.delete(id);
+    void feed.it.return(undefined);
+    void feed.pending?.then((r) => r.value?.close(), () => {});
+    feed.last?.close();
+  }
+
   /** Close the decoders and every frame still held, so no decoded frame is left unclosed. */
   dispose(): void {
-    for (const feed of this.feeds.values()) {
-      void feed.it.return(undefined);
-      feed.last?.close();
-    }
-    this.feeds.clear();
+    for (const [id, feed] of [...this.feeds]) this.drop(id, feed);
     for (const s of this.finished) s.close();
     this.finished = [];
   }
+}
+
+interface Feed {
+  it: AsyncGenerator<VideoSample | null>;
+  next: Frame;
+  last: VideoSample | null;
+  /** The first picture, already being decoded (a feed opened ahead of its clip). */
+  pending?: Promise<IteratorResult<VideoSample | null>>;
 }

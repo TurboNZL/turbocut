@@ -31,6 +31,8 @@ export interface FrameSource {
   getFrame(clip: Clip, frame: Frame, sourceSeconds: number): Promise<Picture | null>;
   /** Release decoders. Must be called when a sequential source is abandoned before every clip was read to its end. */
   dispose?(): void;
+  /** Playback is about to draw `from`: open decoders for clips that start within the next `ahead` frames so a cut does not wait for one. */
+  prefetch?(from: Frame, ahead: number): void;
 }
 
 export function sourceSeconds(p: Project, clip: Clip, frame: Frame): number {

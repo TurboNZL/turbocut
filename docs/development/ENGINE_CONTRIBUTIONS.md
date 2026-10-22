@@ -96,3 +96,7 @@ The vanilla CommonJS .deb updater (`electron/updater.cjs`, `electron/debInstall.
 - **Dialog padding for rounded looks** (`.dlg { --dlg-pad }` in `styles.css`): body and footer padding follow `--win-r`; the footer rule sits in `:where()` so a look's own footer still wins.
 - **Window frame backing** (`.bt-wf::before` plus the shell's `setBackgroundColor` following `--bg`): a look whose title bar is transparent no longer shows the dark window colour as a bar. Not run in real Electron here.
 - **Tool bar positions** (`ToolsPlacement` `row`, `left`, `right`) and `@container stage` rules that wrap the bar when the stage is narrow.
+
+## 7. Added 2026-10-22 (ready to port)
+- **Warm start and decoder prefetch for preview playback** (`player.ts`, `SequentialFrames.prefetch` in `library.ts`) with the simulated slow-decoder test `e2e/playback-smooth.mjs`: warm decoders and the first sound window before the clock starts; open the next clip's decoder before the cut.
+- **Refuse undecodable video at import** (`MediaLibrary.checkPicture`) and the Twitch version step-down (`ResolvedClip.sources`).
