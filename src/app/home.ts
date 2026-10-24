@@ -17,6 +17,8 @@ export interface HomeDeps {
   openProject: () => Promise<boolean>;
   /** Open one of the recent projects. Resolves true when it was opened. */
   openRecent: (key: string) => Promise<boolean>;
+  /** Open the "Receive from a computer" window (a code from the computer, for a phone). */
+  receive: () => void;
   openSettings: (tab?: 'Updates' | 'Layout' | 'Fonts') => void;
   /** The bottom dock is on: the home screen leaves room for it and is a page, not a layer to dismiss. */
   docked?: boolean;
@@ -156,6 +158,7 @@ export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement }
       arrive(h('div', { class: 'home-quicks' },
         quick('folder', 'Open a project', 'A .turbocut file you saved', async () => ((await deps.openProject()) && close())),
         quick('video', 'Import video', 'Straight into the media bin', async () => ((await deps.importFiles()) && close())),
+        quick('download', 'From a computer', 'Type the code it shows', () => deps.receive()),
         quick('settings', 'Make it yours', 'Layouts, fonts and looks', () => deps.openSettings('Layout'))), 4),
       // The update line is the last thing on the first screen. Everything after it waits below the edge.
       arrive(h('section', { class: 'home-card home-updates' },

@@ -30,6 +30,6 @@ TurboCut is a light video editor for shorts (9:16, under a minute) that also cop
 | A text layer | the **Text** button in the edit bar |
 | Another panel layout, named panels, where the tools sit | Settings → [Layout](LAYOUTS_AND_KEYS.md) |
 | A sharper or smoother preview (or a lighter one on a slow phone) | Settings → General → Preview: sharpness and frame rate while playing |
-| Send the project to another computer | File → Send to another device… ([Projects](PROJECTS.md)) |
+| Send the project to another computer or a phone | File → Send to another device… (**Send with a code** for a phone); on the phone, Home → *From a computer* ([Projects](PROJECTS.md)) |
 | Fonts | Settings → Fonts, or Captions → Fonts… |
 | Updates | Settings → [Updates](UPDATES.md) |

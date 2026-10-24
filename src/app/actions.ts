@@ -1,14 +1,16 @@
 import { cueAt, findCue, splitCue } from '../core/captions.ts';
 import { matchMedia, parseProject, projectFileName, serializeProject } from '../core/projectFile.ts';
 import { addClip, createProject, addTrack, clipEnd, createClip, findClip, findFreeStart, newId, projectDuration, removeLinked, removeTrack, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
-import type { Track } from '../core/types.ts';
+import type { AssetSource, Track } from '../core/types.ts';
 import { overlaps } from '../core/timeline.ts';
 import { exportProject } from '../export/exporter.ts';
 import { dialog, h } from './dom.ts';
 import { keepAwake, pickFiles, saveFile } from './platform.ts';
 import type { Player } from './player.ts';
 import { loadRecent, rememberProject } from './recent.ts';
+import { restorable, restoreDialog } from './restore.ts';
 import { CAPTION_TRACK, type Store } from './store.ts';
+import { openWithConversion } from './transcode.ts';
 
 /** Everything the person can do to the project, as plain functions the buttons, shortcuts and tests all call. */
 export class Actions {
@@ -31,11 +33,13 @@ export class Actions {
   }
 
   /** Import one file; resolves to null when it is in the bin, or to the reason it could not be opened (nothing is said about a failure). */
-  async importOne(file: File, place = false, folder?: string): Promise<string | null> {
+  async importOne(file: File, place = false, folder?: string, source?: AssetSource): Promise<string | null> {
     const { store } = this;
     try {
       store.say(`Importing ${file.name}…`);
-      const asset = await store.lib.importFile(file, file.name, store.project.fps);
+      const asset = await openWithConversion(file, (f) => store.lib.importFile(f, file.name, store.project.fps), (m) => store.say(m));
+      asset.size = file.size; // the original's size, even when a converted copy was opened: the original is what a saved project will be given again
+      if (source) asset.source = source;
       if (folder && store.project.folders?.some((f) => f.id === folder)) asset.folder = folder;
       store.edit((p) => (p.assets[asset.id] = asset));
       if (place) this.addAsset(asset.id);
@@ -132,7 +136,10 @@ export class Actions {
     void rememberProject(this.store.project);
     this.store.loadProject(project);
     if (files.length) await this.relinkMedia(files);
-    this.afterOpen(`${project.name} from ${from}`);
+    this.afterOpen(`${project.name} from ${from}`, false);
+    // The sender left out what can be downloaded again (Twitch clips): fetch it now instead of asking for files.
+    if (restorable(this.store).length) await restoreDialog(this.store);
+    if (this.store.missingAssets().length) this.relinkDialog();
     return true;
   }
 
@@ -150,12 +157,12 @@ export class Actions {
     return true;
   }
 
-  private afterOpen(label: string): void {
+  private afterOpen(label: string, ask = true): void {
     const { store } = this;
     void rememberProject(store.project);
     const missing = store.missingAssets();
     store.say(missing.length ? `Opened ${label}. ${missing.length} media file${missing.length === 1 ? '' : 's'} to find.` : `Opened ${label}.`);
-    if (missing.length) this.relinkDialog();
+    if (missing.length && ask) this.relinkDialog();
   }
 
   /** Give media entries without a file their files again, matched by name (and size). Returns how many were found. */
@@ -167,9 +174,10 @@ export class Actions {
     for (const [id, i] of found) {
       const file = files[i]!;
       try {
-        await store.lib.relink(id, file, file.name);
         const a = store.project.assets[id]!;
+        const dims = await openWithConversion(file, (f) => store.lib.relink(id, f, file.name, true), (m) => store.say(m));
         if (a.size === undefined) a.size = file.size;
+        if (a.hasVideo && dims.width && dims.height) (a.width = dims.width), (a.height = dims.height);
         n++;
       } catch (e) {
         store.say(`Could not open ${file.name}: ${e instanceof Error ? e.message : e}`);
@@ -192,7 +200,9 @@ export class Actions {
     };
     draw();
     const pick = h('button', { class: 'btn btn-accent' }, 'Choose files…');
-    const dlg = dialog('Find the media', h('div', { class: 'stack' }, h('p', {}, 'A project file holds the edit, not the video. These files are needed:'), list, note), [pick, h('button', { class: 'btn btn-ghost', onclick: () => dlg.close() }, 'Later')]);
+    const links = restorable(store).length;
+    const fetchLinks = h('button', { class: 'btn btn-accent', onclick: () => void restoreDialog(store).then(() => draw() === 0 && dlg.close()) }, `Download ${links === 1 ? 'the Twitch clip' : `${links} Twitch clips`}`);
+    const dlg = dialog('Find the media', h('div', { class: 'stack' }, h('p', {}, 'A project file holds the edit, not the video. These files are needed:'), list, note), [...(links ? [fetchLinks] : []), pick, h('button', { class: 'btn btn-ghost', onclick: () => dlg.close() }, 'Later')]);
     pick.addEventListener('click', async () => {
       const files = await pickFiles('video/*,audio/*,.mkv,.webm,.mov', true);
       if (!files.length) return;

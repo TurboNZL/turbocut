@@ -4,7 +4,8 @@ const config: CapacitorConfig = {
   appId: 'com.turbonzl.turbocut',
   appName: 'TurboCut',
   webDir: 'dist',
-  android: { allowMixedContent: false, webContentsDebuggingEnabled: true },
+  // allowMixedContent: the app page is https://localhost and "Receive from a computer" fetches from the computer's http:// address on the local network.
+  android: { allowMixedContent: true, webContentsDebuggingEnabled: true },
 };
 
 export default config;

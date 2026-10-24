@@ -35,6 +35,8 @@ export function parseProject(json: string): Project {
   for (const [id, a] of Object.entries<any>(p.assets)) {
     if (!isObj(a) || a.id !== id || typeof a.name !== 'string' || !int(a.duration)) throw new Error('The project file is damaged (a media entry is wrong).');
   }
+  // A source link is optional and only kept when it is a plain web address of a kind we know.
+  for (const a of Object.values<any>(p.assets)) if (a.source !== undefined && !validSource(a.source)) delete a.source;
   // Bin folders are optional; an asset that names a folder that does not exist goes back to the top level.
   const folders = Array.isArray(p.folders) ? (p.folders as unknown[]).filter((f): f is { id: string; name: string } => isObj(f) && typeof f.id === 'string' && typeof f.name === 'string').slice(0, 200) : [];
   const folderIds = new Set(folders.map((f) => f.id));
@@ -53,6 +55,17 @@ export function parseProject(json: string): Project {
   }
   if (!p.tracks.some((t: any) => t.kind === 'video') || !p.tracks.some((t: any) => t.kind === 'audio')) throw new Error('The project needs a video and an audio track.');
   return { ...p, name: typeof p.name === 'string' && p.name.trim() ? p.name : 'Untitled', captionPreset: typeof p.captionPreset === 'string' ? p.captionPreset : null } as Project;
+}
+
+/** A Twitch clip link, short enough to be a link and on a Twitch address (the project may come from anyone). */
+export function validSource(s: unknown): boolean {
+  if (!isObj(s) || s.type !== 'twitch' || typeof s.url !== 'string' || s.url.length > 300) return false;
+  try {
+    const u = new URL(s.url);
+    return u.protocol === 'https:' && /(^|\.)twitch\.tv$/i.test(u.hostname);
+  } catch {
+    return false;
+  }
 }
 
 export interface FileInfo {

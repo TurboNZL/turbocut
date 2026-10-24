@@ -14,6 +14,9 @@ ffmpeg -loglevel error -y -f lavfi -i "color=c=black:s=320x240:r=30:d=75" \
 ffmpeg -loglevel error -y -f lavfi -i "testsrc=size=640x360:rate=30:duration=4" -c:v libvpx-vp9 -b:v 500k -deadline realtime -cpu-used 8 -an "$dir/vonly.webm"
 # h264.mp4: H.264 + AAC, the format of a Twitch clip. Open-source Chromium cannot decode it: the import test checks the message (skipped without libx264)
 ffmpeg -loglevel error -y -f lavfi -i "testsrc=size=640x360:rate=60:duration=2" -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=2" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -shortest "$dir/h264.mp4" || echo "skipping h264.mp4 (needs libx264)"
+# hevc.mp4: HEVC + AAC, what a streamer's Twitch clip can be. Neither Chromium nor Electron decodes it without a graphics driver, so the desktop app
+# converts it with ffmpeg (e2e/electron.mjs); the browser import test checks the message (skipped without libx265)
+ffmpeg -loglevel error -y -f lavfi -i "testsrc=size=640x360:rate=30:duration=2" -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=2" -c:v libx265 -tag:v hvc1 -preset ultrafast -pix_fmt yuv420p -c:a aac -shortest "$dir/hevc.mp4" || echo "skipping hevc.mp4 (needs libx265)"
 # TurboTestFont.ttf: a tiny font with a made-up family name (a subset of DejaVu Sans, which is freely redistributable), for the style editor tests
 python3 - "$dir/TurboTestFont.ttf" <<'PY' || echo "skipping TurboTestFont.ttf (needs python3 fonttools and DejaVu Sans)"
 import sys

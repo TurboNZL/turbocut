@@ -12,6 +12,19 @@ const sample = () => {
   return p;
 };
 
+describe('a media entry that can be fetched again', () => {
+  it('keeps a Twitch link through save and open, and drops anything else', () => {
+    const p = sample();
+    p.assets.a1!.source = { type: 'twitch', url: 'https://clips.twitch.tv/ProudPlainSlug' };
+    expect(parseProject(serializeProject(p)).assets.a1!.source).toEqual({ type: 'twitch', url: 'https://clips.twitch.tv/ProudPlainSlug' });
+    for (const bad of [{ type: 'twitch', url: 'https://evil.example/x' }, { type: 'twitch', url: 'http://clips.twitch.tv/x' }, { type: 'twitch', url: 'javascript:alert(1)' }, { type: 'ftp', url: 'https://clips.twitch.tv/x' }, { type: 'twitch', url: 5 }, 'https://clips.twitch.tv/x']) {
+      const q = sample();
+      (q.assets.a1 as any).source = bad;
+      expect(parseProject(serializeProject(q)).assets.a1!.source, JSON.stringify(bad)).toBeUndefined();
+    }
+  });
+});
+
 describe('project files', () => {
   it('round-trips an edit exactly', () => {
     const p = sample();

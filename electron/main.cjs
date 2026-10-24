@@ -8,11 +8,20 @@ const { setupUpdater } = require('./updater.cjs');
 const { loadFrame, saveFrame } = require('./frameConfig.cjs');
 const { downloadClip } = require('./twitch.cjs');
 const { Share } = require('./share.cjs');
+const { Transcoder, defaultDir } = require('./transcode.cjs');
 const os = require('node:os');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ]);
+
+// HEVC (H.265) and the other codecs Chromium leaves to the graphics driver: on Linux that is VA-API, which Chromium only uses when asked
+// (and, for AMD and some Intel drivers, only when told to skip its driver allow-list). Names Chromium does not know are ignored, so the
+// list can carry the spellings of several versions. `TURBOCUT_NO_VAAPI=1` turns it off for a driver that misbehaves. Without a driver
+// the page converts the file with ffmpeg instead (transcode.cjs).
+if (process.platform === 'linux' && process.env.TURBOCUT_NO_VAAPI !== '1') {
+  app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder,VaapiIgnoreDriverChecks,AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL,PlatformHEVCDecoderSupport');
+}
 
 const DIST = path.join(__dirname, '..', 'dist');
 
@@ -105,6 +114,7 @@ function configureShare({ enabled, name }) {
   share = new Share({ dir: path.join(app.getPath('userData'), 'received'), name: label, version: app.getVersion() });
   share.on('devices', (list) => toPage('share:devices', list));
   share.on('offer', (o) => toPage('share:offer', o));
+  share.on('shelf', (e) => toPage('share:shelf', e));
   share.on('received', (r) =>
     toPage('share:received', {
       from: r.from,
@@ -141,7 +151,11 @@ ipcMain.handle('share:part-open', (_e, transfer, kind, name) => {
   const job = sendJobs.get(transfer);
   if (!share || !job) return { ok: false, message: 'That transfer is over.' };
   const id = `p${++partCounter}`;
-  job.parts.set(id, share.openPart(job.dev, transfer, kind, String(name)));
+  try {
+    job.parts.set(id, job.shelf ? share.shelfPart(job.shelf, kind, String(name)) : share.openPart(job.dev, transfer, kind, String(name)));
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
   return { ok: true, id };
 });
 ipcMain.handle('share:part-write', async (_e, transfer, id, bytes) => {
@@ -181,14 +195,63 @@ ipcMain.handle('share:finish', async (_e, transfer) => {
 ipcMain.on('share:abort', (_e, transfer) => {
   const job = sendJobs.get(transfer);
   for (const p of job?.parts.values() ?? []) p.abort();
+  if (job?.shelf) share?.shelfClose(job.shelf);
   sendJobs.delete(transfer);
 });
+// A shelf is a send that waits to be fetched: the parts go in the same way (share:part-*), then the code is shown.
+ipcMain.handle('share:shelf-open', (_e, summary) => {
+  if (!share) return { ok: false, message: 'Sharing is turned off on this device (Settings, Device).' };
+  const { id } = share.shelfOpen({ project: String(summary?.project || 'Untitled').slice(0, 80), media: Number(summary?.media) | 0, fonts: Number(summary?.fonts) | 0, links: Number(summary?.links) | 0, bytes: Number(summary?.bytes) || 0 });
+  sendJobs.set(id, { shelf: id, parts: new Map() });
+  return { ok: true, transfer: id };
+});
+ipcMain.handle('share:shelf-ready', (_e, transfer) => {
+  if (!share || !sendJobs.get(transfer)?.shelf) return { ok: false, message: 'That shelf is closed.' };
+  try {
+    return { ok: true, ...share.shelfReady(transfer) };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+});
 app.on('before-quit', () => share?.stop());
+
+// ---------------------------------------------------------------- converting video this computer cannot decode
+const transcoder = new Transcoder({ dir: defaultDir() });
+transcoder.sweep();
+app.on('before-quit', () => transcoder.sweep());
+ipcMain.handle('transcode:available', () => transcoder.available());
+ipcMain.handle('transcode:begin', (_e, name) => transcoder.begin(name));
+ipcMain.handle('transcode:write', async (_e, id, bytes) => {
+  try {
+    await transcoder.write(id, Buffer.from(bytes.buffer ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) : bytes));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+});
+ipcMain.handle('transcode:run', async (e, id) => {
+  try {
+    const r = await transcoder.run(id, (f) => e.sender.send('transcode:progress', id, f));
+    return { ok: true, name: r.name, url: `app://turbocut/converted/${r.rel.split('/').map(encodeURIComponent).join('/')}` };
+  } catch (err) {
+    transcoder.finish(id);
+    return { ok: false, cancelled: err?.cancelled === true, message: err instanceof Error ? err.message : String(err) };
+  }
+});
+ipcMain.on('transcode:cancel', (_e, id) => transcoder.cancel(id));
+ipcMain.on('transcode:done', (_e, id) => transcoder.finish(id));
 
 app.whenReady().then(() => {
   protocol.handle('app', (request) => {
     const url = new URL(request.url);
     const rel = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
+    // Copies ffmpeg made of video this computer cannot decode: /converted/<job>/out.mp4, from its own folder and nowhere else.
+    if (rel.startsWith('/converted/')) {
+      const root = transcoder.dir + path.sep;
+      const f = path.normalize(path.join(transcoder.dir, rel.slice('/converted/'.length)));
+      if (!f.startsWith(root)) return new Response('Forbidden', { status: 403 });
+      return net.fetch(pathToFileURL(f).toString());
+    }
     // Projects another TurboCut sent: /received/<transfer>/<file>, served from the folder they were stored in and nowhere else.
     if (rel.startsWith('/received/') && share) {
       const root = share.dir + path.sep;

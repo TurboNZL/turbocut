@@ -101,6 +101,16 @@ export interface Asset {
   height: number;
   /** The bin folder it sits in (a folder id), if any. */
   folder?: string;
+  /**
+   * Where the file came from when it can be fetched again (a Twitch clip link). It travels with the project, so a device that
+   * receives the project, or opens the saved file, can download the clip itself instead of asking for the file.
+   */
+  source?: AssetSource;
+}
+
+export interface AssetSource {
+  type: 'twitch';
+  url: string;
 }
 
 /** A folder in the media bin. Folders only organise the bin; clips on the timeline do not know about them. */
