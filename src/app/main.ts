@@ -32,6 +32,7 @@ import { TimelineView } from './timelineView.ts';
 import { checkForUpdate } from './updater.ts';
 import { enhanceSelects } from './themedSelect.ts';
 import { openTwitchImport } from './twitchDialog.ts';
+import { openReceiveDialog } from './receive.ts';
 import { openSendDialog, startSharing } from './share.ts';
 
 // Phones and some webviews cannot do the Liquid Glass lens; everything else about the look still applies.
@@ -232,6 +233,7 @@ function projectPanel(): HTMLElement {
       missing,
       h('p', { class: 'hint' }, 'A project file holds the edit, not the video. Keep the media files next to it.'),
       h('button', { class: 'btn', onclick: () => openSendDialog(store) }, 'Send to another device…'),
+      h('button', { class: 'btn', onclick: () => openReceiveDialog(store, actions) }, 'Receive from a computer…'),
       h('button', { class: 'btn', onclick: () => settings() }, 'Settings…')),
   );
 }
@@ -249,6 +251,7 @@ fileMenu.addEventListener('click', () =>
     { label: 'Import media…', run: () => void importFiles() },
     { label: 'Import a Twitch clip…', run: () => openTwitchImport(actions) },
     { label: 'Send to another device…', run: () => openSendDialog(store) },
+    { label: 'Receive from a computer…', run: () => openReceiveDialog(store, actions) },
     { label: 'Find missing media…', run: () => actions.relinkDialog(), disabled: store.missingAssets().length === 0 },
   ]),
 );
@@ -378,6 +381,7 @@ function showHome(): void {
     importFiles: () => importFiles(),
     openProject: () => actions.openProject(),
     openRecent: (key) => actions.openRecent(key),
+    receive: () => openReceiveDialog(store, actions),
     openSettings: (tab) => settings(tab),
     docked,
     onClose: () => {

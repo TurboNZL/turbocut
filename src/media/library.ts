@@ -13,6 +13,14 @@ interface Opened {
   audioSink?: AudioBufferSink;
 }
 
+/** The picture of a file cannot be decoded here (the file itself reads fine). Kept apart so a caller can convert the file and try again. */
+export class UndecodablePicture extends Error {
+  constructor(message: string, readonly codec: string) {
+    super(message);
+    this.name = 'UndecodablePicture';
+  }
+}
+
 /** Opens media files and hands out decoded frames and audio. Same code on every platform: it only needs a Blob. */
 export class MediaLibrary implements FrameSource {
   private opened = new Map<string, Opened>();
@@ -61,7 +69,7 @@ export class MediaLibrary implements FrameSource {
       reason = e instanceof Error ? e.message : String(e);
     }
     const supported = await o.video.canDecode().catch(() => false);
-    throw new Error(`the picture of ${name} (${codec}, ${await o.video.getDisplayWidth()}×${await o.video.getDisplayHeight()}) cannot be decoded on this device (${supported ? 'the first frame failed' : 'not supported'}: ${reason}), although its sound and length read fine`);
+    throw new UndecodablePicture(`the picture of ${name} (${codec}, ${await o.video.getDisplayWidth()}×${await o.video.getDisplayHeight()}) cannot be decoded on this device (${supported ? 'the first frame failed' : 'not supported'}: ${reason}), although its sound and length read fine`, codec);
   }
 
   private async open(id: string, file: Blob, name: string): Promise<Opened> {
@@ -78,10 +86,20 @@ export class MediaLibrary implements FrameSource {
   }
 
   /** Give a media entry of a saved project its file again. Drops anything cached from the old file. */
-  async relink(id: string, file: Blob, name: string): Promise<void> {
-    await this.open(id, file, name);
+  async relink(id: string, file: Blob, name: string, verify = false): Promise<{ width: number; height: number }> {
+    const o = await this.open(id, file, name);
+    if (verify) {
+      try {
+        await this.checkPicture(o, name);
+      } catch (e) {
+        this.opened.delete(id);
+        this.files.delete(id);
+        throw e;
+      }
+    }
     this.peakCache.delete(id);
     this.thumbCache.delete(id);
+    return { width: o.video ? await o.video.getDisplayWidth() : 0, height: o.video ? await o.video.getDisplayHeight() : 0 };
   }
 
   /** The file an asset was opened from (to send it to another device), or undefined when it is not open. */

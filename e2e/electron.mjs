@@ -1,6 +1,6 @@
 // Runs the built app inside the real Electron shell: protocol, secure context, codecs, import and export.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { _electron as electron } from 'playwright-core';
 
@@ -33,7 +33,7 @@ try {
   console.log('shell api:', JSON.stringify(api));
   assert.equal(api.twitch, 'function');
   assert.match(api.share, /configure/);
-  assert.equal(api.top, 'platform,share,twitch,updater,version,window', 'only the documented bridges are exposed');
+  assert.equal(api.top, 'platform,share,transcode,twitch,updater,version,window', 'only the documented bridges are exposed');
   // The window was shown only once it had painted: nothing white at the edges (the window background and the page agree).
   const edge = await win.evaluate(() => ({ html: getComputedStyle(document.documentElement).backgroundColor, body: getComputedStyle(document.body).backgroundColor }));
   assert.notEqual(edge.html, 'rgba(0, 0, 0, 0)', 'the page paints its own background');
@@ -60,6 +60,28 @@ try {
   console.log('installed fonts:', JSON.stringify(sys));
   assert.equal(sys.source, 'local-fonts', 'Electron answers queryLocalFonts');
   assert.ok(sys.n > 0, 'and returns fonts');
+
+  // HEVC: Electron has no software decoder for it, so without a graphics driver the picture cannot be shown. The shell converts it with ffmpeg
+  // and the page opens the copy; the bin item keeps the original's name and size, so a saved project still matches the original file.
+  if (existsSync(`${root}e2e/.media/hevc.mp4`)) {
+    const hevc = readFileSync(`${root}e2e/.media/hevc.mp4`);
+    const r = await win.evaluate(async (b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const supported = await VideoDecoder.isConfigSupported({ codec: 'hvc1.1.6.L93.B0' }).then((x) => !!x.supported).catch(() => false);
+      const failed = await window.turbocutApp.actions.importOne(new File([bytes], 'hevc.mp4', { type: 'video/mp4' }));
+      const a = Object.values(window.turbocutApp.store.project.assets).find((x) => x.name === 'hevc.mp4');
+      const opened = a ? window.turbocutApp.store.lib.fileFor(a.id) : null;
+      const frame = a ? !!(await window.turbocutApp.store.lib.thumbnail(a.id)) : false;
+      return { supported, failed, size: a?.size, openedSize: opened?.size, width: a?.width, frame };
+    }, hevc.toString('base64'));
+    console.log('hevc import:', JSON.stringify(r));
+    assert.equal(r.failed, null, 'the HEVC file imports');
+    assert.equal(r.size, hevc.length, 'the asset remembers the original size');
+    assert.equal(r.width, 640);
+    assert.equal(r.frame, true, 'and it shows a picture');
+    if (!r.supported) assert.notEqual(r.openedSize, hevc.length, 'this shell cannot decode HEVC, so a converted copy was opened');
+    await win.evaluate(() => window.turbocutApp.store.edit((p) => { for (const a of Object.values(p.assets)) delete p.assets[a.id]; }));
+  }
 
   // Import through the app and export through the app. In Electron the download goes through the shell.
   const media = readFileSync(`${root}e2e/.media/src.webm`).toString('base64');

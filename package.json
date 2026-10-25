@@ -10,7 +10,7 @@
     "build": "vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "e2e": "node e2e/run.mjs && node e2e/app.mjs && node e2e/settings.mjs && node e2e/bin.mjs && node e2e/keys.mjs && node e2e/editing.mjs && node e2e/project.mjs && node e2e/styles.mjs && node e2e/fonts.mjs && node e2e/layouts.mjs && node e2e/home.mjs && node e2e/guides.mjs && node e2e/touch.mjs && node e2e/playback-smooth.mjs",
+    "e2e": "node e2e/run.mjs && node e2e/app.mjs && node e2e/settings.mjs && node e2e/bin.mjs && node e2e/keys.mjs && node e2e/editing.mjs && node e2e/project.mjs && node e2e/receive.mjs && node e2e/styles.mjs && node e2e/fonts.mjs && node e2e/layouts.mjs && node e2e/home.mjs && node e2e/guides.mjs && node e2e/touch.mjs && node e2e/playback-smooth.mjs",
     "e2e:electron": "node e2e/electron.mjs",
     "e2e:touch": "node e2e/touch.mjs",
     "e2e:playback": "node e2e/playback-smooth.mjs",
@@ -19,6 +19,7 @@
     "e2e:keys": "node e2e/keys.mjs",
     "e2e:editing": "node e2e/editing.mjs",
     "e2e:project": "node e2e/project.mjs",
+    "e2e:receive": "node e2e/receive.mjs",
     "e2e:styles": "node e2e/styles.mjs",
     "e2e:fonts": "node e2e/fonts.mjs",
     "e2e:layouts": "node e2e/layouts.mjs",
@@ -103,6 +104,26 @@
       "owner": "TurboNZL",
       "repo": "turbocut",
       "releaseType": "prerelease"
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "ffmpeg"
+      ],
+      "recommends": [
+        "libappindicator3-1",
+        "libva2",
+        "libva-drm2",
+        "intel-media-va-driver | mesa-va-drivers"
+      ]
     }
   },
   "dependencies": {
