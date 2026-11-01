@@ -1,7 +1,7 @@
 import 'turbothemes/base.css';
 import './styles.css';
 import './motion.css';
-import { start } from 'turbothemes';
+import { enhanceSelects, start } from 'turbothemes';
 import { projectDuration } from '../core/timeline.ts';
 import { exportProject } from '../export/exporter.ts';
 import { mixWindow } from '../export/audio.ts';
@@ -29,7 +29,6 @@ import { Store, ZOOM_MAX, ZOOM_MIN } from './store.ts';
 import { detectSystemFonts, fontPermission } from './systemFonts.ts';
 import { TimelineView } from './timelineView.ts';
 import { checkForUpdate } from './updater.ts';
-import { enhanceSelects } from './themedSelect.ts';
 import { openTwitchImport } from './twitchDialog.ts';
 import { openReceiveDialog } from './receive.ts';
 import { openSendDialog, startSharing } from './share.ts';
@@ -413,10 +412,12 @@ else bootAnimation();
 // Once a project has a file, changes are written to it a few seconds after the last one (Settings → Saving). Nothing is kept anywhere else:
 // a project that was never saved is asked about when it would be lost (a new project, opening another, closing the window).
 let keepTimer: ReturnType<typeof setTimeout> | undefined;
-store.on('project', () => {
+const keepSoon = () => {
   clearTimeout(keepTimer);
   keepTimer = setTimeout(() => void actions.autosave(), 3000);
-});
+};
+store.on('project', keepSoon);
+store.on('settings', () => store.dirty && store.settings.autosave && keepSoon()); // switching it on writes what is waiting
 window.addEventListener('beforeunload', (e) => {
   if (!store.dirty) return;
   void actions.autosave();

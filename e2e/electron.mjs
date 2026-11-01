@@ -1,6 +1,8 @@
 // Runs the built app inside the real Electron shell: protocol, secure context, codecs, import and export.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { _electron as electron } from 'playwright-core';
 
@@ -33,7 +35,7 @@ try {
   console.log('shell api:', JSON.stringify(api));
   assert.equal(api.twitch, 'function');
   assert.match(api.share, /configure/);
-  assert.equal(api.top, 'platform,share,transcode,twitch,updater,version,window', 'only the documented bridges are exposed');
+  assert.equal(api.top, 'media,platform,project,share,transcode,twitch,updater,version,window', 'only the documented bridges are exposed');
   // The window was shown only once it had painted: nothing white at the edges (the window background and the page agree).
   const edge = await win.evaluate(() => ({ html: getComputedStyle(document.documentElement).backgroundColor, body: getComputedStyle(document.body).backgroundColor }));
   assert.notEqual(edge.html, 'rgba(0, 0, 0, 0)', 'the page paints its own background');
@@ -105,6 +107,53 @@ try {
   assert.equal(Number(v.nb_read_frames), 360, "6 s at the 60 fps default");
   assert.ok(a, 'audio stream present');
   if (env.h264) assert.deepEqual([v.codec_name, a.codec_name, info.container], ['h264', 'aac', 'mp4'], 'H.264 + AAC in MP4 when the shell can encode H.264');
+
+  // ---- project files and media paths, through the real shell: a save dialog (answered by the test), the file on disk, a reopen that finds the
+  // video again by its remembered path, and the message when the file has moved.
+  {
+    const dir = mkdtempSync(join(tmpdir(), 'tcfiles-'));
+    const clip = join(dir, 'pathclip.webm');
+    copyFileSync(`${root}e2e/.media/src.webm`, clip);
+    const projectFile = join(dir, 'Shell short.turbocut');
+    await app.evaluate(({ dialog }, f) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: f });
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [f] });
+    }, projectFile);
+    const menu = async (name) => { await win.getByRole('button', { name: 'File', exact: true }).click(); await win.getByRole('menuitem', { name }).click(); };
+    await menu('New project');
+    await win.getByRole('button', { name: 'Discard it' }).click();
+    const [chooser] = await Promise.all([win.waitForEvent('filechooser'), menu('Import media…')]);
+    await chooser.setFiles(clip);
+    await win.waitForFunction(() => Object.keys(window.turbocutApp.store.project.assets).length === 1, null, { timeout: 20000 });
+    const imported = await win.evaluate(() => Object.values(window.turbocutApp.store.project.assets)[0]);
+    console.log('imported asset path:', imported.path);
+    assert.equal(imported.path, clip, 'the shell told the page where the picked file is');
+    await win.evaluate(() => { const a = window.turbocutApp; a.actions.addAsset(Object.keys(a.store.project.assets)[0]); a.store.edit((p) => (p.name = 'Shell short')); });
+    await win.keyboard.press('Control+s');
+    await win.waitForFunction(() => !window.turbocutApp.store.dirty);
+    const saved = readFileSync(projectFile, 'utf8');
+    assert.ok(saved.includes(JSON.stringify(clip).slice(1, -1)), 'the project file remembers the video\'s path');
+    assert.ok(!saved.includes('AAAA') && saved.length < 20000, 'and holds the edit, not the video');
+    await win.evaluate(() => window.turbocutApp.store.edit((p) => (p.name = 'Shell short 2'))); // autosave writes it after a few seconds
+    await win.waitForFunction(() => !window.turbocutApp.store.dirty, null, { timeout: 15000 });
+    assert.match(readFileSync(projectFile, 'utf8'), /Shell short 2/, 'autosave wrote to the same file');
+
+    // reopen: nothing is asked, the video is back and shows a picture
+    await menu('New project');
+    await menu('Open project…');
+    await win.waitForFunction(() => window.turbocutApp.store.project.name === 'Shell short 2');
+    await win.waitForFunction(() => window.turbocutApp.store.missingAssets().length === 0, null, { timeout: 20000 });
+    assert.equal(await win.getByRole('dialog', { name: 'Find the media' }).count(), 0, 'nothing to find: the path was enough');
+    assert.equal(await win.evaluate(async () => { const a = window.turbocutApp; return !!(await a.store.lib.thumbnail(Object.keys(a.store.project.assets)[0])); }), true, 'and it plays');
+    // the file moves: the project opens and says what is missing
+    renameSync(clip, join(dir, 'moved.webm'));
+    await menu('Open project…');
+    await win.getByRole('dialog', { name: 'Find the media' }).waitFor();
+    assert.match(await win.locator('.relink-list').textContent(), /pathclip\.webm/);
+    await win.keyboard.press('Escape');
+    await win.getByRole('dialog', { name: 'Find the media' }).waitFor({ state: 'detached' });
+    console.log('shell project files ok');
+  }
   assert.deepEqual(errors, []);
   console.log('electron e2e passed');
 } finally {

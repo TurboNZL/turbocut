@@ -16,7 +16,7 @@ const release = (tag) => ({ tag_name: tag, html_url: `https://github.com/TurboNZ
   assets: ['android.apk', 'windows-setup.exe', 'windows-portable.exe', 'linux-x86_64.AppImage', 'linux-amd64.deb', 'web.zip', 'latest.yml'].map((n) => asset(`turbocut-${tag.slice(1)}-${n}`)) });
 try {
   const open = async (handler) => {
-    const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 }, home: true })).newPage();
+    const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 }, home: true, files: true })).newPage();
     page.on('pageerror', (e) => errors.push(e.message));
     await page.route('https://api.github.com/**', handler);
     await page.goto('http://localhost:5217/');
@@ -85,8 +85,7 @@ try {
 
   // opening a project and backing out of the file picker does not drop you into the editor
   await page.getByRole('button', { name: 'Home', exact: true }).click();
-  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: /Open a project/ }).click()]);
-  await chooser.setFiles([]); // cancelled
+  await page.getByRole('button', { name: /Open a project/ }).click(); // the test's open dialog is cancelled (no file chosen)
   await page.waitForTimeout(300);
   assert.equal(await page.locator('.home').count(), 1, 'cancelling the picker leaves the home screen where it was');
   const [chooser2] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: /Import video/ }).click()]);
@@ -94,7 +93,7 @@ try {
   await page.waitForTimeout(300);
   assert.equal(await page.locator('.home').count(), 1, 'and so does cancelling an import');
 
-  // recent projects: nothing to list yet; after some work (kept a few seconds after the last change) it is one tap away on the next start
+  // recent projects: nothing to list yet; once a project is saved to a file it is one tap away on the next start (the list holds the file, not a copy)
   assert.equal(await page.locator('.home-recent').isVisible(), false, 'no recent list while there is nothing to list');
   await page.getByRole('button', { name: /Vertical short/ }).click();
   const media = (await import('node:fs')).readFileSync(`${root}e2e/.media/src.webm`).toString('base64');
@@ -103,8 +102,10 @@ try {
     await window.turbocutApp.importMedia([new File([bytes], 'clip.webm', { type: 'video/webm' })], true);
     window.turbocutApp.store.edit((p) => (p.name = 'My short'));
   }, media);
-  await page.waitForTimeout(4600); // the copy is kept 4 s after the last change
+  await page.keyboard.press('Control+s'); // the first save asks where (the test's file dialog answers)
+  await page.waitForFunction(() => !window.turbocutApp.store.dirty);
   await page.evaluate(() => window.turbocutApp.store.updateSettings({ showHome: true }));
+  await page.evaluate(() => window.turbocutApp.store.loadProject(window.turbocutApp.store.project)); // nothing unsaved, nothing open
   await page.reload();
   await page.waitForFunction(() => window.turbocutApp);
   await page.locator('.home').waitFor(); // an empty project at start: the home screen shows by itself

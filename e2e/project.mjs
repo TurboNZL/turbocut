@@ -78,12 +78,12 @@ try {
   await b.evaluate(() => window.turbocutApp.store.edit((p) => (p.name = 'Changed')));
   await b.getByRole('button', { name: 'File', exact: true }).click();
   await b.getByRole('menuitem', { name: 'New project' }).click();
-  await b.getByRole('dialog', { name: 'Unsaved changes' }).waitFor();
+  await b.getByRole('dialog', { name: 'Save this project first?' }).waitFor();
   await b.getByRole('button', { name: 'Cancel' }).click();
   assert.equal(await b.evaluate(() => window.turbocutApp.store.project.name), 'Changed', 'Cancel keeps the project');
   await b.getByRole('button', { name: 'File', exact: true }).click();
   await b.getByRole('menuitem', { name: 'New project' }).click();
-  await b.getByRole('button', { name: 'Discard them' }).click();
+  await b.getByRole('button', { name: 'Discard it' }).click();
   assert.equal(await b.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((t) => t.clips).length), 0, 'a new project is empty');
 
   // ---- a file that is not a project says so and changes nothing
