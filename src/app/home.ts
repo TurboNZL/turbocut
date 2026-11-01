@@ -15,9 +15,11 @@ export interface HomeDeps {
   importFiles: () => Promise<boolean>;
   /** Pick a `.turbocut` project file and open it. Resolves true only when one was opened. */
   openProject: () => Promise<boolean>;
+  /** Start a new, empty project of this shape (asks about unsaved work first). Resolves true when it was made. */
+  newProject: (width: number, height: number) => Promise<boolean>;
   /** Open one of the recent projects. Resolves true when it was opened. */
   openRecent: (key: string) => Promise<boolean>;
-  /** Open the "Receive from a computer" window (a code from the computer, for a phone). */
+  /** Open the "Receive from a computer" window (paste the link from the computer, for a phone). */
   receive: () => void;
   openSettings: (tab?: 'Updates' | 'Layout' | 'Fonts') => void;
   /** The bottom dock is on: the home screen leaves room for it and is a page, not a layer to dismiss. */
@@ -52,12 +54,12 @@ export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement }
     deps.onClose?.();
   };
 
-  const start = (w: number, hh: number) => {
-    if (store.project.width !== w || store.project.height !== hh) store.edit((p) => ((p.width = w), (p.height = hh)));
-    close();
+  // A shape means a NEW project: it never carries on with whatever was open before.
+  const start = async (w: number, hh: number) => {
+    if (await deps.newProject(w, hh)) close();
   };
   const startCard = (title: string, sub: string, w: number, hh: number) =>
-    h('button', { class: 'home-start btn', onclick: () => start(w, hh) },
+    h('button', { class: 'home-start btn', onclick: () => void start(w, hh) },
       h('span', { class: 'home-frame', 'aria-hidden': 'true' }, h('span', { class: 'home-ratio', style: `--r: ${(w / hh).toFixed(4)}` })),
       h('strong', {}, title), h('small', { class: 'hint' }, sub));
 
@@ -70,7 +72,7 @@ export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement }
       h('div', { class: 'home-recents' }, ...rows.slice(0, 6).map((r) => {
         const open = h('button', { class: 'home-recent-open', type: 'button', 'data-key': r.key, onclick: async () => ((await deps.openRecent(r.key)) && close()) },
           h('span', { class: 'home-frame mini', 'aria-hidden': 'true' }, h('span', { class: 'home-ratio', style: `--r: ${(r.width / Math.max(1, r.height)).toFixed(4)}` })),
-          h('span', { class: 'home-recent-text' }, h('strong', {}, r.name), h('small', {}, `${ago(r.at)} · ${clock(r.seconds)} · ${r.width}×${r.height}`)));
+          h('span', { class: 'home-recent-text' }, h('strong', {}, r.name), h('small', {}, `${ago(r.at)} · ${clock(r.seconds)} · ${r.width}×${r.height}`), h('small', { class: 'home-recent-where' }, r.where)));
         const del = h('button', { class: 'btn btn-ghost icon-btn home-recent-del', type: 'button', 'aria-label': `Remove ${r.name} from the list`, title: 'Remove from the list', onclick: async () => (await forgetRecent(r.key), drawRecent(await listRecent())) }, icon('close', 14));
         return h('div', { class: 'home-recent-item' }, open, del);
       })),
@@ -158,7 +160,7 @@ export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement }
       arrive(h('div', { class: 'home-quicks' },
         quick('folder', 'Open a project', 'A .turbocut file you saved', async () => ((await deps.openProject()) && close())),
         quick('video', 'Import video', 'Straight into the media bin', async () => ((await deps.importFiles()) && close())),
-        quick('download', 'From a computer', 'Type the code it shows', () => deps.receive()),
+        quick('download', 'From a computer', 'Paste the link it gives', () => deps.receive()),
         quick('settings', 'Make it yours', 'Layouts, fonts and looks', () => deps.openSettings('Layout'))), 4),
       // The update line is the last thing on the first screen. Everything after it waits below the edge.
       arrive(h('section', { class: 'home-card home-updates' },

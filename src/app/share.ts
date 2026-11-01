@@ -33,13 +33,12 @@ interface Reply {
   message?: string;
   id?: string;
   transfer?: string;
-  code?: string;
-  port?: number;
-  addresses?: string[];
+  /** shelfReady: the links another device opens, best address first. */
+  links?: string[];
 }
 interface ShelfEvent {
   id: string;
-  state: 'waiting' | 'sending' | 'done' | 'closed' | 'expired' | 'locked';
+  state: 'waiting' | 'sending' | 'done' | 'closed' | 'expired';
   sent: number;
   total: number;
 }
@@ -123,13 +122,13 @@ export function startSharing(store: Store, actions: Actions): void {
   });
 }
 
-/** The "Send to another device" window: the apps found on the network, what to include, progress, and a code for a phone. */
+/** The "Send to another device" window: the apps found on the network, what to include, progress, and a link for a phone. */
 export function openSendDialog(store: Store): void {
   const api = shareApi;
   if (!api) {
     dialog('Send to another device', h('div', { class: 'stack' },
-      h('p', {}, 'Sending a project straight to another TurboCut works from the desktop apps (Windows and Linux): they find each other on the network, and a phone can fetch with a code.'),
-      h('p', { class: 'hint' }, platform === 'android' ? 'This is the Android app. Save the project as a file and move it across, or send from a computer: File → Receive from a computer… takes what it offers.' : 'This is the web version. Save the project as a file and move it across instead, or install the desktop app.')));
+      h('p', {}, 'Sending a project straight to another TurboCut works from the desktop apps (Windows and Linux): they find each other on the network, and a phone can fetch from a link.'),
+      h('p', { class: 'hint' }, platform === 'android' ? 'This is the Android app. Save the project as a file and move it across, or send from a computer: File → Receive from a computer… takes the link it gives.' : 'This is the web version. Save the project as a file and move it across instead, or install the desktop app.')));
     return;
   }
   const list = h('div', { class: 'share-list', role: 'list' });
@@ -142,8 +141,8 @@ export function openSendDialog(store: Store): void {
   const fontLabel = h('span', {}, 'Include the fonts');
   const linkLabel = h('span', {}, 'Send Twitch clips as links');
   const linkRow = h('label', { class: 'setting', hidden: true }, linkOnly, linkLabel);
-  const codeBox = h('div', { class: 'share-code', hidden: true });
-  const codeBtn = h('button', { class: 'btn', onclick: () => void sendWithCode() }, 'Send with a code');
+  const linkBox = h('div', { class: 'share-code', hidden: true });
+  const linkBtn = h('button', { class: 'btn', onclick: () => void sendWithLink() }, 'Get a link for a phone');
   let devices: ShareDevice[] = [];
   let busy = false;
   let transfer: string | null = null;
@@ -151,14 +150,16 @@ export function openSendDialog(store: Store): void {
   let stats = { media: 0, mediaBytes: 0, fonts: 0, fontBytes: 0, linked: 0 };
 
   const dlg = dialog('Send to another device', h('div', { class: 'stack' },
-    h('p', {}, `Send "${store.project.name}" to another TurboCut on this network. A computer asks its person to accept first; a phone fetches it with a code.`),
+    h('p', {}, `Send "${store.project.name}" to another TurboCut on this network. A computer asks its person to accept first. For a phone, get a link: paste it in TurboCut on the phone and you are done.`),
     h('label', { class: 'setting' }, withMedia, mediaLabel),
     linkRow,
     h('label', { class: 'setting' }, withFonts, fontLabel),
     h('div', { class: 'share-found' }, list),
-    h('div', { class: 'row' }, codeBtn),
-    codeBox, note, progress), [h('button', { class: 'btn', onclick: () => dlg.close() }, 'Close')]);
-  const stopWatching = new MutationObserver(() => dlg.el.isConnected || (stopWatching.disconnect(), transfer && api.abort(transfer)));
+    h('div', { class: 'row' }, linkBtn),
+    linkBox, note, progress), [h('button', { class: 'btn', onclick: () => dlg.close() }, 'Close')]);
+  // Closing the window stops a push that is still being sent. A link that is ready stays up (send and forget) until it is used or an hour passes.
+  let shelfUp = false;
+  const stopWatching = new MutationObserver(() => dlg.el.isConnected || (stopWatching.disconnect(), transfer && !shelfUp && api.abort(transfer)));
   stopWatching.observe(document.body, { childList: true });
   api.on('shelf', (e: ShelfEvent) => shelfWatch?.(e));
 
@@ -175,7 +176,7 @@ export function openSendDialog(store: Store): void {
   });
 
   const draw = () => {
-    note.textContent = devices.length ? '' : 'Looking for other TurboCut apps on this network… Both need to be on the same network with sharing turned on (Settings, Device). For a phone, use Send with a code.';
+    note.textContent = devices.length ? '' : 'Looking for other TurboCut apps on this network… Both need to be on the same network with sharing turned on (Settings, Device). For a phone, get a link.';
     list.replaceChildren(...devices.map((d) => h('div', { class: 'share-device', role: 'listitem' },
       h('div', {}, h('strong', {}, d.name), h('small', { class: 'hint' }, ` ${d.platform} · ${d.version}`)),
       h('button', { class: 'btn btn-accent', disabled: busy, onclick: () => void send(d) }, 'Send'))));
@@ -227,7 +228,7 @@ export function openSendDialog(store: Store): void {
     if (transfer) api.abort(transfer);
     transfer = null;
     busy = false;
-    codeBtn.disabled = false;
+    linkBtn.disabled = false;
     progress.style.display = 'none';
     draw();
     note.textContent = e instanceof Error ? e.message : String(e);
@@ -235,7 +236,7 @@ export function openSendDialog(store: Store): void {
 
   const send = async (dev: ShareDevice) => {
     busy = true;
-    codeBtn.disabled = true;
+    linkBtn.disabled = true;
     draw();
     progress.style.display = '';
     progress.value = 0;
@@ -256,11 +257,11 @@ export function openSendDialog(store: Store): void {
     }
   };
 
-  /** Put the parts on a shelf and show the address and code; the other device fetches them. */
-  const sendWithCode = async () => {
+  /** Put the parts on a shelf and show the link; the other device opens it (paste it into Receive from a computer). */
+  const sendWithLink = async () => {
     busy = true;
-    codeBtn.disabled = true;
-    codeBox.hidden = true;
+    linkBtn.disabled = true;
+    linkBox.hidden = true;
     draw();
     progress.style.display = '';
     progress.value = 0;
@@ -272,30 +273,41 @@ export function openSendDialog(store: Store): void {
       transfer = o.transfer;
       await upload(transfer, g.parts, g.total, (pct) => (note.textContent = `Getting it ready… ${pct}%`));
       const r = await api.shelfReady(transfer);
-      if (!r.ok || !r.code) throw new Error(r.message || 'Could not get it ready.');
+      if (!r.ok || !r.links?.length) throw new Error(r.message || 'Could not get it ready.');
+      shelfUp = true;
       const shelf = transfer;
       progress.style.display = 'none';
-      const addr = r.addresses?.length ? r.addresses.map((a) => (r.port === 47903 ? a : `${a}:${r.port}`)) : [];
-      const code = `${r.code.slice(0, 3)} ${r.code.slice(3)}`;
-      codeBox.hidden = false;
-      codeBox.replaceChildren(
-        h('p', {}, 'On the other device open TurboCut, then ', h('strong', {}, 'Receive from a computer'), ' (Home screen, or File menu), and type:'),
-        h('div', { class: 'share-code-row' }, h('small', { class: 'hint' }, 'Address'), h('strong', { class: 'share-code-big' }, addr.length ? addr.join('  or  ') : 'this computer\'s address (see your network settings)')),
-        h('div', { class: 'share-code-row' }, h('small', { class: 'hint' }, 'Code'), h('strong', { class: 'share-code-big' }, code)));
-      note.textContent = `Waiting for the other device… The code works for 20 minutes${stats.linked && linkOnly.checked ? '. The Twitch clips download on that device' : ''}.`;
+      const field = h('input', { class: 'input share-link', type: 'text', readonly: true, value: r.links[0]!, 'aria-label': 'Link for the other device' }) as HTMLInputElement;
+      const copy = h('button', { class: 'btn btn-accent', onclick: async () => {
+        field.select();
+        try {
+          await navigator.clipboard.writeText(field.value);
+          copy.textContent = 'Copied';
+        } catch {
+          copy.textContent = 'Press Ctrl+C'; // clipboard not allowed here: the text is selected, copy it by hand
+        }
+      } }, 'Copy link');
+      linkBox.hidden = false;
+      linkBox.replaceChildren(
+        h('p', {}, 'On the other device open TurboCut, choose ', h('strong', {}, 'From a computer'), ' (Home screen, or File menu) and paste this link:'),
+        h('div', { class: 'share-link-row' }, field, copy),
+        ...(r.links.length > 1 ? [h('small', { class: 'hint' }, `If that one does not work, try ${r.links.slice(1).join(' or ')}`)] : []));
+      note.textContent = `Ready. The link works once, for an hour, on this Wi-Fi. You can close this window${stats.linked && linkOnly.checked ? '. The Twitch clips download on the other device' : ''}.`;
       shelfWatch = (e) => {
         if (e.id !== shelf) return;
         if (e.state === 'sending') note.textContent = `Sending… ${Math.round((e.sent / Math.max(1, e.total)) * 100)}%`;
         else if (e.state === 'done') {
           transfer = null;
+          shelfUp = false;
           store.say(`Sent "${store.project.name}".`);
           dlg.close();
-        } else if (e.state === 'expired' || e.state === 'locked' || e.state === 'closed') {
+        } else if (e.state === 'expired' || e.state === 'closed') {
           transfer = null;
+          shelfUp = false;
           busy = false;
-          codeBtn.disabled = false;
-          codeBox.hidden = true;
-          note.textContent = e.state === 'locked' ? 'Too many wrong codes were tried, so the code was closed. Send again to get a new one.' : 'The code has been closed. Send again to get a new one.';
+          linkBtn.disabled = false;
+          linkBox.hidden = true;
+          note.textContent = 'The link has closed. Get a new one to send again.';
         }
       };
     } catch (e) {

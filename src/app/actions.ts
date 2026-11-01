@@ -7,7 +7,9 @@ import { exportProject } from '../export/exporter.ts';
 import { dialog, h } from './dom.ts';
 import { keepAwake, pickFiles, saveFile } from './platform.ts';
 import type { Player } from './player.ts';
-import { loadRecent, rememberProject } from './recent.ts';
+import { forgetRecent, recentRef, rememberFile } from './recent.ts';
+import { canWriteQuietly, openDialog, readRef, refName, saveAs, writeRef, type ProjectRef } from './projectFiles.ts';
+import { filesFromPaths, pathOf } from './mediaPaths.ts';
 import { restorable, restoreDialog } from './restore.ts';
 import { CAPTION_TRACK, type Store } from './store.ts';
 import { openWithConversion } from './transcode.ts';
@@ -38,6 +40,8 @@ export class Actions {
     try {
       store.say(`Importing ${file.name}…`);
       const asset = await openWithConversion(file, (f) => store.lib.importFile(f, file.name, store.project.fps), (m) => store.say(m));
+      asset.path = pathOf(file); // desktop app: where it is on disk, so a saved project opens it again by itself
+      if (!asset.path) delete asset.path;
       asset.size = file.size; // the original's size, even when a converted copy was opened: the original is what a saved project will be given again
       if (source) asset.source = source;
       if (folder && store.project.folders?.some((f) => f.id === folder)) asset.folder = folder;
@@ -52,15 +56,54 @@ export class Actions {
 
   // ---------------------------------------------------------------- project files
 
-  /** Save the edit as a `.turbocut` file (the media stays where it is). */
-  async saveProject(): Promise<void> {
+  /**
+   * Save the project to its file. The first time (or with `as`) the person chooses where; after that it writes back to the same file.
+   * Resolves true when it was saved, false when the person cancelled or it could not be written.
+   */
+  async saveProject(as = false): Promise<boolean> {
     const { store } = this;
-    const name = projectFileName(store.project.name);
-    await saveFile(serializeProject(store.project), name, 'application/json');
-    store.dirty = false;
-    void rememberProject(store.project);
-    store.say(`Saved ${name}. It holds the edit, not the video: keep the media files too.`);
+    try {
+      const text = serializeProject(store.project);
+      let ref = as ? null : store.fileRef;
+      let name = ref ? refName(ref) : '';
+      if (ref) await writeRef(ref, text);
+      else {
+        const r = await saveAs(store.project.name, text);
+        if (!r) return false;
+        ref = r.ref;
+        name = r.name;
+      }
+      store.fileRef = ref;
+      store.dirty = false;
+      void rememberFile(store.project, ref);
+      store.say(ref ? `Saved ${name}. It holds the edit, not the video: keep the media files too.` : `Saved a copy as ${name}. This browser cannot save to the same file again, so Save makes a new copy each time.`);
+      store.emit('saved');
+      return true;
+    } catch (e) {
+      store.say(`Could not save: ${e instanceof Error ? e.message : e}`);
+      return false;
+    }
   }
+
+  /** Quietly write the changes to the project's file (Settings → Saving). Does nothing for a project that has no file yet. */
+  async autosave(): Promise<void> {
+    const { store } = this;
+    const ref = store.fileRef;
+    if (!store.settings.autosave || !ref || !store.dirty || this.autosaving) return;
+    this.autosaving = true;
+    try {
+      if (!(await canWriteQuietly(ref))) return; // a browser file that needs its permission again waits for the next Save
+      const at = store.version;
+      await writeRef(ref, serializeProject(store.project));
+      if (store.fileRef === ref && store.version === at) store.dirty = false;
+      store.emit('saved');
+    } catch (e) {
+      store.say(`Could not update ${refName(ref)}: ${e instanceof Error ? e.message : e}. Use Save project to choose another place.`);
+    } finally {
+      this.autosaving = false;
+    }
+  }
+  private autosaving = false;
 
   /** Ask before throwing away unsaved work. Resolves true to go on (saved, or discarded), false when the person backs out. */
   confirmDiscard(): Promise<boolean> {
@@ -74,9 +117,10 @@ export class Actions {
         dlg.close();
         resolve(v);
       };
-      const dlg = dialog('Unsaved changes', h('p', {}, 'This project has changes that are not saved to a file.'), [
-        h('button', { class: 'btn btn-accent', onclick: () => void this.saveProject().then(() => finish(true)) }, 'Save, then continue'),
-        h('button', { class: 'btn', onclick: () => finish(true) }, 'Discard them'),
+      const where = this.store.fileRef ? `has changes that are not saved to ${refName(this.store.fileRef)}` : 'has not been saved anywhere yet';
+      const dlg = dialog('Save this project first?', h('p', {}, `“${this.store.project.name}” ${where}.`), [
+        h('button', { class: 'btn btn-accent', onclick: () => void this.saveProject().then((ok) => ok && finish(true)) }, this.store.fileRef ? 'Save, then continue' : 'Save…'),
+        h('button', { class: 'btn', onclick: () => finish(true) }, 'Discard it'),
         h('button', { class: 'btn btn-ghost', onclick: () => finish(false) }, 'Cancel'),
       ]);
       // closed with the X or a press outside: that is a cancel too
@@ -90,11 +134,14 @@ export class Actions {
     void this.confirmDiscard().then((ok) => ok && go());
   }
 
-  /** A fresh project at the same size. Resolves true when it was made. */
-  async newProject(): Promise<boolean> {
+  /**
+   * A fresh, empty project (the shape of the current one unless `shape` is given). Unsaved work is asked about first, and nothing from
+   * before comes along: not the clips, not the media, not the file it was saved to. Resolves true when it was made.
+   */
+  async newProject(shape?: { width: number; height: number }): Promise<boolean> {
     if (!(await this.confirmDiscard())) return false;
-    void rememberProject(this.store.project); // what was being edited stays on the home screen's list
-    const { width, height } = this.store.project;
+    this.player.pause();
+    const { width, height } = shape ?? this.store.project;
     this.store.loadProject(createProject({ name: 'Untitled', width, height }));
     this.store.say('New project.');
     return true;
@@ -106,23 +153,27 @@ export class Actions {
     return this.loadProjectFile(file);
   }
 
-  /** Open a project from the recent list on the home screen. */
+  /** Open one of the recent projects: read the file it was saved to. A file that moved or was deleted is said so, and dropped from the list on request. */
   async openRecent(key: string): Promise<boolean> {
     if (!(await this.confirmDiscard())) return false;
-    const p = await loadRecent(key);
-    if (!p) {
-      this.store.say('That project is no longer in the recent list.');
+    const ref = await recentRef(key);
+    if (!ref) {
+      this.store.say('That project is no longer in the list.');
       return false;
     }
-    void rememberProject(this.store.project);
-    this.store.loadProject(p);
-    this.afterOpen(p.name);
-    return true;
+    try {
+      const r = await readRef(ref);
+      return this.adopt(r.text, r.name, ref);
+    } catch (e) {
+      await forgetRecent(key);
+      this.store.say(`Could not open ${refName(ref)}: ${e instanceof Error && e.message ? e.message : 'the file has moved or been deleted'}. It was taken off the list.`);
+      return false;
+    }
   }
 
   /**
    * A project another TurboCut app sent: open it like a file, then give it the media that came with it (matched by name).
-   * Fonts and the caption style that came along are added to this device first.
+   * Fonts and the caption style that came along are added to this device first. It has no file yet: Save asks where to put it.
    */
   async openReceived(json: string, files: File[], from: string): Promise<boolean> {
     let project;
@@ -133,8 +184,8 @@ export class Actions {
       return false;
     }
     if (!(await this.confirmDiscard())) return false;
-    void rememberProject(this.store.project);
     this.store.loadProject(project);
+    this.store.dirty = true; // received, not saved anywhere: leaving it asks first
     if (files.length) await this.relinkMedia(files);
     this.afterOpen(`${project.name} from ${from}`, false);
     // The sender left out what can be downloaded again (Twitch clips): fetch it now instead of asking for files.
@@ -145,21 +196,40 @@ export class Actions {
 
   private async loadProjectFile(file?: File): Promise<boolean> {
     const { store } = this;
-    const f = file ?? (await pickFiles('.turbocut,.json,application/json'))[0];
-    if (!f) return false;
     try {
-      store.loadProject(parseProject(await f.text()));
+      if (file) {
+        // A project dropped on the desktop app has a place on disk: keep it, so Save writes back to it.
+        const path = pathOf(file);
+        return this.adopt(await file.text(), file.name, path ? { kind: 'path', path } : null);
+      }
+      const r = await openDialog();
+      return r ? this.adopt(r.text, r.name, r.ref) : false;
     } catch (e) {
-      store.say(`Could not open ${f.name}: ${e instanceof Error ? e.message : e}`);
+      store.say(`Could not open ${file?.name ?? 'the file'}: ${e instanceof Error ? e.message : e}`);
       return false;
     }
-    this.afterOpen(f.name);
+  }
+
+  /** Load the text of a project file and remember where it lives. */
+  private async adopt(text: string, name: string, ref: ProjectRef | null): Promise<boolean> {
+    const { store } = this;
+    try {
+      store.loadProject(parseProject(text));
+    } catch (e) {
+      store.say(`Could not open ${name}: ${e instanceof Error ? e.message : e}`);
+      return false;
+    }
+    store.fileRef = ref;
+    void rememberFile(store.project, ref);
+    await this.afterOpen(name);
     return true;
   }
 
-  private afterOpen(label: string, ask = true): void {
+  private async afterOpen(label: string, ask = true): Promise<void> {
     const { store } = this;
-    void rememberProject(store.project);
+    // The desktop app remembers where each video was: open them again without asking.
+    const back = await filesFromPaths(store.missingAssets());
+    if (back.length) await this.relinkMedia(back);
     const missing = store.missingAssets();
     store.say(missing.length ? `Opened ${label}. ${missing.length} media file${missing.length === 1 ? '' : 's'} to find.` : `Opened ${label}.`);
     if (missing.length && ask) this.relinkDialog();
@@ -177,6 +247,8 @@ export class Actions {
         const a = store.project.assets[id]!;
         const dims = await openWithConversion(file, (f) => store.lib.relink(id, f, file.name, true), (m) => store.say(m));
         if (a.size === undefined) a.size = file.size;
+        const at = pathOf(file);
+        if (at) a.path = at;
         if (a.hasVideo && dims.width && dims.height) (a.width = dims.width), (a.height = dims.height);
         n++;
       } catch (e) {

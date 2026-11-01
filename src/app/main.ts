@@ -13,10 +13,9 @@ import { CaptionsPanel } from './captionsPanel.ts';
 import { fmtTime, h, panel, popupMenu } from './dom.ts';
 import { importFont, loadStoredFonts } from './fonts.ts';
 import { Hotkeys, prettyCombo, type HotkeyAction } from './hotkeys.ts';
-import { rememberProject } from './recent.ts';
 import { openHome } from './home.ts';
 import { Inspector } from './inspector.ts';
-import { applyLayout, LIMITS, type Side, type TabName } from './layout.ts';
+import { applyLayout, fitColumns, LIMITS, type Side, type TabName } from './layout.ts';
 import { activeLayout, editLayout } from './layoutStore.ts';
 import { Dock, type View } from './dock.ts';
 import { windowFrame } from './windowFrame.ts';
@@ -103,7 +102,8 @@ hotkeys.register([
   act('Timeline', 'zoomIn', 'Zoom the timeline in', ['+', '='], () => store.setZoom(store.zoom * 1.25)),
   act('Timeline', 'zoomOut', 'Zoom the timeline out', ['-', '_'], () => store.setZoom(store.zoom / 1.25)),
   act('File', 'import', 'Import media', ['Ctrl+I'], () => void importFiles()),
-  act('File', 'save', 'Save the project as a file', ['Ctrl+S'], () => void actions.saveProject()),
+  act('File', 'save', 'Save the project', ['Ctrl+S'], () => void actions.saveProject()),
+  act('File', 'saveAs', 'Save the project as…', ['Ctrl+Shift+S'], () => void actions.saveProject(true)),
   act('File', 'open', 'Open a project file', ['Ctrl+O'], () => void actions.openProject()),
   act('File', 'new', 'New project', ['Ctrl+N'], () => void actions.newProject()),
   act('File', 'export', 'Export', ['Ctrl+E'], () => void actions.runExport()),
@@ -165,14 +165,18 @@ const showTab = (name: TabName, userTap = false) => host.show(name, userTap);
 /** Draw the chosen layout: panel columns and sizes, timeline height, where the tools go, control size, the dock. */
 const narrowQuery = matchMedia('(max-width: 820px)');
 const touchQuery = matchMedia('(pointer: coarse)');
+/** A phone held sideways: little height, so the controls shrink and the tools move beside the preview. */
+const shortQuery = matchMedia('(max-height: 520px) and (pointer: coarse)');
 function drawLayout(): void {
-  const l = applyLayout(activeLayout(store), narrowQuery.matches, touchQuery.matches);
+  const l = applyLayout(activeLayout(store), narrowQuery.matches, touchQuery.matches, shortQuery.matches);
   app.dataset.panel = l.mode === 'sheet' ? 'sheet' : l.right.length && !l.left.length ? 'right' : l.left.length && !l.right.length ? 'left' : 'both';
   app.dataset.density = l.density;
   app.dataset.tools = l.tools; // inline with the play button, a row under it, under the timeline, or floating
   app.dataset.dock = store.settings.dock ? 'on' : 'off';
-  app.style.setProperty('--left-w', `${l.left.length ? l.leftWidth : 0}px`);
-  app.style.setProperty('--right-w', `${l.right.length ? l.panelWidth : 0}px`);
+  // The side panels keep what the layout asks for, but give way before the preview gets narrow.
+  const fit = l.mode === 'sheet' ? { left: 0, right: 0 } : fitColumns(l.left.length ? l.leftWidth : 0, l.right.length ? l.panelWidth : 0, window.innerWidth);
+  app.style.setProperty('--left-w', `${fit.left}px`);
+  app.style.setProperty('--right-w', `${l.mode === 'sheet' ? (l.right.length ? l.panelWidth : 0) : fit.right}px`);
   app.style.setProperty('--left-on', l.left.length ? '1' : '0');
   app.style.setProperty('--right-on', l.right.length ? '1' : '0');
   app.style.setProperty('--tl-h', `${l.timelineHeight}%`);
@@ -189,7 +193,13 @@ function drawLayout(): void {
 }
 store.on('settings', drawLayout);
 narrowQuery.addEventListener('change', drawLayout);
+let resizeFrame = 0;
+window.addEventListener('resize', () => {
+  cancelAnimationFrame(resizeFrame);
+  resizeFrame = requestAnimationFrame(drawLayout);
+});
 touchQuery.addEventListener('change', drawLayout);
+shortQuery.addEventListener('change', drawLayout);
 // Switch panels only when a DIFFERENT clip or caption gets selected. Undo, redo and picking a track also announce a
 // selection change; they must not pull the person out of the panel they are working in. (Settings can turn this off.)
 let lastSelected: string | null = null;
@@ -229,9 +239,9 @@ function projectPanel(): HTMLElement {
       h('label', { class: 'proj-field' }, h('span', { class: 'prop-l' }, 'Name'), name),
       h('label', { class: 'proj-field' }, h('span', { class: 'prop-l' }, 'Shape'), aspect),
       rate,
-      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => void actions.saveProject() }, 'Save…'), h('button', { class: 'btn', onclick: () => void actions.openProject() }, 'Open…'), h('button', { class: 'btn', onclick: () => void actions.newProject() }, 'New')),
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => void actions.saveProject() }, 'Save'), h('button', { class: 'btn', onclick: () => void actions.openProject() }, 'Open…'), h('button', { class: 'btn', onclick: () => void actions.newProject() }, 'New')),
       missing,
-      h('p', { class: 'hint' }, 'A project file holds the edit, not the video. Keep the media files next to it.'),
+      h('p', { class: 'hint' }, 'A project file holds the edit, not the video. The desktop app remembers where each video is and opens it again by itself; elsewhere you are asked for the files.'),
       h('button', { class: 'btn', onclick: () => openSendDialog(store) }, 'Send to another device…'),
       h('button', { class: 'btn', onclick: () => openReceiveDialog(store, actions) }, 'Receive from a computer…'),
       h('button', { class: 'btn', onclick: () => settings() }, 'Settings…')),
@@ -248,6 +258,7 @@ fileMenu.addEventListener('click', () =>
     { label: 'New project', run: () => void actions.newProject() },
     { label: 'Open project…', run: () => void actions.openProject() },
     { label: 'Save project', run: () => void actions.saveProject() },
+    { label: 'Save project as…', run: () => void actions.saveProject(true) },
     { label: 'Import media…', run: () => void importFiles() },
     { label: 'Import a Twitch clip…', run: () => openTwitchImport(actions) },
     { label: 'Send to another device…', run: () => openSendDialog(store) },
@@ -381,6 +392,7 @@ function showHome(): void {
     importFiles: () => importFiles(),
     openProject: () => actions.openProject(),
     openRecent: (key) => actions.openRecent(key),
+    newProject: (w, hh) => actions.newProject({ width: w, height: hh }),
     receive: () => openReceiveDialog(store, actions),
     openSettings: (tab) => settings(tab),
     docked,
@@ -398,13 +410,19 @@ startSharing(store, actions); // desktop app: be found by other TurboCut apps an
 if (store.settings.showHome && projectDuration(store.project) === 0) showHome();
 else bootAnimation();
 
-// Work is kept in the recent list a few seconds after the last change, so a project that was never saved to a file is still one tap away.
+// Once a project has a file, changes are written to it a few seconds after the last one (Settings → Saving). Nothing is kept anywhere else:
+// a project that was never saved is asked about when it would be lost (a new project, opening another, closing the window).
 let keepTimer: ReturnType<typeof setTimeout> | undefined;
 store.on('project', () => {
   clearTimeout(keepTimer);
-  keepTimer = setTimeout(() => void rememberProject(store.project), 4000);
+  keepTimer = setTimeout(() => void actions.autosave(), 3000);
 });
-window.addEventListener('pagehide', () => void rememberProject(store.project));
+window.addEventListener('beforeunload', (e) => {
+  if (!store.dirty) return;
+  void actions.autosave();
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 const tick = () => {
   const p = store.project;

@@ -44,6 +44,8 @@ export interface Settings {
   autoCheckUpdates: boolean;
   /** Show the home screen when the app starts with an empty project. */
   showHome: boolean;
+  /** Write edits to the project's file a few seconds after each change (only once the project has been saved somewhere). */
+  autosave: boolean;
   /** The bottom dock with Home, Edit and Settings (a window-level choice, not part of a layout). */
   dock: boolean;
   /** Let other TurboCut apps on the network find this one and send it projects (desktop apps; each transfer still needs an Accept). */
@@ -72,6 +74,7 @@ export const DEFAULT_SETTINGS = (touch: boolean): Settings => ({
   layouts: [],
   autoCheckUpdates: true,
   showHome: true,
+  autosave: true,
   dock: false,
   shareEnabled: true,
   deviceName: '',
@@ -90,7 +93,7 @@ export function mergeSettings(stored: unknown, defaults: Settings): Settings {
   const out: Settings = structuredClone(defaults);
   if (!stored || typeof stored !== 'object') return out;
   const s = stored as Record<string, any>;
-  for (const k of ['snapping', 'waveforms', 'videoOnTop', 'autoCheckUpdates', 'showHome', 'dock', 'autoSwitch', 'shareEnabled'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
+  for (const k of ['snapping', 'waveforms', 'videoOnTop', 'autoCheckUpdates', 'showHome', 'autosave', 'dock', 'autoSwitch', 'shareEnabled'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
   if (typeof s.defaultFont === 'string' && s.defaultFont.trim()) out.defaultFont = s.defaultFont.trim();
   if (s.counters === 'filled' || s.counters === 'rim' || s.counters === 'clear') out.counters = s.counters === 'rim' && !(s.settingsVersion >= 2) ? 'filled' : s.counters;
   if (Array.isArray(s.layouts)) out.layouts = s.layouts.map((l: unknown) => cleanLayout(l)).filter((l: Layout | null): l is Layout => !!l).slice(0, 30);

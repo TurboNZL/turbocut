@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // Tells the web app it is inside the desktop shell and gives it the self-updater. Nothing else is exposed.
 let progressHandler = () => {};
@@ -23,6 +23,23 @@ contextBridge.exposeInMainWorld('turbocut', {
     setCustomFrame: (on) => ipcRenderer.invoke('window:set-frame', on),
     setBackground: (colour) => ipcRenderer.send('window:background', colour),
     onState: (fn) => ipcRenderer.on('window:state', (_e, max) => fn(max)),
+  },
+  // Saving and opening project files, and the path a picked or dropped file has on disk (empty for a file that is not on disk).
+  project: {
+    saveAs: (name, text) => ipcRenderer.invoke('project:save-as', name, text),
+    write: (path, text) => ipcRenderer.invoke('project:write', path, text),
+    read: (path) => ipcRenderer.invoke('project:read', path),
+    open: () => ipcRenderer.invoke('project:open'),
+  },
+  media: {
+    pathFor: (file) => {
+      try {
+        return webUtils.getPathForFile(file) || '';
+      } catch {
+        return '';
+      }
+    },
+    stat: (paths) => ipcRenderer.invoke('media:stat', paths),
   },
   twitch: {
     download: async (slug, id, onProgress, rank = 0) => {
