@@ -35,6 +35,8 @@ export function parseProject(json: string): Project {
   for (const [id, a] of Object.entries<any>(p.assets)) {
     if (!isObj(a) || a.id !== id || typeof a.name !== 'string' || !int(a.duration)) throw new Error('The project file is damaged (a media entry is wrong).');
   }
+  // A saved path is optional and only a plain string of sensible length (the file is looked up by it, never run).
+  for (const a of Object.values<any>(p.assets)) if (a.path !== undefined && (typeof a.path !== 'string' || a.path.length > 1024 || a.path.includes('\0'))) delete a.path;
   // A source link is optional and only kept when it is a plain web address of a kind we know.
   for (const a of Object.values<any>(p.assets)) if (a.source !== undefined && !validSource(a.source)) delete a.source;
   // Bin folders are optional; an asset that names a folder that does not exist goes back to the top level.

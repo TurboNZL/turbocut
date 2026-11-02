@@ -69,6 +69,26 @@ export const BUILTIN_LAYOUTS: Layout[] = [
   base({ name: 'Bottom sheet', panel: 'sheet' }),
 ];
 
+/** The preview never gets narrower than this: the side panels give way first, so a panel cannot be dragged (or saved wide) over the picture. */
+export const MIN_STAGE = 380;
+const MIN_COLUMN = 200;
+
+/**
+ * The widths the two side columns really get in a window `total` pixels wide (0 for a side with no panel). They keep what the layout asks
+ * for unless that would squeeze the preview below `MIN_STAGE`; then both shrink in proportion, down to a floor.
+ */
+export function fitColumns(left: number, right: number, total: number, minStage = MIN_STAGE): { left: number; right: number } {
+  const room = Math.max(0, total - minStage);
+  if (left + right <= room) return { left, right };
+  const share = room / (left + right);
+  return { left: left ? Math.max(Math.min(left, MIN_COLUMN), Math.floor(left * share)) : 0, right: right ? Math.max(Math.min(right, MIN_COLUMN), Math.floor(right * share)) : 0 };
+}
+
+/** How wide one column may be dragged, given the other column's width. */
+export function maxColumn(other: number, total: number, minStage = MIN_STAGE): number {
+  return Math.max(MIN_COLUMN, Math.min(640, total - minStage - other));
+}
+
 export const LIMITS = { panelWidth: [240, 640], timelineHeight: [20, 70], paneSize: [15, 85] } as const;
 const clamp = (v: number, [lo, hi]: readonly [number, number] | readonly number[]) => Math.min(hi!, Math.max(lo!, Math.round(v)));
 
@@ -163,7 +183,7 @@ export interface AppliedLayout {
   tools: 'inline' | 'stage' | 'bottom' | 'left' | 'right' | 'float';
 }
 
-export function applyLayout(l: Layout, narrow: boolean, touch: boolean): AppliedLayout {
+export function applyLayout(l: Layout, narrow: boolean, touch: boolean, short = false): AppliedLayout {
   // Side panels cannot work on a narrow screen: the preview would be crushed, so everything becomes one sheet.
   const sheet = narrow || l.panel === 'sheet';
   const phone = narrow || touch;
@@ -173,10 +193,11 @@ export function applyLayout(l: Layout, narrow: boolean, touch: boolean): Applied
     panelWidth: l.panelWidth,
     leftWidth: l.leftWidth,
     timelineHeight: l.timelineHeight,
-    density: l.density === 'auto' ? (touch ? 'large' : 'normal') : l.density,
+    // A phone held sideways has little height: big touch targets would leave the preview a few pixels tall.
+    density: l.density === 'auto' ? (short ? 'compact' : touch ? 'large' : 'normal') : l.density,
     left: sheet ? [] : column(l, 'left'),
     right: sheet ? [flat] : column(l, 'right'),
-    tools: l.tools === 'bottom' || l.tools === 'float' ? l.tools : l.tools === 'row' ? 'stage' : l.tools === 'left' || l.tools === 'right' ? (phone ? 'bottom' : l.tools) : l.tools === 'top' ? (phone ? 'stage' : 'inline') : phone ? 'bottom' : 'inline',
+    tools: l.tools === 'bottom' || l.tools === 'float' ? l.tools : l.tools === 'row' ? 'stage' : l.tools === 'left' || l.tools === 'right' ? (phone && !short ? 'bottom' : l.tools) : l.tools === 'top' ? (phone ? 'stage' : 'inline') : short && !sheet ? 'right' : phone ? 'bottom' : 'inline',
   };
 }
 

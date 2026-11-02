@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanCode, parseAddress, pullShelf } from '../src/app/pull.ts';
+import { parseLink, pullShelf } from '../src/app/pull.ts';
 
 const { Share } = createRequire(import.meta.url)('../electron/share.cjs');
 const made: any[] = [];
@@ -27,14 +27,14 @@ async function put(s: any, parts: [string, string, Buffer][]) {
   return s.shelfReady(id);
 }
 
-describe('addresses and codes typed on a phone', () => {
-  it('accepts an address with or without a port or scheme, and nothing else', () => {
-    expect(parseAddress('192.168.1.20')).toBe('http://192.168.1.20:47903');
-    expect(parseAddress(' http://192.168.1.20:5000/ ')).toBe('http://192.168.1.20:5000');
-    expect(parseAddress('studio.local')).toBe('http://studio.local:47903');
-    for (const bad of ['', 'a b', '192.168.1.20:99999', 'x@y']) expect(parseAddress(bad), bad).toBeNull();
-    expect(cleanCode('482 913')).toBe('482913');
-    expect(cleanCode('48-29-13x99')).toBe('482913');
+const T = 'abcdefghijklmnopqrstuv'; // a 22-character token
+
+describe('the link pasted on a phone', () => {
+  it('reads the address and token from the link, with a port or without, and from text around it', () => {
+    expect(parseLink(`http://192.168.1.20:47903/shelf/${T}`)).toEqual({ base: 'http://192.168.1.20:47903', token: T });
+    expect(parseLink(` http://192.168.1.20:5000/shelf/${T}/ `)).toEqual({ base: 'http://192.168.1.20:5000', token: T });
+    expect(parseLink(`Here you go: http://studio.local/shelf/${T}\nthanks`)).toEqual({ base: 'http://studio.local:47903', token: T });
+    for (const bad of ['', '192.168.1.20', `http://x:99999/shelf/${T}`, 'http://x/shelf/short', `http://x/other/${T}`, `ftp://x/shelf/${T}`]) expect(parseLink(bad), bad).toBeNull();
   });
 });
 
@@ -44,7 +44,7 @@ describe('pulling a shelf', () => {
     const video = Buffer.alloc(200_000, 3);
     const info = await put(pc, [['project', 'project.turbocut', Buffer.from('{"project":true}')], ['preset', 'style.json', Buffer.from('{"p":1}')], ['font', 'Squad.ttf', Buffer.from('FONT')], ['media', 'clip.mp4', video]]);
     const steps: number[] = [];
-    const got = await pullShelf(`127.0.0.1:${info.port}`, `${info.code.slice(0, 3)} ${info.code.slice(3)}`, { onProgress: (d, t) => steps.push(d / t) });
+    const got = await pullShelf(`http://127.0.0.1:${info.port}/shelf/${info.token}`, { onProgress: (d, t) => steps.push(d / t) });
     expect(got.from).toBe('Studio PC');
     expect(got.project).toBe('{"project":true}');
     expect(got.preset).toBe('{"p":1}');
@@ -57,13 +57,12 @@ describe('pulling a shelf', () => {
     expect(pc.shelves.size).toBe(0);
   });
 
-  it('says what is wrong in words: a wrong code, a bad address, a computer that is not there', async () => {
+  it('says what is wrong in words: a used link, a bad link, a computer that is not there', async () => {
     const pc = await computer();
     const info = await put(pc, [['project', 'p', Buffer.from('{}')]]);
-    const wrong = info.code === '111111' ? '222222' : '111111';
-    await expect(pullShelf(`127.0.0.1:${info.port}`, wrong)).rejects.toThrow(/code is not right/);
-    await expect(pullShelf('not an address', '123456')).rejects.toThrow(/address/);
-    await expect(pullShelf('127.0.0.1', '12345')).rejects.toThrow(/six digits/);
-    await expect(pullShelf('127.0.0.1:9', '123456')).rejects.toThrow(/Could not reach/);
+    const wrong = info.token.replace(/^./, info.token[0] === 'a' ? 'b' : 'a');
+    await expect(pullShelf(`http://127.0.0.1:${info.port}/shelf/${wrong}`)).rejects.toThrow(/already been used or has closed/);
+    await expect(pullShelf('not a link')).rejects.toThrow(/not a TurboCut link/);
+    await expect(pullShelf(`http://127.0.0.1:9/shelf/${T}`)).rejects.toThrow(/Could not reach/);
   });
 });

@@ -1,26 +1,34 @@
 {
   "engine": {
     "repo": "TurboNZL/turboengine",
-    "ref": "c795082"
+    "ref": "845cd00"
   },
   "modules": [
     "release-pipeline",
+    "prebuilt-release",
     "updaters",
     "appearance",
     "guides-and-docs",
     "logos",
     "system-fonts",
-    "motion"
+    "motion",
+    "device-share",
+    "twitch-clips",
+    "recent-projects"
   ],
   "themes": "on",
   "moved": {
     "release-pipeline": ".github/workflows/build.yml (one workflow for APK, desktop and web bundle; replaces release.yml, see notes)",
     "updaters": "src/app/updater.ts, electron/main.cjs, electron/updater.cjs, electron/debInstall.cjs (vanilla variant: engine modules/updaters/variants/vanilla-electron), electron/preload.cjs",
-    "appearance": "src/app/main.ts (engine start-up), src/app/styles.css, src/app/settingsDialog.ts (picker), src/app/styles.css (floating side panel for Liquid Glass, Spotify and One UI: the panel carries `bt-shell`)",
+    "appearance": "src/app/main.ts (engine start-up and enhanceSelects() from turbothemes), src/app/styles.css, src/app/settingsDialog.ts (picker), src/app/styles.css (floating side panel for Liquid Glass, Spotify and One UI: the panel carries `bt-shell`)",
     "guides-and-docs": "src/app/guides.ts, src/app/markdown.ts, docs/guides/",
     "logos": "branding/logo.json (symbol-only favicons per the newest schema), scripts/gen-icons.mjs, scripts/logo/, generated: public/icon*.svg|png, public/favicon*, build/icon.png, android mipmaps and drawables",
     "system-fonts": "src/app/systemFonts.ts (engine modules/system-fonts, source of the module), test/systemFonts.test.ts",
-    "motion": "src/app/motion.css (the engine's tk-* classes, vanilla; no React hooks), replayed from code with a class toggle (swap() in main.ts)"
+    "motion": "src/app/motion.css (the engine's tk-* classes, vanilla; no React hooks), replayed from code with a class toggle (swap() in main.ts)",
+    "prebuilt-release": ".github/workflows/build.yml, scripts/ci/reuse-build.mjs, test/reuseBuild.test.ts (the source of the module)",
+    "device-share": "electron/share.cjs, src/app/share.ts, src/app/receive.ts, src/app/pull.ts, test/share.test.ts, test/pull.test.ts (the source of the module; the phone side is a pasted link, no code)",
+    "twitch-clips": "src/twitch/clip.ts, electron/twitch.cjs, src/app/twitchDialog.ts, test/twitch.test.ts (the source of the module)",
+    "recent-projects": "src/app/recent.ts, src/app/projectFiles.ts, electron/projectFiles.cjs, test/recent.test.ts, test/projectFiles.test.ts (the source of the module; the list holds references to saved files, never a copy of an edit)"
   },
-  "notes": "TurboCut is a vanilla TypeScript app (no React, no Tailwind), so the engine's React files are followed as conventions, not copied: hook classes, tab recipe, dialog structure, panel cards, asset naming, version scheme, docs layout, guides inside Settings. Differences on purpose: (1) builds also run for claude/** branches and publish pre-releases, because the owner tests every branch on a phone; (2) auto-pr.yml is used (added 2026-10-21 at the owner's request: every pushed branch gets one pull request, so at most main plus one working branch exists); (3) check.yml is ci.yml and runs on every push; (4) turbothemes is installed from turboengine#path:/themes (the lockfile resolves it to a codeload tarball); (5) editions, window-frame, settings-shell and android-shell are not used: TurboCut has one edition, a native-looking window, and a plain Capacitor Android shell. (6) Brought closer to the engine on 2026-10-17: pin moved to c795082, icons are inline SVG in currentColor (src/app/icons.ts, no emoji or symbol characters), the side panel is a `bt-shell`, system-fonts adopted."
+  "notes": "TurboCut is a vanilla TypeScript app (no React, no Tailwind), so the engine's React files are followed as conventions, not copied: hook classes, tab recipe, dialog structure, panel cards, asset naming, version scheme, docs layout, guides inside Settings. Differences on purpose: (1) builds run for pull requests (artifacts only) and for pushes to main (a release, reusing the pull request's files when the tree and version match): no pre-releases, no branch builds; (2) auto-pr.yml is used (every pushed branch gets one pull request, so at most main plus one working branch exists); (3) check.yml is ci.yml and runs on every push; (4) turbothemes is installed from turboengine#path:/themes as git+https (never the github: shorthand: the lockfile would record an SSH address CI cannot clone); (5) editions, window-frame, settings-shell and android-shell are not used: TurboCut has one edition, a drawn title bar of its own (`windowFrame.ts`, the engine's .bt-wf* hooks) and a plain Capacitor Android shell; (6) layouts are the app's own (named divisions, `layout.ts`), not the engine's `layouts` template. Aligned on 2026-11-01 to 845cd00: drop-downs come from turbothemes (`enhanceSelects()`; the app's copy `themedSelect.ts` is gone), the lockfile resolves the same commit, build.yml no longer ignores docs/guides (they are bundled into the app). Not yet done: TurboCut's own light and dark palette pair in the engine's themes (see docs/development/ENGINE_CONTRIBUTIONS.md)."
 }

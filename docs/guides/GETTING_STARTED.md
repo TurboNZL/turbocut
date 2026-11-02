@@ -6,7 +6,7 @@ TurboCut is a light video editor for shorts (9:16, under a minute) that also cop
 1. **Import.** Home → *Import video*, **File → Import media**, or the **Media** tab → import. To use a **Twitch clip**, press *Twitch clip…* in the Media tab (or File → Import a Twitch clip…) and paste its address: the landscape version lands in the bin (desktop app; a browser may not be allowed to download it). Imports only fill the **Media** bin (make folders there with the folder button). Drag a clip from the bin onto a track, or use its *Add* button. Each bin item has two small grips: one drags only the picture, the other only the sound.
 2. **Cut.** Move the playhead and use **Split** (or **S**). Split cuts only what you have chosen: the selected clip (with its linked sound), the selected caption, or, with nothing selected, the track you last clicked. See [Cutting and selecting](LAYOUTS_AND_KEYS.md). **Trim start** and **Trim end** cut to the playhead. **Delete** removes the selection. Picture and sound are linked, so they cut and move together.
 3. **Captions.** Captions tab → *Generate captions*. Pick your style first (see [Caption styles and fonts](STYLES_AND_FONTS.md)). Fix any wrong word in the list under the button.
-4. **Save.** **File → Save project** (Ctrl+S) keeps the edit as a `.turbocut` file; see [Saving and opening projects](PROJECTS.md).
+4. **Save.** **File → Save project** (Ctrl+S) asks where to put the edit as a `.turbocut` file the first time and keeps it up to date after that; see [Saving and opening projects](PROJECTS.md).
 5. **Export.** The **Export** button at the top (or **Ctrl+E**). The file is an MP4 where the device can encode H.264, otherwise a WebM (see [Export and codecs](EXPORT.md)).
 
 ## On a phone
@@ -30,6 +30,6 @@ TurboCut is a light video editor for shorts (9:16, under a minute) that also cop
 | A text layer | the **Text** button in the edit bar |
 | Another panel layout, named panels, where the tools sit | Settings → [Layout](LAYOUTS_AND_KEYS.md) |
 | A sharper or smoother preview (or a lighter one on a slow phone) | Settings → General → Preview: sharpness and frame rate while playing |
-| Send the project to another computer or a phone | File → Send to another device… (**Send with a code** for a phone); on the phone, Home → *From a computer* ([Projects](PROJECTS.md)) |
+| Send the project to another computer or a phone | File → Send to another device… (**Get a link for a phone**); on the phone, Home → *From a computer*, paste the link ([Projects](PROJECTS.md)) |
 | Fonts | Settings → Fonts, or Captions → Fonts… |
 | Updates | Settings → [Updates](UPDATES.md) |

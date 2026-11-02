@@ -13,10 +13,10 @@ name: Build
 
 on:
   pull_request:
-    paths-ignore: ['docs/**', '*.md']
+    paths-ignore: ['docs/development/**', 'docs/ARCHITECTURE.md', '*.md']
   push:
     branches: [main]
-    paths-ignore: ['docs/**', '*.md']
+    paths-ignore: ['docs/development/**', 'docs/ARCHITECTURE.md', '*.md']
   workflow_dispatch:
 
 # Pull requests build one at a time per branch (a newer push replaces the older build). Releases are one at a time for the

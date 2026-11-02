@@ -6,10 +6,11 @@
 //  press Accept does it hand out a one-time transfer id. The project, each media file and each font then arrive as separate
 //  PUT /part/<transfer>/<kind> requests, streamed to a folder of their own, and POST /done/<transfer> closes it. Nothing is written
 //  before Accept, only addresses on the local network are answered, and every transfer is capped at the size that was offered.
-//  Pulling (a phone cannot listen, so it asks): the sender puts a "shelf" up instead: the same parts, kept in a folder of their own, and a
-//  six-digit code. A device that is given the sender's address and the code fetches GET /shelf/<code>/manifest and then each
-//  GET /shelf/<code>/part/<n>, and closes it with POST /shelf/<code>/done. The code is the consent: the person on the sending computer chose to
-//  put the shelf up and tells the other person the code. A shelf closes when it is done, closed, 20 minutes old, or after ten wrong codes.
+//  Pulling (a phone cannot listen, so it asks): the sender puts a "shelf" up instead: the same parts, kept in a folder of their own, behind a
+//  link, http://<address>:<port>/shelf/<token>, where the token is 128 random bits (nobody guesses it, so there is nothing to type or lock).
+//  A device given the link fetches GET /shelf/<token>/manifest and then each GET /shelf/<token>/part/<n>, and closes it with
+//  POST /shelf/<token>/done. The link is the consent: the person on the sending computer chose to put the shelf up and hands the link
+//  over. A shelf closes when it is done, closed, or an hour old (closing the window that made it does not close it: send and forget).
 //  The port (47903, see the engine's docs/PORTS.md) is used for both TCP and UDP; TURBOCUT_SHARE_PORT changes it.
 const crypto = require('node:crypto');
 const dgram = require('node:dgram');
@@ -25,8 +26,8 @@ const EXPIRE_MS = 10_000;
 const OFFER_WAIT_MS = 60_000;
 const KINDS = new Set(['project', 'preset', 'media', 'font']);
 const MAX_JSON = 64 * 1024;
-const SHELF_MS = 20 * 60_000;
-const MAX_BAD_CODES = 10;
+const SHELF_MS = 60 * 60_000;
+const TOKEN = /^[A-Za-z0-9_-]{22}$/;
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Private-Network': 'true', 'Access-Control-Max-Age': '600' };
 
 /** Addresses that mean "on this network": loopback, link-local and the private ranges. */
@@ -105,8 +106,7 @@ class Share extends EventEmitter {
     this.peers = new Map();
     this.pending = new Map(); // offers waiting for the person
     this.transfers = new Map(); // accepted, uploading
-    this.shelves = new Map(); // code -> shelf put up for a device that fetches it
-    this.badCodes = 0;
+    this.shelves = new Map(); // token -> shelf put up for a device that fetches it
     this.server = null;
     this.udp = null;
     this.timers = [];
@@ -307,18 +307,16 @@ class Share extends EventEmitter {
   }
 
   // ---------------------------------------------------------------- a shelf: parts kept for a device that fetches them
-  /** Put a shelf up. `summary`: { project, media, fonts, links, bytes }. Returns `{ id, code }`; add parts with `shelfPart`, then call `shelfReady`. */
+  /** Put a shelf up. `summary`: { project, media, fonts, links, bytes }. Returns `{ id, token }`; add parts with `shelfPart`, then call `shelfReady`. */
   shelfOpen(summary) {
-    let code;
-    do code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
-    while (this.shelves.has(code));
+    const token = crypto.randomBytes(16).toString('base64url');
     const id = crypto.randomBytes(8).toString('hex');
     const dir = path.join(this.dir, `shelf-${id}`);
     fs.mkdirSync(dir, { recursive: true });
-    const shelf = { id, code, dir, summary, items: [], ready: false, sent: 0, total: 0, state: 'preparing', timer: setTimeout(() => this.shelfClose(id, 'expired'), SHELF_MS) };
+    const shelf = { id, token, dir, summary, items: [], ready: false, sent: 0, total: 0, state: 'preparing', timer: setTimeout(() => this.shelfClose(id, 'expired'), SHELF_MS) };
     shelf.timer.unref?.();
-    this.shelves.set(code, shelf);
-    return { id, code };
+    this.shelves.set(token, shelf);
+    return { id, token };
   }
 
   shelfById(id) {
@@ -360,14 +358,15 @@ class Share extends EventEmitter {
     sh.ready = true;
     sh.state = 'waiting';
     this.emit('shelf', { id, state: 'waiting', sent: 0, total: sh.total });
-    return { code: sh.code, port: this.port, addresses: lanAddresses() };
+    const addresses = lanAddresses();
+    return { token: sh.token, port: this.port, addresses, links: addresses.map((a) => `http://${a}:${this.port}/shelf/${sh.token}`) };
   }
 
   shelfClose(id, why = 'closed') {
     const sh = this.shelfById(id);
     if (!sh) return;
     clearTimeout(sh.timer);
-    this.shelves.delete(sh.code);
+    this.shelves.delete(sh.token);
     fs.rmSync(sh.dir, { recursive: true, force: true });
     if (sh.state !== 'done') this.emit('shelf', { id, state: why, sent: sh.sent, total: sh.total });
   }
@@ -375,11 +374,8 @@ class Share extends EventEmitter {
   async onShelf(req, res, reply, parts, url) {
     for (const [k, v] of Object.entries(CORS)) res.setHeader(k, v);
     if (req.method === 'OPTIONS') return (res.writeHead(204), res.end());
-    const sh = this.shelves.get(parts[1] || '');
-    if (!sh || !sh.ready) {
-      if (!sh && ++this.badCodes >= MAX_BAD_CODES) for (const x of [...this.shelves.values()]) this.shelfClose(x.id, 'locked');
-      return reply(sh ? 425 : 404, { error: sh ? 'Still being prepared.' : 'No such code.' });
-    }
+    const sh = TOKEN.test(parts[1] || '') ? this.shelves.get(parts[1]) : undefined;
+    if (!sh || !sh.ready) return reply(sh ? 425 : 404, { error: sh ? 'Still being prepared.' : 'No such link.' });
     if (req.method === 'GET' && parts[2] === 'manifest' && parts.length === 3) {
       return reply(200, { app: 'turbocut', v: 2, from: { id: this.id, name: this.name }, summary: sh.summary, items: sh.items.map(({ n, kind, name, size }) => ({ n, kind, name, size })) });
     }

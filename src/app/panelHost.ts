@@ -1,5 +1,5 @@
 import { h } from './dom.ts';
-import { LIMITS, normalizeSizes, type AppliedLayout, type Division, type Side, type TabName } from './layout.ts';
+import { LIMITS, maxColumn, normalizeSizes, type AppliedLayout, type Division, type Side, type TabName } from './layout.ts';
 import { splitter } from './splitter.ts';
 
 export interface PanelHooks {
@@ -60,7 +60,7 @@ export class PanelHost {
       label: `Resize the ${side} panel`,
       extraClass: 'splitter-edge',
       onStart: () => (startW = this.hooks.getWidth(side)),
-      onDrag: (dx) => this.hooks.setWidth(side, this.clampW(startW + (side === 'left' ? dx : -dx)), false),
+      onDrag: (dx) => this.hooks.setWidth(side, this.clampW(side, startW + (side === 'left' ? dx : -dx)), false),
       onEnd: () => this.hooks.setWidth(side, this.hooks.getWidth(side), true),
       onReset: () => this.hooks.resetSizes(),
     });
@@ -68,9 +68,12 @@ export class PanelHost {
     return { side, el, panes: [], sig: '', edge };
   }
 
-  private clampW(px: number): number {
-    const max = Math.min(LIMITS.panelWidth[1], Math.max(LIMITS.panelWidth[0], window.innerWidth * 0.4));
-    return Math.round(Math.min(max, Math.max(LIMITS.panelWidth[0], px)));
+  /** A column's width while dragged: within the limits, and never so wide that the preview is squeezed (the other column keeps its width). */
+  private clampW(side: Side, px: number): number {
+    const otherSide = this[side === 'left' ? 'right' : 'left'];
+    const other = otherSide.el.hidden ? 0 : this.hooks.getWidth(otherSide.side);
+    const max = Math.min(LIMITS.panelWidth[1], maxColumn(other, window.innerWidth));
+    return Math.round(Math.min(max, Math.max(Math.min(LIMITS.panelWidth[0], max), px)));
   }
 
   /** The tab shown last (the one a dock or a lit tab marks). */
@@ -96,6 +99,8 @@ export class PanelHost {
     this.fill(this.right, l.right);
     this.order = [...l.left, ...l.right].flatMap((d) => d.tabs);
     for (const c of [this.left, this.right]) c.el.dataset.named = this.named ? 'yes' : 'no';
+    // Every pane shows its own tab from the start (the second panel was empty, with no tab chosen, until it was clicked).
+    for (const p of this.panes()) this.paint(p);
     if (!this.order.includes(this.last)) this.show(this.order.includes(this.start) ? this.start : this.order[0]!);
     else this.show(this.last);
     // A side column with no division takes no room.
@@ -170,6 +175,13 @@ export class PanelHost {
     });
   }
 
+  /** Draw a pane's chosen tab: the strip marks it and the body holds its panel. */
+  private paint(pane: Pane): void {
+    for (const b of pane.strip.children) (b as HTMLElement).setAttribute('aria-selected', String((b as HTMLElement).dataset.tab === pane.active));
+    const content = this.tabs[pane.active];
+    if (pane.body.firstChild !== content) pane.body.replaceChildren(content); // putting the same panel back would restart whatever animation its look gives a new element
+  }
+
   /** Show a tab in the pane that holds it. On a phone (the sheet) tapping the open tab again closes the sheet. */
   show(name: TabName, userTap = false): void {
     const pane = this.panes().find((p) => p.tabs.includes(name));
@@ -187,9 +199,8 @@ export class PanelHost {
     const from = pane.tabs.indexOf(pane.active);
     pane.active = name;
     this.last = name;
-    for (const b of pane.strip.children) (b as HTMLElement).setAttribute('aria-selected', String((b as HTMLElement).dataset.tab === name));
+    this.paint(pane);
     const content = this.tabs[name];
-    if (pane.body.firstChild !== content) pane.body.replaceChildren(content); // putting the same panel back would restart whatever animation its look gives a new element
     if (userTap && from !== pane.tabs.indexOf(name)) {
       // the page slides in from the side the tab sits on (further along: from the right), the motion TurboKeep uses between its pages
       const cls = pane.tabs.indexOf(name) > from ? 'tk-page-fwd' : 'tk-page-back';

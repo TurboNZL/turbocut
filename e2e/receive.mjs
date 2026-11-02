@@ -1,6 +1,6 @@
 // Receive from a computer: a "shelf" put up by the desktop shell's sharing code (the real electron/share.cjs, run here in Node) is fetched by the
-// page with an address and a code, the way a phone does it. The Twitch clip travels as a link inside the project and is downloaded by the
-// receiving page (Twitch itself is answered by the test). Also: a wrong code says so, and the home screen offers the window.
+// page from the link the computer shows (pasted into one box), the way a phone does it. The Twitch clip travels as a link inside the project and is downloaded by the
+// receiving page (Twitch itself is answered by the test). Also: a used or wrong link says so, and the home screen offers the window.
 import { readFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -62,16 +62,18 @@ try {
   const dlg = b.getByRole('dialog', { name: 'Receive from a computer' });
   await dlg.waitFor();
 
-  // a wrong code is explained and the window stays
-  const wrong = info.code === '123456' ? '654321' : '123456';
-  await dlg.getByLabel('Address of the computer').fill(`127.0.0.1:${info.port}`);
-  await dlg.getByLabel('Code').fill(wrong);
+  // something that is not a link is explained and the window stays; so is a link that is wrong
+  const box = dlg.getByLabel('Link from the computer');
+  await box.fill('192.168.1.20');
   await dlg.getByRole('button', { name: 'Receive' }).click();
-  await dlg.getByText(/code is not right/).waitFor();
+  await dlg.getByText(/not a TurboCut link/).waitFor();
+  const wrong = info.token.replace(/^./, info.token[0] === 'a' ? 'b' : 'a');
+  await box.fill(`http://127.0.0.1:${info.port}/shelf/${wrong}`);
+  await dlg.getByRole('button', { name: 'Receive' }).click();
+  await dlg.getByText(/already been used or has closed/).waitFor();
 
-  // the right code brings everything, and the link is downloaded without anyone picking a file
-  await dlg.getByLabel('Code').fill(info.code);
-  assert.match(await dlg.getByLabel('Code').inputValue(), /^\d{3} \d{3}$/, 'the code is shown in two halves');
+  // the right link brings everything, and the Twitch link is downloaded without anyone picking a file (the text around it does not matter)
+  await box.fill(`Here: http://127.0.0.1:${info.port}/shelf/${info.token} thanks`);
   await dlg.getByRole('button', { name: 'Receive' }).click();
   await b.waitForFunction(() => window.turbocutApp.store.project.name === 'From the PC', null, { timeout: 20000 });
   await b.waitForFunction(() => window.turbocutApp.store.missingAssets().length === 0, null, { timeout: 30000 });
@@ -79,7 +81,6 @@ try {
   assert.deepEqual(got, [['Twitch moment.mp4', true], ['clip.webm', false]]);
   assert.equal(pc.shelves.size, 0, 'the computer closed the shelf when the page had everything');
   assert.equal(await b.getByRole('dialog', { name: 'Find the media' }).count(), 0, 'nothing is left to find');
-  assert.equal(await b.evaluate(() => localStorage.getItem('turbocut.lastSender')), `127.0.0.1:${info.port}`, 'the address is remembered');
 
   // ---- the same link, when Twitch cannot be reached: the project still opens and asks for the file
   const c = await newPage();
@@ -89,10 +90,9 @@ try {
   await w.write(Buffer.from(projectText));
   await w.end();
   const info2 = pc.shelfReady(sh.id);
-  await c.evaluate(([addr, code]) => import('/src/app/receive.ts').then((m) => m.openReceiveDialog(window.turbocutApp.store, window.turbocutApp.actions)), ['x', 'y']);
+  await c.evaluate(() => import('/src/app/receive.ts').then((m) => m.openReceiveDialog(window.turbocutApp.store, window.turbocutApp.actions)));
   const d2 = c.getByRole('dialog', { name: 'Receive from a computer' });
-  await d2.getByLabel('Address of the computer').fill(`127.0.0.1:${info2.port}`);
-  await d2.getByLabel('Code').fill(info2.code);
+  await d2.getByLabel('Link from the computer').fill(`http://127.0.0.1:${info2.port}/shelf/${info2.token}`);
   await d2.getByRole('button', { name: 'Receive' }).click();
   await c.getByRole('dialog', { name: /Downloading/ }).getByText(/Could not reach Twitch/).waitFor({ timeout: 20000 });
   await c.getByRole('dialog', { name: /Downloading/ }).locator('.bt-footer').getByRole('button', { name: 'Close' }).click();

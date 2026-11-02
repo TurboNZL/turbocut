@@ -30,7 +30,18 @@ export const fmtTime = (frames: number, fps: number): string => {
 /** Show a themed dialog (uses the turbothemes `.bt-window` hooks). Resolves nothing; call `close()`. */
 export function dialog(title: string, body: Node, buttons: HTMLElement[] = [], extraClass = ''): { close: () => void; el: HTMLElement } {
   const backdrop = h('div', { class: 'bt-backdrop dlg-backdrop tk-fade' });
-  const close = () => backdrop.remove();
+  const close = () => {
+    backdrop.remove();
+    window.removeEventListener('keydown', esc, true);
+  };
+  // Escape closes the window on top (not while a menu or the shortcut recorder is using the key).
+  const esc = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('.popup-menu, .themed-select-menu, .capture')) return;
+    const open = document.querySelectorAll('.dlg-backdrop');
+    if (open[open.length - 1] !== backdrop) return;
+    e.preventDefault();
+    close();
+  };
   const win = h(
     'div',
     { class: `bt-window dlg tk-pop ${extraClass}`.trim(), role: 'dialog', 'aria-label': title },
@@ -41,6 +52,7 @@ export function dialog(title: string, body: Node, buttons: HTMLElement[] = [], e
   backdrop.append(win);
   backdrop.addEventListener('pointerdown', (e) => e.target === backdrop && close());
   document.body.append(backdrop);
+  window.addEventListener('keydown', esc, true);
   return { close, el: win };
 }
 

@@ -200,6 +200,7 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
       field('Sharpness', previewScale),
       field('Frame rate while playing', previewFps)),
     panel('Start', check('Show the home screen when TurboCut starts with an empty project', s.showHome, (v) => store.updateSettings({ showHome: v }), 'The Home button at the top brings it back.')),
+    panel('Saving', check('Keep the project file up to date while I edit', s.autosave, (v) => store.updateSettings({ autosave: v }), 'Once a project has been saved to a file, changes are written to that file a few seconds after you make them.')),
     panel('Updates', check('Check for a new version when TurboCut starts', s.autoCheckUpdates, (v) => store.updateSettings({ autoCheckUpdates: v }))),
     panel('Settings file', h('div', { class: 'row' }, exportBtn, importBtn)),
   );

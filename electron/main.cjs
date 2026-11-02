@@ -8,6 +8,7 @@ const { setupUpdater } = require('./updater.cjs');
 const { loadFrame, saveFrame } = require('./frameConfig.cjs');
 const { downloadClip } = require('./twitch.cjs');
 const { Share } = require('./share.cjs');
+const { setupProjectFiles, mediaPath } = require('./projectFiles.cjs');
 const { Transcoder, defaultDir } = require('./transcode.cjs');
 const os = require('node:os');
 
@@ -46,6 +47,11 @@ function createWindow() {
     },
   });
   win.removeMenu();
+  // Closing with unsaved changes: the page asks to stay (beforeunload); Electron then shows nothing, so ask here.
+  win.webContents.on('will-prevent-unload', (e) => {
+    const choice = dialog.showMessageBoxSync(win, { type: 'question', buttons: ['Stay', 'Close without saving'], defaultId: 0, cancelId: 0, title: 'Unsaved changes', message: 'This project has changes that are not saved to a file.', detail: 'Stay to save it (File, Save project), or close and lose them.' });
+    if (choice === 1) e.preventDefault();
+  });
   win.once('ready-to-show', () => win.show());
   win.webContents.on('did-finish-load', () => win.isVisible() || win.show()); // a page that never reports ready-to-show must not leave an invisible window
   win.on('maximize', () => win.webContents.send('window:state', true));
@@ -252,6 +258,12 @@ app.whenReady().then(() => {
       if (!f.startsWith(root)) return new Response('Forbidden', { status: 403 });
       return net.fetch(pathToFileURL(f).toString());
     }
+    // Media a saved project remembers by path: /media/<encoded absolute path>. Only existing media files; the file's own range requests work.
+    if (rel.startsWith('/media/')) {
+      const f = mediaPath(rel.slice('/media/'.length));
+      if (!f) return new Response('Not found', { status: 404 });
+      return net.fetch(pathToFileURL(f).toString(), { headers: request.headers });
+    }
     // Projects another TurboCut sent: /received/<transfer>/<file>, served from the folder they were stored in and nowhere else.
     if (rel.startsWith('/received/') && share) {
       const root = share.dir + path.sep;
@@ -265,6 +277,7 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   let mainWindow = null;
+  setupProjectFiles({ ipcMain, dialog, win: () => BrowserWindow.getAllWindows()[0] ?? mainWindow, documents: () => app.getPath('documents') });
   setupUpdater(() => BrowserWindow.getAllWindows()[0] ?? mainWindow);
   mainWindow = createWindow();
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow());

@@ -3,9 +3,10 @@ import { createProject } from '../core/timeline.ts';
 import type { Asset, Frame, Project } from '../core/types.ts';
 import { MediaLibrary } from '../media/library.ts';
 import { builtinPreset } from './builtin.ts';
+import type { ProjectRef } from './projectFiles.ts';
 import { loadSettings, saveSettings, type Settings } from './settings.ts';
 
-export type Topic = 'project' | 'playhead' | 'selection' | 'play' | 'view' | 'status' | 'preset' | 'settings';
+export type Topic = 'project' | 'playhead' | 'selection' | 'play' | 'view' | 'status' | 'preset' | 'settings' | 'saved';
 
 /** Timeline zoom limits in pixels per frame: from a whole 20 minute edit on a phone to single frames. */
 export const ZOOM_MIN = 0.02;
@@ -44,6 +45,10 @@ export class Store {
   status = '';
   /** Edits since the project was last saved to a file or loaded. */
   dirty = false;
+  /** Counts every announced change to the project, so a save that finishes later can tell whether more was edited meanwhile. */
+  version = 0;
+  /** The file this project was saved to or opened from (Save writes back to it). Null for a project that has not been saved anywhere yet. */
+  fileRef: ProjectRef | null = null;
   settings: Settings = loadSettings(typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
   presets: CaptionPreset[] = [builtinPreset(this.settings.defaultFont, this.settings.counters), ...readPresets()];
   preset: CaptionPreset = this.presets.find((p) => p.name === localStorage.getItem(ACTIVE_KEY)) ?? this.presets[0]!;
@@ -61,6 +66,7 @@ export class Store {
   }
 
   emit(...topics: Topic[]): void {
+    if (topics.includes('project')) this.version++;
     for (const t of topics) this.subs.get(t)?.forEach((fn) => fn());
   }
 
@@ -112,6 +118,7 @@ export class Store {
     this.activeTrack = null;
     this.playhead = 0;
     this.dirty = false;
+    this.fileRef = null; // the caller says where it came from (opening a file sets it afterwards)
     this.emit('project', 'selection', 'playhead');
   }
 

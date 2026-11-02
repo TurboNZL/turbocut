@@ -96,6 +96,8 @@ export interface Asset {
   hasAudio: boolean;
   /** Size of the media file in bytes, so a saved project can find the right file again. */
   size?: number;
+  /** Where the file sat on the computer when it was imported (desktop app only). A saved project opens it again from here; the file itself is never copied into the project. */
+  path?: string;
   duration: Frame;
   width: number;
   height: number;
