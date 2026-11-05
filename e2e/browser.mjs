@@ -34,29 +34,51 @@ const fakeFiles = () => {
   const KEY = 'e2e.disk';
   const disk = () => JSON.parse(localStorage.getItem(KEY) || '{}');
   const put = (o) => localStorage.setItem(KEY, JSON.stringify(o));
-  const files = (window.__files = { saveAsPath: (name) => `/fake/${name}`, openPath: null, saveAsCalls: [], writes: [], disk });
+  // The save dialog offers the full project first; the older suites save plain `.turbocut` files, so by default the fake answers with that.
+  const files = (window.__files = { saveAsPath: (name) => `/fake/${name.replace(/\.turbocutf$/, '.turbocut')}`, openPath: null, saveAsCalls: [], writes: [], disk });
+  const pending = {};
+  let n = 0;
+  const b64 = (bytes) => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); };
   window.turbocut = {
     project: {
-      saveAs: async (name, text) => {
+      choose: async (name) => {
         const path = files.saveAsPath(name);
         files.saveAsCalls.push(name);
-        if (!path) return null;
-        put({ ...disk(), [path]: text });
-        return { path };
+        return path ? { path } : null;
       },
       write: async (path, text) => {
         files.writes.push(path);
         put({ ...disk(), [path]: text });
+      },
+      // A bundle arrives in pieces; the disk keeps it as base64 under { b64 }.
+      writeStart: async (path) => ((pending[++n] = { path, parts: [] }), String(n)),
+      writeChunk: async (id, bytes) => void pending[id].parts.push(b64(new Uint8Array(bytes))),
+      writeEnd: async (id, commit) => {
+        const w = pending[id];
+        delete pending[id];
+        if (!commit) return;
+        files.writes.push(w.path);
+        put({ ...disk(), [w.path]: { parts: w.parts } });
       },
       read: async (path) => {
         const d = disk();
         if (!(path in d)) throw new Error('ENOENT: no such file');
         return { text: d[path] };
       },
-      open: async () => (files.openPath && files.openPath in disk() ? { path: files.openPath, text: disk()[files.openPath] } : null),
+      open: async () => (files.openPath && files.openPath in disk() ? { path: files.openPath, text: /\.turbocut[cf]$/.test(files.openPath) ? null : disk()[files.openPath] } : null),
     },
   };
 };
+
+/** The fake shell's bundle files, as the desktop app serves them: GET /project/<encoded path>. */
+export async function serveFakeBundles(page) {
+  await page.route('**/project/**', async (route) => {
+    const path = decodeURIComponent(new URL(route.request().url()).pathname.replace(/^\/project\//, ''));
+    const entry = await page.evaluate((p) => window.__files.disk()[p], path);
+    if (!entry?.parts) return route.fulfill({ status: 404, body: 'Not found' });
+    return route.fulfill({ status: 200, contentType: 'application/octet-stream', body: Buffer.concat(entry.parts.map((x) => Buffer.from(x, 'base64'))) });
+  });
+}
 
 /**
  * Launch Chromium for the e2e scripts. CHROMIUM_PATH wins, then the sandbox's preinstalled build,

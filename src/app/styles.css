@@ -627,3 +627,24 @@ input.input, textarea.input, select.input { color: hsl(var(--fg)); }
 }
 /* On a phone the message floats under the header, over the picture: the bottom of the screen is the tools, the timeline and the panel, which it would hide. */
 #app[data-panel='sheet'] .status { top: calc(3.6rem + env(safe-area-inset-top)); bottom: auto; }
+
+/* ---- project name beside the File menu */
+.proj-label { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; color: hsl(var(--fg)); padding: 0 0.35rem; flex: 0 1 auto; min-width: 0; }
+.proj-label.unsaved { color: hsl(var(--muted)); font-style: italic; }
+@media (max-width: 620px) { .proj-label { max-width: 7.5rem; } }
+
+/* ---- reordering tracks: hold a label, then drag */
+.tl-head { touch-action: none; }
+.tl-track.reorder-lift { opacity: 0.75; box-shadow: 0 4px 14px hsl(0 0% 0% / 0.35); z-index: 3; }
+.tl-track.reorder-over { outline: 2px dashed hsl(var(--accent)); outline-offset: -2px; background: hsl(var(--accent) / 0.08); }
+
+/* ---- settings: the row order, the config page, the save-as choices */
+.order-list { display: grid; gap: 0.25rem; }
+.order-row { display: flex; align-items: center; gap: 0.25rem; }
+.order-row .order-name { flex: 1 1 auto; }
+.config-list { display: grid; gap: 0.15rem; max-height: 22rem; overflow: auto; }
+.config-row { align-items: flex-start; }
+.config-row small { display: block; overflow-wrap: anywhere; }
+.config-preview { max-height: 14rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.save-format { display: grid; gap: 0.15rem; justify-items: start; text-align: left; height: auto; padding: 0.55rem 0.75rem; }
+.save-format small { white-space: normal; }

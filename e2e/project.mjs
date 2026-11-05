@@ -35,7 +35,18 @@ try {
   }, media.toString('base64'));
   assert.equal(await a.evaluate(() => window.turbocutApp.store.dirty), true, 'edits make the project dirty');
   const before = await a.evaluate(() => JSON.parse(JSON.stringify(window.turbocutApp.store.project)));
-  const [dl] = await Promise.all([a.waitForEvent('download'), a.keyboard.press('Control+s')]);
+  // A browser that can only download has no file type list, so it asks which kind of file to make: the full project is first and highlighted.
+  await a.keyboard.press('Control+s');
+  const ask = a.getByRole('dialog', { name: 'Save the project as' });
+  await ask.waitFor();
+  assert.deepEqual(await ask.locator('.save-format').evaluateAll((els) => els.map((e) => e.dataset.format)), ['full', 'edit', 'clips'], 'the full project is offered first');
+  assert.ok(await ask.locator('.save-format').first().evaluate((e) => e.classList.contains('btn-accent')), 'and is the highlighted one');
+  await a.keyboard.press('Escape');
+  await ask.waitFor({ state: 'detached' });
+  assert.equal(await a.evaluate(() => window.turbocutApp.store.dirty), true, 'cancelling saves nothing');
+  await a.keyboard.press('Control+s');
+  await ask.waitFor();
+  const [dl] = await Promise.all([a.waitForEvent('download'), ask.locator('.save-format[data-format="edit"]').click()]);
   assert.equal(dl.suggestedFilename(), 'My short.turbocut');
   const file = `${out}${dl.suggestedFilename()}`;
   await dl.saveAs(file);
@@ -91,6 +102,21 @@ try {
   const [c3] = await Promise.all([b.waitForEvent('filechooser'), b.getByRole('menuitem', { name: 'Open project…' }).click()]);
   await c3.setFiles({ name: 'notes.turbocut', mimeType: 'application/json', buffer: Buffer.from('{"hello":1}') });
   await b.waitForFunction(() => /not a TurboCut project/.test(window.turbocutApp.store.status));
+
+  // ---- the full project, downloaded: everything is inside, so a fresh browser opens it with nothing to find
+  const [fullDl] = await Promise.all([a.waitForEvent('download'), a.evaluate(() => window.turbocutApp.actions.saveProject(true)).then(() => {}).catch(() => {}), a.getByRole('dialog', { name: 'Save the project as' }).locator('.save-format[data-format="full"]').click()]);
+  assert.equal(fullDl.suggestedFilename(), 'My short.turbocutf');
+  const fullFile = `${out}${fullDl.suggestedFilename()}`;
+  await fullDl.saveAs(fullFile);
+  const c = await newPage();
+  await c.getByRole('button', { name: 'File', exact: true }).click();
+  const [chooser4] = await Promise.all([c.waitForEvent('filechooser'), c.getByRole('menuitem', { name: 'Open project…' }).click()]);
+  await chooser4.setFiles(fullFile);
+  await c.waitForFunction(() => window.turbocutApp.store.project.name === 'Changed' || window.turbocutApp.store.project.name === 'My short', null, { timeout: 15000 });
+  await c.waitForFunction(() => /^Opened /.test(window.turbocutApp.store.status), null, { timeout: 15000 });
+  assert.equal(await c.evaluate(() => window.turbocutApp.store.missingAssets().length), 0, 'the video came inside the file');
+  assert.equal(await c.evaluate(() => window.turbocutApp.store.fileName), 'My short.turbocutf');
+  assert.equal(await c.getByRole('dialog', { name: 'Find the media' }).count(), 0);
 
   assert.deepEqual(errors, [], 'no page errors');
   console.log('project e2e passed');

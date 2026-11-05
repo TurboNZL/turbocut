@@ -9,6 +9,8 @@ import { CAPTION_TRACK, type Store } from './store.ts';
 
 const HEAD_W = 56; // track label column on desktop
 const EDGE = 9; // grab zone on each end of a clip with a mouse
+const HOLD_MS = 380; // how long a track label is held before it can be dragged to a new place
+const EDGE_ZONE = 36; // px from the edge of the timeline where dragging the playhead scrolls it
 
 export interface TimelineOptions {
   /** Track menu choices: the app wires these to its actions. */
@@ -16,6 +18,8 @@ export interface TimelineOptions {
     toggle(trackId: string, what: 'hidden' | 'muted' | 'locked'): void;
     remove(trackId: string): void;
     add(kind: Track['kind']): void;
+    /** Put a track where another track of the same kind is (hold a label and drag it). */
+    move(trackId: string, targetId: string): void;
   };
   /** The editing actions the right-click menus call. */
   actions?: Actions;
@@ -45,6 +49,11 @@ export class TimelineView {
   private fromScroll = false;
   private pinching = false;
   private lastWritten = -1;
+  /** The playhead is being dragged: the timeline scrolls by itself at the edges and must not also jump to follow it. */
+  private scrubbing = false;
+  /** When a track label was last dropped in a new place, so the click that ends the drag does not also open the track's menu. */
+  private reorderedAt = 0;
+  private reordering = false;
 
   constructor(private store: Store, private opts: TimelineOptions = {}) {
     this.el.classList.toggle('touch', this.touch);
@@ -134,11 +143,11 @@ export class TimelineView {
     ruler.append(this.addTrackButton());
     content.append(ruler);
 
-    // Within a kind the highest track is on top (higher layers above). The setting picks which kind is on top.
-    const videoOnTop = this.store.settings.videoOnTop;
-    const ordered = [...p.tracks].reverse().sort((a, b) => (a.kind === b.kind ? 0 : (a.kind === 'video') === videoOnTop ? -1 : 1));
-    for (const track of ordered) content.append(this.trackRow(track));
-    content.append(this.captionRow());
+    // Within a kind the highest track is on top (higher layers above). The setting picks the order of the kinds, the caption row among them.
+    for (const group of this.store.settings.trackOrder) {
+      if (group === 'captions') content.append(this.captionRow());
+      else for (const track of [...p.tracks].reverse()) if (track.kind === group) content.append(this.trackRow(track));
+    }
     if (!this.touch) content.append(this.playhead);
 
     this.content.replaceWith(content);
@@ -153,15 +162,18 @@ export class TimelineView {
     // A click picks the track; the options menu opens at the pointer on a right click (a long press on a touch screen).
     head.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (performance.now() - this.reorderedAt < 500) return; // the end of a drag, not a click
       this.store.setActiveTrack(track.id);
       if (this.touch) this.trackMenu(track, head);
     });
     head.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (this.reordering || performance.now() - this.reorderedAt < 500) return; // a long press on a touch screen is the start of a drag here
       this.store.setActiveTrack(track.id);
       this.trackMenu(track, { x: e.clientX, y: e.clientY });
     });
+    head.addEventListener('pointerdown', (e) => this.holdToReorder(e, track));
     const state = [track.id === this.store.activeTrack ? 'active' : '', track.locked ? 'locked' : '', track.hidden ? 'off' : '', track.muted ? 'off' : ''].filter(Boolean).join(' ');
     const row = h('div', { class: `tl-track tl-${track.kind} ${state}`.trim(), 'data-track': track.id }, head);
     let selectedClip: Clip | null = null;
@@ -210,6 +222,67 @@ export class TimelineView {
   }
 
   /**
+   * Hold a track label, then drag it up or down to another track of the same kind: it takes that track's place (and its layer, for video).
+   * Moving before the hold is over cancels it, so a finger that is scrolling never grabs a label.
+   */
+  private holdToReorder(e: PointerEvent, track: Track): void {
+    if (e.button !== 0 || this.store.playing) return;
+    const same = this.store.project.tracks.filter((t) => t.kind === track.kind);
+    if (same.length < 2) return;
+    const row = (e.currentTarget as HTMLElement).closest<HTMLElement>('.tl-track');
+    if (!row) return;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    let armed = false;
+    let target: string | null = null;
+    const mark = (id: string | null) => {
+      target = id && id !== track.id ? id : null;
+      for (const r of this.content.querySelectorAll<HTMLElement>('.tl-track.reorder-over')) r.classList.remove('reorder-over');
+      if (target) this.content.querySelector(`.tl-track[data-track="${CSS.escape(target)}"]`)?.classList.add('reorder-over');
+    };
+    const timer = setTimeout(() => {
+      armed = true;
+      this.reordering = true;
+      row.classList.add('reorder-lift');
+      document.body.classList.add('resizing');
+      navigator.vibrate?.(12);
+      this.showTip(x0, y0, 'Drag to another track');
+    }, HOLD_MS);
+    const move = (ev: PointerEvent) => {
+      if (!armed) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 8) end(false);
+        return;
+      }
+      ev.preventDefault();
+      const under = document.elementsFromPoint(ev.clientX, ev.clientY).find((n) => {
+        const id = (n as HTMLElement).dataset?.track;
+        return id && same.some((t) => t.id === id);
+      }) as HTMLElement | undefined;
+      mark(under?.dataset.track ?? null);
+    };
+    const end = (drop: boolean) => {
+      clearTimeout(timer);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      if (!armed) return;
+      row.classList.remove('reorder-lift');
+      document.body.classList.remove('resizing');
+      this.tip.style.display = 'none';
+      this.reorderedAt = performance.now();
+      const to = target;
+      mark(null);
+      setTimeout(() => (this.reordering = false), 700);
+      if (drop && to) this.opts.trackActions?.move(track.id, to);
+    };
+    const up = () => end(true);
+    const cancel = () => end(false);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+  }
+
+  /**
    * A press on the empty part of a track. A click puts the playhead there and lets go of the selection; dragging draws a box and
    * selects the clips it touches (Shift or Ctrl/Cmd adds them to what is selected).
    */
@@ -221,8 +294,7 @@ export class TimelineView {
     if (!add) store.clearSelection();
     const x0 = e.clientX;
     const y0 = e.clientY;
-    const frameAt = (cx: number) => Math.max(0, Math.round((cx - this.content.getBoundingClientRect().left - this.pad) / store.zoom));
-    store.seek(frameAt(x0));
+    store.seek(this.frameInside(x0));
     let box: HTMLElement | null = null;
     let last = '';
     const move = (ev: PointerEvent) => {
@@ -398,15 +470,49 @@ export class TimelineView {
     return btn;
   }
 
-  /** Mouse: click or drag on the ruler/empty track area to move the playhead. */
+  /** The frame under a screen x position, kept inside the timeline: dragging past either end stops there. */
+  private frameInside(clientX: number): number {
+    return Math.min(this.endFrame(), Math.max(0, Math.round((clientX - this.content.getBoundingClientRect().left - this.pad) / this.store.zoom)));
+  }
+
+  /**
+   * Mouse: click or drag on the ruler/empty track area to move the playhead. The frame is kept inside the timeline, and a drag that
+   * reaches the left or right edge of the view scrolls it, faster the further the pointer goes, until the end of the timeline.
+   */
   private scrub(e: PointerEvent): void {
     if (this.store.playing) return;
-    const frameAt = (ev: PointerEvent) => Math.max(0, Math.round((ev.clientX - this.content.getBoundingClientRect().left - this.pad) / this.store.zoom));
-    this.store.seek(frameAt(e));
-    const move = (ev: PointerEvent) => this.store.seek(frameAt(ev));
-    const up = () => (window.removeEventListener('pointermove', move), window.removeEventListener('pointerup', up));
+    const s = this.scroller;
+    let x = e.clientX;
+    let raf = 0;
+    this.scrubbing = true;
+    this.store.seek(this.frameInside(x));
+    const step = () => {
+      const r = s.getBoundingClientRect();
+      const left = r.left + HEAD_W + EDGE_ZONE; // the label column covers the first 56 px
+      const right = r.right - EDGE_ZONE;
+      const push = x > right ? (x - right) / EDGE_ZONE : x < left ? (x - left) / EDGE_ZONE : 0;
+      if (push) {
+        const before = s.scrollLeft;
+        s.scrollLeft = Math.max(0, Math.min(s.scrollWidth - s.clientWidth, before + Math.sign(push) * Math.min(3, Math.abs(push)) * 14));
+        if (s.scrollLeft !== before) this.store.seek(this.frameInside(x));
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    const move = (ev: PointerEvent) => {
+      x = ev.clientX;
+      this.store.seek(this.frameInside(x));
+    };
+    const up = () => {
+      cancelAnimationFrame(raf);
+      this.scrubbing = false;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   }
 
   private clipDrag(e: PointerEvent, clip: Clip, track: Track, forced?: 'move' | 'left' | 'right'): void {
@@ -414,16 +520,23 @@ export class TimelineView {
     e.preventDefault();
     const store = this.store;
     if (track.locked) return store.select(clip.id); // a locked track can be selected but not changed
-    // Shift + click selects the clips between; Ctrl/Cmd + click adds or removes one. Neither starts a drag.
-    if (!forced && e.shiftKey) return store.selectRange(clip.id);
-    if (!forced && (e.ctrlKey || e.metaKey)) return store.toggleSelect(clip.id);
+    // Shift + click selects the clips between; Ctrl/Cmd + click adds or removes one. Held on a clip that is not selected yet, the press
+    // adds it and can go on to drag everything selected together (a picture and its sound, picked one after the other). Held on a clip that
+    // is already selected, the press keeps the selection for a drag, and only a click that goes nowhere changes it (on release).
+    const mod = !forced && (e.shiftKey || e.ctrlKey || e.metaKey);
+    const byModifier = () => (e.ctrlKey || e.metaKey ? store.toggleSelect(clip.id) : store.selectRange(clip.id));
     // Measure BEFORE selecting: selecting re-renders the timeline and detaches this element, and a detached element
     // measures as zero, which made every grab look like the end handle.
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const mode: 'move' | 'left' | 'right' = forced ?? (e.clientX - rect.left < EDGE ? 'left' : rect.right - e.clientX < EDGE ? 'right' : 'move');
+    const mode: 'move' | 'left' | 'right' = mod ? 'move' : (forced ?? (e.clientX - rect.left < EDGE ? 'left' : rect.right - e.clientX < EDGE ? 'right' : 'move'));
+    let onClick: (() => void) | null = null;
+    if (mod) {
+      if (store.isSelected(clip.id)) onClick = byModifier;
+      else byModifier();
+    }
     // Pressing a clip that is already one of several keeps them all selected, so they can be dragged together.
     const group = mode === 'move' && store.isSelected(clip.id) && store.selectedIds.length > 1;
-    if (!group) store.select(clip.id);
+    if (!group && !mod) store.select(clip.id);
     const startX = e.clientX;
     const startY = e.clientY;
     const origStart = clip.start;
@@ -485,7 +598,8 @@ export class TimelineView {
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       this.tip.style.display = 'none';
-      if (group && !began) store.select(clip.id); // a plain click on one of several selects just that one
+      if (!began && onClick) onClick();
+      else if (group && !began && !mod) store.select(clip.id); // a plain click on one of several selects just that one
       if (this.dragging) {
         this.dragging = false;
         this.movePlayhead(true); // bring the edge you just trimmed back to the middle
@@ -589,6 +703,6 @@ export class TimelineView {
     this.playhead.style.transform = `translateX(${x}px)`;
     // keep the playhead visible while playing or stepping
     const view = s.clientWidth;
-    if (x < s.scrollLeft + HEAD_W || x > s.scrollLeft + view - 20) s.scrollLeft = Math.max(0, x - view / 3);
+    if (!this.scrubbing && (x < s.scrollLeft + HEAD_W || x > s.scrollLeft + view - 20)) s.scrollLeft = Math.max(0, x - view / 3);
   }
 }

@@ -116,3 +116,10 @@ The vanilla CommonJS .deb updater (`electron/updater.cjs`, `electron/debInstall.
 - **Dialogs close on Escape** (the top one only; not while a menu or the shortcut recorder uses the key).
 - **`.stack` needs `grid-template-columns: minmax(0, 1fr)`**: a grid item will not shrink below its content, so one long label or drop-down widened a whole dialog past a phone's edge.
 - **A palette pair for TurboCut** (`themes/turbocut/theme.json`, checklist 6c): the emblem's `#14c8d8` on near-black teal, and its light twin.
+
+## Added 2026-11-05
+- **`project-bundle`** (new module candidate): the container in `src/core/bundle.ts` (magic, then parts of `u32 header length`, JSON header, bytes; `packBundle` returns a Blob of references, `unpackBundle` returns slices, every length checked, names reduced to a last path segment) plus the rule that the file type list of the native save dialog is the format choice, and the streamed write through the shell (`Writers` in `electron/projectFiles.cjs`: temp file, renamed when the last piece is in). Gotcha: a browser file handle's `File` stops reading once the file is replaced, so reopen the media from the new file after a save.
+- **`remembered-devices`** (extends `device-share`): a phone fetches once from a link, says who it is with a random key, and after that finds shelves in an inbox (`GET /inbox` + header). Only a hash of the key is stored; an unknown key and an empty inbox answer alike.
+- **`config-file`** (settings): `src/app/config.ts` lists single settings against the defaults, exports ticked ones, previews an import as now → new, applies a config to the device (left-out ones reset). Pure functions, `test/config.test.ts`.
+- **`media-memory`**: `src/app/mediaMemory.ts`, copies of imported media in the origin-private file system so a project finds its files again in a browser or WebView; streamed with `pipeTo`, oldest evicted over a cap.
+

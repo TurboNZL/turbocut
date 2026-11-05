@@ -24,6 +24,9 @@ Useful defaults: **Space** play, **S** split, **[** and **]** trim to the playhe
 - Only one kind of thing is selected at a time: clips **or** a caption. Click empty space on a track, or press **Esc**, to select nothing. **Drag a box** over empty track space to select every clip it touches (hold Shift or Ctrl to add to what is selected); a plain click on empty space moves the playhead there.
 - Clicking a caption selects it and leaves the playhead where it is, so Split cuts where you put the playhead.
 - **Right-click** a track name for its options (hide, mute, lock, delete); a left click just picks the track.
+- **Reorder tracks:** hold a track name for a moment, then drag it up or down onto another track of the same kind; it takes that track's place (for video, its layer). Moving before the hold is over does nothing, so a finger that is scrolling never grabs a name. One undo puts the order back. **The order of the kinds** (captions, video, audio, top to bottom) is set in Settings → General → Track order.
+- **Several clips at once:** click one, then **Shift** or **Ctrl** + click the others (a picture and its sound, say). With the key still held you can press on any of them and drag: everything selected moves together. A Ctrl + click that does not move takes a clip out of the selection again.
+- **Dragging the playhead** past the left or right edge of the timeline scrolls it, faster the further you go, and stops at the start and at the end.
 - **Split** (S) cuts at the playhead: the selected clip and its linked picture or sound; the selected caption (between its words, so both halves read right; a one-word caption cannot be split); or, with nothing selected, the clips on the **active track** (the one you last clicked). Click **CC** to make the caption row the active track. Other tracks are left whole.
 - **Delete** removes what is selected, never something else.
 

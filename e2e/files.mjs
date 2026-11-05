@@ -111,7 +111,7 @@ try {
   await page.getByRole('button', { name: 'Save…' }).click();
   await page.waitForTimeout(300);
   assert.equal(await ask.count(), 1, 'a cancelled save does not continue');
-  await S(() => (window.__files.saveAsPath = (n) => `/fake/${n}`));
+  await S(() => (window.__files.saveAsPath = (n) => `/fake/${n.replace(/\.turbocutf$/, '.turbocut')}`));
   await page.getByRole('button', { name: 'Save…' }).click();
   await ask.waitFor({ state: 'detached' });
   assert.equal(await S(() => window.turbocutApp.store.project.name), 'Untitled', 'saved, then a new project');
@@ -123,9 +123,11 @@ try {
   await page.waitForFunction(() => window.turbocutApp.store.project.name === 'My short');
   assert.equal(await S(() => window.turbocutApp.store.project.tracks.flatMap((t) => t.clips).length > 0), true, 'the saved edit came back');
   assert.deepEqual(await S(() => window.turbocutApp.store.fileRef), { kind: 'path', path: '/fake/My short.turbocut' }, 'Save goes back to the same file');
-  await page.getByRole('dialog', { name: 'Find the media' }).waitFor();
-  await page.keyboard.press('Escape');
-  await page.getByRole('dialog', { name: 'Find the media' }).waitFor({ state: 'detached' });
+  // The media bin remembers where the file is: going out of a saved project and back in finds the video by itself (a copy was kept at import),
+  // so there is nothing to find.
+  await page.waitForFunction(() => Object.values(window.turbocutApp.store.project.assets).length > 0 && window.turbocutApp.store.missingAssets().length === 0, null, { timeout: 10000 });
+  assert.equal(await page.getByRole('dialog', { name: 'Find the media' }).count(), 0, 'no "Find the media" window: the video came back by itself');
+  assert.equal(await S(() => window.turbocutApp.store.lib.has(Object.keys(window.turbocutApp.store.project.assets)[0])), true, 'and it is open for playback');
   await S(() => { const d = window.__files.disk(); delete d['/fake/Scratch.turbocut']; localStorage.setItem('e2e.disk', JSON.stringify(d)); });
   await page.getByRole('button', { name: 'Home', exact: true }).click();
   await page.locator('.home-recent-open', { hasText: 'Scratch' }).click();

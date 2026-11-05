@@ -8,7 +8,7 @@ const { setupUpdater } = require('./updater.cjs');
 const { loadFrame, saveFrame } = require('./frameConfig.cjs');
 const { downloadClip } = require('./twitch.cjs');
 const { Share } = require('./share.cjs');
-const { setupProjectFiles, mediaPath } = require('./projectFiles.cjs');
+const { setupProjectFiles, mediaPath, bundlePath } = require('./projectFiles.cjs');
 const { Transcoder, defaultDir } = require('./transcode.cjs');
 const os = require('node:os');
 
@@ -117,10 +117,11 @@ function configureShare({ enabled, name }) {
     share.name = label;
     return Promise.resolve({ running: true, id: share.id, name: label });
   }
-  share = new Share({ dir: path.join(app.getPath('userData'), 'received'), name: label, version: app.getVersion() });
+  share = new Share({ dir: path.join(app.getPath('userData'), 'received'), pairFile: path.join(app.getPath('userData'), 'paired-devices.json'), name: label, version: app.getVersion() });
   share.on('devices', (list) => toPage('share:devices', list));
   share.on('offer', (o) => toPage('share:offer', o));
   share.on('shelf', (e) => toPage('share:shelf', e));
+  share.on('paired', (l) => toPage('share:paired', l));
   share.on('received', (r) =>
     toPage('share:received', {
       from: r.from,
@@ -140,6 +141,8 @@ function configureShare({ enabled, name }) {
 }
 ipcMain.handle('share:configure', (_e, o) => configureShare(o || {}));
 ipcMain.handle('share:devices', () => share?.devices() ?? []);
+ipcMain.handle('share:paired', () => share?.pairedList() ?? []);
+ipcMain.on('share:forget', (_e, id) => share?.forget(String(id)));
 ipcMain.on('share:answer', (_e, offerId, accept) => share?.answer(offerId, accept));
 const sendJobs = new Map(); // transfer id -> { dev, parts }
 let partCounter = 0;
@@ -205,11 +208,15 @@ ipcMain.on('share:abort', (_e, transfer) => {
   sendJobs.delete(transfer);
 });
 // A shelf is a send that waits to be fetched: the parts go in the same way (share:part-*), then the code is shown.
-ipcMain.handle('share:shelf-open', (_e, summary) => {
+ipcMain.handle('share:shelf-open', (_e, summary, pairedId) => {
   if (!share) return { ok: false, message: 'Sharing is turned off on this device (Settings, Device).' };
-  const { id } = share.shelfOpen({ project: String(summary?.project || 'Untitled').slice(0, 80), media: Number(summary?.media) | 0, fonts: Number(summary?.fonts) | 0, links: Number(summary?.links) | 0, bytes: Number(summary?.bytes) || 0 });
-  sendJobs.set(id, { shelf: id, parts: new Map() });
-  return { ok: true, transfer: id };
+  try {
+    const { id } = share.shelfOpen({ project: String(summary?.project || 'Untitled').slice(0, 80), media: Number(summary?.media) | 0, fonts: Number(summary?.fonts) | 0, links: Number(summary?.links) | 0, bytes: Number(summary?.bytes) || 0 }, pairedId ? String(pairedId) : undefined);
+    sendJobs.set(id, { shelf: id, parts: new Map() });
+    return { ok: true, transfer: id };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
 });
 ipcMain.handle('share:shelf-ready', (_e, transfer) => {
   if (!share || !sendJobs.get(transfer)?.shelf) return { ok: false, message: 'That shelf is closed.' };
@@ -261,6 +268,12 @@ app.whenReady().then(() => {
     // Media a saved project remembers by path: /media/<encoded absolute path>. Only existing media files; the file's own range requests work.
     if (rel.startsWith('/media/')) {
       const f = mediaPath(rel.slice('/media/'.length));
+      if (!f) return new Response('Not found', { status: 404 });
+      return net.fetch(pathToFileURL(f).toString(), { headers: request.headers });
+    }
+    // A bundle project (.turbocutf, .turbocutc) the person saved or opened: /project/<encoded absolute path>, read in pieces by the page.
+    if (rel.startsWith('/project/')) {
+      const f = bundlePath(rel.slice('/project/'.length));
       if (!f) return new Response('Not found', { status: 404 });
       return net.fetch(pathToFileURL(f).toString(), { headers: request.headers });
     }

@@ -225,6 +225,19 @@ export function removeTrack(p: Project, trackId: string): boolean {
   return true;
 }
 
+/**
+ * Put a track where another track of the same kind is; the tracks in between shift by one. Later in the list is drawn above (video) and shown
+ * higher, so this changes the layering. Names go with their tracks. Returns whether anything moved.
+ */
+export function moveTrackTo(p: Project, trackId: string, targetId: string): boolean {
+  const from = p.tracks.findIndex((t) => t.id === trackId);
+  const to = p.tracks.findIndex((t) => t.id === targetId);
+  if (from < 0 || to < 0 || from === to || p.tracks[from]!.kind !== p.tracks[to]!.kind) return false;
+  const [t] = p.tracks.splice(from, 1);
+  p.tracks.splice(to, 0, t!);
+  return true;
+}
+
 /** The earliest start at or after `from` where a clip of `duration` frames fits on every one of `tracks`. */
 export function findFreeStart(tracks: Track[], from: Frame, duration: number): Frame {
   let s = Math.max(0, from);

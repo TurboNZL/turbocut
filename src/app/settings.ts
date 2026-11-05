@@ -24,6 +24,10 @@ export type PreviewFps = 'auto' | 'full' | 'half' | 'third' | 'quarter';
 export const PREVIEW_SCALES: PreviewScale[] = ['auto', 100, 75, 50, 25];
 export const PREVIEW_FPS: PreviewFps[] = ['auto', 'full', 'half', 'third', 'quarter'];
 
+/** The three kinds of row in the timeline. */
+export type TrackGroup = 'captions' | 'video' | 'audio';
+export const TRACK_GROUPS: TrackGroup[] = ['video', 'audio', 'captions'];
+
 export interface Settings {
   /** 2: the letter-hole default became 'filled'; older stored 'rim' values came from the old default and are upgraded once. 3: the preview frame rate became 'auto'; a stored 'full' from before was the old default. */
   settingsVersion: number;
@@ -31,8 +35,10 @@ export interface Settings {
   snapping: boolean;
   /** Draw a low-detail waveform inside audio clips. */
   waveforms: boolean;
-  /** Video tracks above audio tracks in the timeline (otherwise audio above video). */
-  videoOnTop: boolean;
+  /** The order the kinds of track are drawn in, top to bottom: the caption row, the video tracks and the audio tracks. */
+  trackOrder: TrackGroup[];
+  /** Keep a copy of imported media inside TurboCut (browser and phone) so a saved project finds its files again by itself. */
+  rememberMedia: boolean;
   /** Font for new caption styles, new text layers and the built-in caption style. */
   defaultFont: string;
   /** What the holes of letters look like in new styles. */
@@ -67,7 +73,8 @@ export const DEFAULT_SETTINGS = (touch: boolean): Settings => ({
   settingsVersion: 3,
   snapping: true,
   waveforms: !touch, // a phone has less to spare
-  videoOnTop: true,
+  trackOrder: [...TRACK_GROUPS],
+  rememberMedia: true,
   defaultFont: 'Arial Black',
   counters: 'filled',
   layout: AUTO_LAYOUT,
@@ -93,7 +100,10 @@ export function mergeSettings(stored: unknown, defaults: Settings): Settings {
   const out: Settings = structuredClone(defaults);
   if (!stored || typeof stored !== 'object') return out;
   const s = stored as Record<string, any>;
-  for (const k of ['snapping', 'waveforms', 'videoOnTop', 'autoCheckUpdates', 'showHome', 'autosave', 'dock', 'autoSwitch', 'shareEnabled'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
+  for (const k of ['snapping', 'waveforms', 'rememberMedia', 'autoCheckUpdates', 'showHome', 'autosave', 'dock', 'autoSwitch', 'shareEnabled'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
+  // The row order: a list with each kind once. Older settings only said whether video sat above audio.
+  if (Array.isArray(s.trackOrder) && s.trackOrder.length === 3 && TRACK_GROUPS.every((g) => s.trackOrder.includes(g))) out.trackOrder = [...s.trackOrder];
+  else if (typeof s.videoOnTop === 'boolean') out.trackOrder = s.videoOnTop ? ['video', 'audio', 'captions'] : ['audio', 'video', 'captions'];
   if (typeof s.defaultFont === 'string' && s.defaultFont.trim()) out.defaultFont = s.defaultFont.trim();
   if (s.counters === 'filled' || s.counters === 'rim' || s.counters === 'clear') out.counters = s.counters === 'rim' && !(s.settingsVersion >= 2) ? 'filled' : s.counters;
   if (Array.isArray(s.layouts)) out.layouts = s.layouts.map((l: unknown) => cleanLayout(l)).filter((l: Layout | null): l is Layout => !!l).slice(0, 30);

@@ -21,6 +21,7 @@ const P = {
   keyOn: '<path d="M12 4l8 8-8 8-8-8z" fill="currentColor"/>',
   keyPart: '<path d="M12 4l8 8-8 8-8-8z"/><path d="M12 8l4 4-4 4-4-4z" fill="currentColor"/>',
   chevron: '<path d="M6 9l6 6 6-6"/>',
+  chevronUp: '<path d="M6 15l6-6 6 6"/>',
   lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   mute: '<path d="M11 5L6 9H3v6h3l5 4z" fill="currentColor"/><path d="M16 9l5 6M21 9l-5 6"/>',
   download: '<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>',

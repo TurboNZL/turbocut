@@ -118,10 +118,10 @@ try {
   await page.screenshot({ path: `${out}home-recent.png` });
   await recent.click();
   await page.waitForFunction(() => window.turbocutApp.store.project.name === 'My short');
+  await page.waitForFunction(() => document.querySelectorAll('.home').length === 0, null, { timeout: 15000 }); // the project's video is opened first (from the kept copy)
   assert.equal(await page.locator('.home').count(), 0, 'opening a recent project closes the home screen');
-  assert.equal(await page.evaluate(() => window.turbocutApp.store.missingAssets().length), 1, 'the media is asked for again, like opening a file');
-  await page.getByRole('dialog', { name: 'Find the media' }).waitFor();
-  await page.locator('.dlg .bt-close').click();
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.missingAssets().length), 0, 'and its video came back by itself');
+  assert.equal(await page.getByRole('dialog', { name: 'Find the media' }).count(), 0, 'nothing to find: the media bin remembered the file');
   // it can be taken off the list
   await page.getByRole('button', { name: 'Home', exact: true }).click();
   await page.getByRole('button', { name: /Remove My short from the list/ }).click();

@@ -8,11 +8,34 @@ import type { Asset, Clip, Project } from './types.ts';
 export const PROJECT_FORMAT = 'turbocut.project';
 export const PROJECT_EXT = '.turbocut';
 
+/**
+ * What a saved project holds. `edit` (.turbocut) is the edit alone, as small JSON. `clips` (.turbocutc) also carries the clips that were
+ * fetched from a link, so they need not be downloaded again. `full` (.turbocutf) carries everything the project uses that is not standard
+ * on another device: the video and audio files, the fonts that were added, and the caption style. The last two are bundles (`bundle.ts`).
+ */
+export type ProjectFormat = 'edit' | 'clips' | 'full';
+export const FORMAT_EXT: Record<ProjectFormat, string> = { edit: '.turbocut', clips: '.turbocutc', full: '.turbocutf' };
+/** The file formats in the order they are offered: the full one is the default. */
+export const FORMATS: ProjectFormat[] = ['full', 'edit', 'clips'];
+export const FORMAT_LABEL: Record<ProjectFormat, string> = {
+  full: 'Full project: the edit, the videos, the fonts and the caption style in one file',
+  edit: 'Edit only: small, the videos stay where they are',
+  clips: 'Edit with its clips: also keeps the clips that came from a link',
+};
+/** Matches the name of any project file. */
+export const PROJECT_NAME = /\.turbocut[cf]?$/i;
+
+/** Which format a file name stands for (an unknown or missing extension is the plain edit). */
+export function formatOfName(name: string): ProjectFormat {
+  const m = /\.turbocut([cf])?$/i.exec(name);
+  return m?.[1]?.toLowerCase() === 'f' ? 'full' : m?.[1]?.toLowerCase() === 'c' ? 'clips' : 'edit';
+}
+
 export function serializeProject(p: Project): string {
   return JSON.stringify({ format: PROJECT_FORMAT, version: 1, savedWith: 'TurboCut', project: p }, null, 1);
 }
 
-export const projectFileName = (name: string): string => `${name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim().slice(0, 80) || 'TurboCut project'}${PROJECT_EXT}`;
+export const projectFileName = (name: string, format: ProjectFormat = 'edit'): string => `${name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim().slice(0, 80) || 'TurboCut project'}${FORMAT_EXT[format]}`;
 
 const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
 const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
