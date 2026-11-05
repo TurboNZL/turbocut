@@ -17,7 +17,7 @@ TurboCut is a light video editor for shorts (9:16, under a minute) that also cop
 
 ## On a computer
 - The mouse wheel moves along the timeline. Ctrl or Alt + wheel zooms around the pointer; Shift + wheel scrolls the tracks up and down when there are more than fit.
-- The **+** in the corner above the track names adds a video or audio track.
+- The **+** in the corner above the track names adds a video or audio track. Hold a track name and drag it to put the track in another place.
 - **Shift**-click selects a range of clips, **Ctrl**-click adds or removes one; drag any selected clip to move them all together.
 - **Right-click** a clip, a caption or empty track space for split, duplicate, mute, delete and more.
 - **N** turns snapping on or off. Every shortcut can be changed in Settings → Keys.
@@ -26,10 +26,11 @@ TurboCut is a light video editor for shorts (9:16, under a minute) that also cop
 | You want | Go to |
 |---|---|
 | Keyframes (zoom, position, opacity, blur, pixelate, volume) | **Clip** tab, Keyframes section; **K** adds keys, **,** and **.** jump between them |
-| Save, open or start a project | **File** menu at the top: [Projects](PROJECTS.md) |
+| Save, open or start a project | **File** menu at the top (the file's name is beside it): [Projects](PROJECTS.md). Save makes a **.turbocutf** full project by default; **.turbocut** keeps the edit only |
 | A text layer | the **Text** button in the edit bar |
 | Another panel layout, named panels, where the tools sit | Settings → [Layout](LAYOUTS_AND_KEYS.md) |
 | A sharper or smoother preview (or a lighter one on a slow phone) | Settings → General → Preview: sharpness and frame rate while playing |
-| Send the project to another computer or a phone | File → Send to another device… (**Get a link for a phone**); on the phone, Home → *From a computer*, paste the link ([Projects](PROJECTS.md)) |
+| Send the project to another computer or a phone | File → Send to another device… (**Get a link for a phone** the first time; after that the phone remembers the computer and needs no link); on the phone, Home → *From a computer* ([Projects](PROJECTS.md)) |
+| Back up or copy your settings, or clear out ones you forgot about | Settings → [Config](CONFIG.md) |
 | Fonts | Settings → Fonts, or Captions → Fonts… |
 | Updates | Settings → [Updates](UPDATES.md) |

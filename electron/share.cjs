@@ -11,6 +11,10 @@
 //  A device given the link fetches GET /shelf/<token>/manifest and then each GET /shelf/<token>/part/<n>, and closes it with
 //  POST /shelf/<token>/done. The link is the consent: the person on the sending computer chose to put the shelf up and hands the link
 //  over. A shelf closes when it is done, closed, or an hour old (closing the window that made it does not close it: send and forget).
+//  Remembering a phone: a device that fetched a shelf may say who it is when it closes it (POST /shelf/<token>/done with a random key it made
+//  once). The computer keeps only a hash of that key and a name, in a file (`pairFile`). From then on the computer can put a shelf up FOR that
+//  device (`shelfOpen(summary, pairedId)`) and the device finds it by asking GET /inbox with its key in a header: no link to paste. Without the
+//  key nothing is revealed (an unknown key looks like an empty inbox), and a person can forget a device at any time.
 //  The port (47903, see the engine's docs/PORTS.md) is used for both TCP and UDP; TURBOCUT_SHARE_PORT changes it.
 const crypto = require('node:crypto');
 const dgram = require('node:dgram');
@@ -28,6 +32,9 @@ const KINDS = new Set(['project', 'preset', 'media', 'font']);
 const MAX_JSON = 64 * 1024;
 const SHELF_MS = 60 * 60_000;
 const TOKEN = /^[A-Za-z0-9_-]{22}$/;
+const KEY = /^[A-Za-z0-9_-]{22,64}$/;
+const MAX_PAIRED = 20;
+const hashKey = (k) => crypto.createHash('sha256').update(String(k)).digest('hex');
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Private-Network': 'true', 'Access-Control-Max-Age': '600' };
 
 /** Addresses that mean "on this network": loopback, link-local and the private ranges. */
@@ -103,6 +110,8 @@ class Share extends EventEmitter {
     this.platform = o.platform || process.platform;
     this.port = o.port ?? (Number(process.env.TURBOCUT_SHARE_PORT) || DEFAULT_PORT);
     this.id = o.id || crypto.randomUUID();
+    this.pairFile = o.pairFile || null;
+    this.paired = this.loadPaired(); // key hash -> { name, at }
     this.peers = new Map();
     this.pending = new Map(); // offers waiting for the person
     this.transfers = new Map(); // accepted, uploading
@@ -110,6 +119,53 @@ class Share extends EventEmitter {
     this.server = null;
     this.udp = null;
     this.timers = [];
+  }
+
+  // ---------------------------------------------------------------- devices that fetched from here before
+  loadPaired() {
+    const out = new Map();
+    if (!this.pairFile) return out;
+    try {
+      const list = JSON.parse(fs.readFileSync(this.pairFile, 'utf8'));
+      for (const x of Array.isArray(list) ? list.slice(0, MAX_PAIRED) : []) if (/^[0-9a-f]{64}$/.test(x?.hash)) out.set(x.hash, { name: String(x.name || 'Device').slice(0, 60), at: Number(x.at) || 0 });
+    } catch {
+      /* none yet, or unreadable: start empty */
+    }
+    return out;
+  }
+
+  savePaired() {
+    if (!this.pairFile) return;
+    try {
+      fs.mkdirSync(path.dirname(this.pairFile), { recursive: true });
+      fs.writeFileSync(this.pairFile, JSON.stringify([...this.paired].map(([hash, v]) => ({ hash, ...v }))));
+    } catch {
+      /* the list then lasts until the app closes */
+    }
+  }
+
+  /** Remember a device by its key. Returns whether it is new. */
+  pair(key, name) {
+    if (!KEY.test(String(key || ''))) return false;
+    const hash = hashKey(key);
+    const isNew = !this.paired.has(hash);
+    if (isNew && this.paired.size >= MAX_PAIRED) this.paired.delete(this.paired.keys().next().value); // the oldest makes room
+    this.paired.set(hash, { name: String(name || 'Device').replace(/[\u0000-\u001f]+/g, '').trim().slice(0, 60) || 'Device', at: Date.now() });
+    this.savePaired();
+    this.emit('paired', this.pairedList());
+    return isNew;
+  }
+
+  /** The remembered devices for the page: a short id (not the key, not its hash), a name, when it last fetched. */
+  pairedList() {
+    return [...this.paired].map(([hash, v]) => ({ id: hash.slice(0, 16), name: v.name, at: v.at })).sort((a, b) => b.at - a.at);
+  }
+
+  forget(id) {
+    for (const hash of this.paired.keys()) if (hash.slice(0, 16) === id) this.paired.delete(hash);
+    for (const sh of [...this.shelves.values()]) if (sh.for && sh.for.slice(0, 16) === id) this.shelfClose(sh.id);
+    this.savePaired();
+    this.emit('paired', this.pairedList());
   }
 
   async start() {
@@ -232,6 +288,7 @@ class Share extends EventEmitter {
       const url = new URL(req.url, 'http://x');
       const parts = url.pathname.split('/').filter(Boolean);
       if (parts[0] === 'shelf') return this.onShelf(req, res, reply, parts, url);
+      if (parts[0] === 'inbox') return this.onInbox(req, res, reply);
       if (req.method === 'GET' && parts[0] === 'hello') return reply(200, { app: 'turbocut', id: this.id, name: this.name, version: this.version });
       if (req.method === 'POST' && parts[0] === 'offer') return await this.onOffer(req, reply);
       if (req.method === 'PUT' && parts[0] === 'part' && parts.length === 3) return await this.onPart(req, reply, parts[1], parts[2], url.searchParams.get('name'));
@@ -307,13 +364,18 @@ class Share extends EventEmitter {
   }
 
   // ---------------------------------------------------------------- a shelf: parts kept for a device that fetches them
-  /** Put a shelf up. `summary`: { project, media, fonts, links, bytes }. Returns `{ id, token }`; add parts with `shelfPart`, then call `shelfReady`. */
-  shelfOpen(summary) {
+  /** Put a shelf up. `summary`: { project, media, fonts, links, bytes }. With `pairedId` the shelf is for that remembered device only: it finds it in its inbox. Returns `{ id, token }`; add parts with `shelfPart`, then call `shelfReady`. */
+  shelfOpen(summary, pairedId) {
+    let forHash = null;
+    if (pairedId) {
+      forHash = [...this.paired.keys()].find((h) => h.slice(0, 16) === pairedId) || null;
+      if (!forHash) throw new Error('That device is no longer remembered.');
+    }
     const token = crypto.randomBytes(16).toString('base64url');
     const id = crypto.randomBytes(8).toString('hex');
     const dir = path.join(this.dir, `shelf-${id}`);
     fs.mkdirSync(dir, { recursive: true });
-    const shelf = { id, token, dir, summary, items: [], ready: false, sent: 0, total: 0, state: 'preparing', timer: setTimeout(() => this.shelfClose(id, 'expired'), SHELF_MS) };
+    const shelf = { id, token, dir, summary, for: forHash, items: [], ready: false, sent: 0, total: 0, state: 'preparing', timer: setTimeout(() => this.shelfClose(id, 'expired'), SHELF_MS) };
     shelf.timer.unref?.();
     this.shelves.set(token, shelf);
     return { id, token };
@@ -395,12 +457,29 @@ class Share extends EventEmitter {
       return;
     }
     if (req.method === 'POST' && parts[2] === 'done' && parts.length === 3) {
+      const who = await readJson(req, 2048).catch(() => ({})); // newer devices say who they are; older ones send nothing
+      if (who && typeof who.key === 'string') this.pair(who.key, who.name);
       sh.state = 'done';
       this.emit('shelf', { id: sh.id, state: 'done', sent: sh.total, total: sh.total });
       this.shelfClose(sh.id);
       return reply(200, { ok: true });
     }
     reply(404, { error: 'not found' });
+  }
+
+  /** A remembered device asks whether anything waits for it. Answers `{ none: true }` for no shelf and for a key it does not know alike. */
+  onInbox(req, res, reply) {
+    for (const [k, v] of Object.entries(CORS)) res.setHeader(k, v);
+    if (req.method === 'OPTIONS') return (res.writeHead(204), res.end());
+    if (req.method !== 'GET') return reply(404, { error: 'not found' });
+    const key = String(req.headers['x-turbocut-key'] || '');
+    const hash = KEY.test(key) ? hashKey(key) : null;
+    const known = hash ? this.paired.get(hash) : undefined;
+    if (!hash || !known) return reply(200, { none: true });
+    known.at = Date.now();
+    const sh = [...this.shelves.values()].reverse().find((x) => x.ready && x.for === hash && x.state !== 'done');
+    if (!sh) return reply(200, { none: true, name: this.name });
+    reply(200, { token: sh.token, id: sh.id, from: { name: this.name }, summary: sh.summary });
   }
 
   // ---------------------------------------------------------------- sending

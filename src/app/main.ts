@@ -8,6 +8,7 @@ import { mixWindow } from '../export/audio.ts';
 import { drawVideo } from '../render/compose.ts';
 import { VideoSampleSink } from 'mediabunny';
 import { Actions } from './actions.ts';
+import { refWhere } from './projectFiles.ts';
 import { BinPanel } from './binPanel.ts';
 import { CaptionsPanel } from './captionsPanel.ts';
 import { fmtTime, h, panel, popupMenu } from './dom.ts';
@@ -48,7 +49,7 @@ const actions = new Actions(store, player);
 const timeline = new TimelineView(store, {
   actions,
   onUserTouch: () => store.playing && player.pause(),
-  trackActions: { toggle: (id, what) => actions.toggleTrack(id, what), remove: (id) => actions.removeTrack(id), add: (kind) => actions.addTrack(kind) },
+  trackActions: { toggle: (id, what) => actions.toggleTrack(id, what), remove: (id) => actions.removeTrack(id), add: (kind) => actions.addTrack(kind), move: (id, to) => actions.moveTrack(id, to) },
 });
 const inspector = new Inspector(store);
 const captions = new CaptionsPanel(store);
@@ -265,11 +266,26 @@ fileMenu.addEventListener('click', () =>
     { label: 'Find missing media…', run: () => actions.relinkDialog(), disabled: store.missingAssets().length === 0 },
   ]),
 );
+// Next to the File menu: the file the project is saved in, or that it is not saved yet. A dot says there are changes since the last save.
+const projectLabel = h('span', { class: 'proj-label', role: 'status' });
+const syncLabel = () => {
+  const name = store.fileName;
+  const text = name ?? 'Unsaved project';
+  const dot = name && store.dirty ? ' •' : '';
+  const next = `${text}${dot}`;
+  if (projectLabel.textContent !== next) projectLabel.textContent = next;
+  projectLabel.title = name ? `${store.fileRef ? refWhere(store.fileRef) : name}${store.dirty ? '\nChanges since the last save.' : ''}` : 'This project has not been saved to a file yet. File → Save project.';
+  projectLabel.classList.toggle('unsaved', !name);
+};
+store.on('project', syncLabel);
+store.on('saved', syncLabel);
+syncLabel();
 const header = h('header', { class: 'bt-top top' },
   h('img', { class: 'logo-mark', src: `${import.meta.env.BASE_URL}icon.svg`, alt: '', width: 28, height: 28 }),
   h('strong', { class: 'logo' }, 'TurboCut'),
   iconBtn('home', 'Home', () => (store.settings.dock ? setView('home') : showHome()), 'hdr-home'),
   fileMenu,
+  projectLabel,
   h('span', { class: 'spacer' }),
   iconBtn('undo', 'Undo', () => store.undo(), '', 'undo'),
   iconBtn('redo', 'Redo', () => store.redo(), '', 'redo'),

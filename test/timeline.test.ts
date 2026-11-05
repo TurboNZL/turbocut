@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { audioGain, evalProp, gainAtRel, setKeyframe } from '../src/core/keyframes.ts';
-import { addClip, addTrack, createClip, createProject, findFreeStart, moveClip, removeTrack, moveLinked, projectDuration, removeLinked, rippleDelete, splitAt, splitLinked, trimEnd, trimStart } from '../src/core/timeline.ts';
+import { addClip, addTrack, createClip, createProject, findFreeStart, moveClip, moveTrackTo, removeTrack, moveLinked, projectDuration, removeLinked, rippleDelete, splitAt, splitLinked, trimEnd, trimStart } from '../src/core/timeline.ts';
 import { groupWords, SHORTS_GROUPING } from '../src/transcribe/provider.ts';
 import { parseClipSlug } from '../src/twitch/clip.ts';
 
@@ -177,5 +177,33 @@ describe('tracks', () => {
     expect(findFreeStart([p.tracks[0]!], 10, 20)).toBe(100);
     expect(findFreeStart([p.tracks[0]!, p.tracks[1]!], 200, 20)).toBe(200);
     expect(findFreeStart([p.tracks[0]!], 0, 100)).toBe(100);
+  });
+});
+
+describe('reordering tracks', () => {
+  const names = (p: ReturnType<typeof createProject>, kind: 'video' | 'audio') => p.tracks.filter((t) => t.kind === kind).map((t) => t.name);
+  it('puts a track where another of its kind is', () => {
+    const p = createProject();
+    addTrack(p, 'video');
+    addTrack(p, 'video');
+    addTrack(p, 'audio');
+    const [v1, v2, v3] = p.tracks.filter((t) => t.kind === 'video');
+    expect(moveTrackTo(p, v1!.id, v3!.id)).toBe(true);
+    expect(names(p, 'video')).toEqual(['V2', 'V3', 'V1']);
+    expect(moveTrackTo(p, v3!.id, v2!.id)).toBe(true);
+    expect(names(p, 'video')).toEqual(['V3', 'V2', 'V1']);
+    expect(names(p, 'audio')).toEqual(['A1', 'A2']); // the other kind stays as it was
+  });
+  it('refuses a move that makes no sense and keeps the clips on their track', () => {
+    const p = createProject();
+    const v2 = addTrack(p, 'video');
+    const a = p.tracks.find((t) => t.kind === 'audio')!;
+    addClip(p, v2.id, createClip('x', 0, 30));
+    expect(moveTrackTo(p, v2.id, a.id)).toBe(false); // a video track cannot go among the audio tracks
+    expect(moveTrackTo(p, v2.id, v2.id)).toBe(false);
+    expect(moveTrackTo(p, v2.id, 'nope')).toBe(false);
+    const v1 = p.tracks[0]!;
+    moveTrackTo(p, v2.id, v1.id);
+    expect(p.tracks.find((t) => t.id === v2.id)!.clips).toHaveLength(1);
   });
 });

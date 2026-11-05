@@ -201,3 +201,78 @@ describe('a shelf, fetched by a device that cannot listen (a phone)', () => {
     expect(lanAddresses({ a: nic('172.17.0.1'), b: nic('192.168.1.20'), c: nic('127.0.0.1', true), d: nic('8.8.8.8'), e: nic('10.0.0.4') })).toEqual(['192.168.1.20', '10.0.0.4', '172.17.0.1']);
   });
 });
+
+describe('a device the computer remembers (no link the second time)', () => {
+  const KEY = 'A'.repeat(22);
+  const OTHER = 'B'.repeat(22);
+  const get = (a: any, p: string, init?: RequestInit) => fetch(`http://127.0.0.1:${a.port}${p}`, init);
+  async function put(a: any, pairedId?: string) {
+    const { id, token } = a.shelfOpen({ project: 'Short', media: 0, fonts: 0, links: 0, bytes: 1 }, pairedId);
+    const w = a.shelfPart(id, 'project', 'project.turbocut');
+    await w.write(Buffer.from('{}'));
+    await w.end();
+    a.shelfReady(id);
+    return { id, token };
+  }
+  const inbox = async (a: any, key: string) => (await get(a, '/inbox', { headers: { 'X-Turbocut-Key': key } })).json();
+  const file = () => join(mkdtempSync(join(tmpdir(), 'tcpair-')), 'paired.json');
+
+  it('remembers a device that says who it is when it closes a shelf, and keeps only a hash of its key', async () => {
+    const pairFile = file();
+    const a = new Share({ dir: mkdtempSync(join(tmpdir(), 'tcshare-')), pairFile, name: 'Desktop', version: '1', port: 0 });
+    a.startDiscovery = async () => {};
+    made.push(a);
+    await a.start();
+    const first = await put(a);
+    const seen: any[] = [];
+    a.on('paired', (l: any) => seen.push(l));
+    expect((await get(a, `/shelf/${first.token}/done`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ key: KEY, name: 'Pixel' }) })).status).toBe(200);
+    expect(a.pairedList().map((d: any) => d.name)).toEqual(['Pixel']);
+    expect(seen).toHaveLength(1);
+    expect(readFileSync(pairFile, 'utf8')).not.toContain(KEY);
+    // a computer started later (another session of the app) still knows it
+    const again = new Share({ dir: mkdtempSync(join(tmpdir(), 'tcshare-')), pairFile, name: 'Desktop', version: '1', port: 0 });
+    expect(again.pairedList().map((d: any) => d.name)).toEqual(['Pixel']);
+  });
+
+  it('an older device that sends no body, or a bad key, is not remembered', async () => {
+    const a = await device('Desktop');
+    const one = await put(a);
+    expect((await get(a, `/shelf/${one.token}/done`, { method: 'POST' })).status).toBe(200);
+    const two = await put(a);
+    await get(a, `/shelf/${two.token}/done`, { method: 'POST', body: JSON.stringify({ key: 'short', name: 'x' }) });
+    expect(a.pairedList()).toEqual([]);
+  });
+
+  it('hands a shelf put up for a remembered device to that device only, found by its key', async () => {
+    const a = await device('Desktop');
+    a.pair(KEY, 'Pixel');
+    a.pair(OTHER, 'Tablet');
+    const id = a.pairedList().find((d: any) => d.name === 'Pixel').id;
+    expect(await inbox(a, KEY)).toMatchObject({ none: true });
+    const sh = await put(a, id);
+    const mine = await inbox(a, KEY);
+    expect(mine).toMatchObject({ token: sh.token, from: { name: 'Desktop' }, summary: { project: 'Short' } });
+    expect(await inbox(a, OTHER)).toMatchObject({ none: true }); // another remembered device sees nothing of it
+    expect(await inbox(a, 'C'.repeat(22))).toEqual({ none: true }); // an unknown key looks the same as an empty inbox
+    expect(await inbox(a, 'not a key')).toEqual({ none: true });
+    expect((await get(a, `/shelf/${sh.token}/manifest`)).status).toBe(200);
+    expect((await get(a, `/shelf/${sh.token}/done`, { method: 'POST', body: JSON.stringify({ key: KEY, name: 'Pixel' }) })).status).toBe(200);
+    expect(await inbox(a, KEY)).toMatchObject({ none: true }); // fetched: gone
+  });
+
+  it('answers the cross-origin preflight for the inbox, refuses an unknown device id, and forgets on request', async () => {
+    const a = await device('Desktop');
+    const pre = await get(a, '/inbox', { method: 'OPTIONS' });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get('access-control-allow-origin')).toBe('*');
+    expect(() => a.shelfOpen({ project: 'x' }, 'f'.repeat(16))).toThrow(/no longer remembered/);
+    a.pair(KEY, 'Pixel');
+    const id = a.pairedList()[0].id;
+    const sh = await put(a, id);
+    a.forget(id);
+    expect(a.pairedList()).toEqual([]);
+    expect(await inbox(a, KEY)).toEqual({ none: true });
+    expect((await get(a, `/shelf/${sh.token}/manifest`)).status).toBe(404); // its shelf went with it
+  });
+});

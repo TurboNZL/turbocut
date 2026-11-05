@@ -7,8 +7,10 @@ import { openFontManager } from './fontManager.ts';
 import { deviceCheck } from './deviceCheck.ts';
 import { dialog, h, panel } from './dom.ts';
 import { comboFromEvent, prettyCombo, type Hotkeys } from './hotkeys.ts';
-import { pickFiles, platform, saveFile } from './platform.ts';
-import { DEFAULT_SETTINGS, PREVIEW_FPS, PREVIEW_SCALES, exportSettings, importSettings, type CounterMode, type PreviewFps, type PreviewScale } from './settings.ts';
+import { platform } from './platform.ts';
+import { PREVIEW_FPS, PREVIEW_SCALES, type CounterMode, type PreviewFps, type PreviewScale, type TrackGroup } from './settings.ts';
+import { configPage } from './configPage.ts';
+import { forgetCopies, memoryUsage } from './mediaMemory.ts';
 import type { Store } from './store.ts';
 import { MODELS, type Compute } from '../transcribe/local.ts';
 import { desktopWindow } from './windowFrame.ts';
@@ -16,12 +18,12 @@ import { shareApi } from './share.ts';
 import { assetFor, checkForUpdate, apkUpdater, desktopUpdater, openApk, type UpdateStatus } from './updater.ts';
 import { APP_VERSION } from './version.ts';
 
-export type SettingsTab = 'General' | 'Look' | 'Layout' | 'Fonts' | 'Guides' | 'Keys' | 'Captions' | 'Updates' | 'Device' | 'About';
+export type SettingsTab = 'General' | 'Look' | 'Layout' | 'Fonts' | 'Guides' | 'Keys' | 'Captions' | 'Updates' | 'Device' | 'Config' | 'About';
 /** The pages of Settings in groups, so nine small tabs read as three short lists. */
 const GROUPS: [string, SettingsTab[]][] = [
   ['Editor', ['General', 'Look', 'Layout', 'Keys']],
   ['Captions and text', ['Captions', 'Fonts']],
-  ['App', ['Updates', 'Device', 'Guides', 'About']],
+  ['App', ['Updates', 'Device', 'Config', 'Guides', 'About']],
 ];
 const TABS: SettingsTab[] = GROUPS.flatMap(([, t]) => t);
 
@@ -78,7 +80,7 @@ export function settingsView(deps: SettingsDeps, tab: SettingsTab = 'General'): 
   };
   const build = (t: SettingsTab): HTMLElement => {
     switch (t) {
-      case 'General': return general(deps, refresh);
+      case 'General': return general(deps, refresh, show);
       case 'Look': return look(deps, refresh);
       case 'Layout': return layoutManager(store, refresh);
       case 'Fonts': return fontsTab(deps, refresh);
@@ -87,6 +89,7 @@ export function settingsView(deps: SettingsDeps, tab: SettingsTab = 'General'): 
       case 'Captions': return captionsEngine(deps);
       case 'Updates': return updates(deps);
       case 'Device': return device(deps);
+      case 'Config': return configPage(store, (id) => deps.hotkeys.list().find((a) => a.id === id)?.label ?? id);
       case 'About': return about();
     }
   };
@@ -159,13 +162,36 @@ export function openSettings(deps: SettingsDeps, tab: SettingsTab = 'General'): 
   queueMicrotask(() => view.focusSearch()); // typing right away searches the settings
 }
 
-function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
-  const s = store.settings;
-  const trackOrder = h('select', { class: 'input', 'aria-label': 'Track order' },
-    h('option', { value: 'video', selected: s.videoOnTop }, 'Video tracks on top, audio below'),
-    h('option', { value: 'audio', selected: !s.videoOnTop }, 'Audio tracks on top, video below'));
-  trackOrder.addEventListener('change', () => store.updateSettings({ videoOnTop: trackOrder.value === 'video' }));
+/** The order of the timeline rows: the caption row, the video tracks and the audio tracks, each moved up or down. */
+function trackOrderEditor(store: Store, redraw: () => void): HTMLElement {
+  const NAMES: Record<TrackGroup, string> = { captions: 'Captions', video: 'Video tracks', audio: 'Audio tracks' };
+  const box = h('div', { class: 'order-list', role: 'list', 'aria-label': 'Track order' });
+  const move = (i: number, by: number) => {
+    const order = [...store.settings.trackOrder];
+    [order[i], order[i + by]] = [order[i + by]!, order[i]!];
+    store.updateSettings({ trackOrder: order });
+    redraw();
+  };
+  const order = store.settings.trackOrder;
+  box.append(...order.map((g, i) => h('div', { class: 'setting order-row', role: 'listitem', 'data-group': g },
+    h('span', { class: 'order-name' }, NAMES[g]),
+    h('button', { class: 'btn btn-ghost icon-btn', 'aria-label': `Move ${NAMES[g]} up`, title: 'Move up', disabled: i === 0, onclick: () => move(i, -1) }, icon('chevronUp', 16)),
+    h('button', { class: 'btn btn-ghost icon-btn', 'aria-label': `Move ${NAMES[g]} down`, title: 'Move down', disabled: i === order.length - 1, onclick: () => move(i, 1) }, icon('chevron', 16)))));
+  return h('div', { class: 'stack' }, h('span', { class: 'prop-l' }, 'Track order'), box, h('p', { class: 'hint' }, 'Top to bottom in the timeline. To reorder the tracks of one kind, hold a track label in the timeline and drag it to another track.'));
+}
 
+/** Copies of imported media kept for saved projects (browser and phone): on or off, how much room they take, and a way to clear them. */
+function mediaMemoryPanel(store: Store, redraw: () => void): HTMLElement {
+  const used = h('p', { class: 'hint' }, 'Measuring…');
+  void memoryUsage().then((n) => (used.textContent = n ? `Using ${n >= 1073741824 ? `${(n / 1073741824).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1048576))} MB`} on this device.` : 'Nothing is kept yet.'));
+  return panel('Media',
+    check('Keep a copy of imported media so saved projects find their files again', store.settings.rememberMedia, (v) => store.updateSettings({ rememberMedia: v }),
+      platform === 'electron' ? 'The desktop app remembers where each file is on the computer, so it keeps no copies.' : 'A browser or a phone cannot remember where a file came from, so TurboCut keeps a copy in its own private storage. Up to 4 GB; the oldest go first.'),
+    ...(platform === 'electron' ? [] : [used, h('button', { class: 'btn', onclick: async () => (await forgetCopies(), redraw()) }, 'Forget the kept copies')]));
+}
+
+function general({ store }: SettingsDeps, redraw: () => void, go: (t: SettingsTab) => void): HTMLElement {
+  const s = store.settings;
   const SCALE_LABEL: Record<string, string> = { auto: 'Automatic (up to 960 px on the long side, 640 px on a phone)', '100': 'Full size of the project', '75': '75 %', '50': '50 %', '25': '25 %, draft' };
   const previewScale = h('select', { class: 'input', 'aria-label': 'Preview sharpness' }, ...PREVIEW_SCALES.map((v) => h('option', { value: String(v), selected: s.previewScale === v }, SCALE_LABEL[String(v)]!)));
   previewScale.addEventListener('change', () => store.updateSettings({ previewScale: (previewScale.value === 'auto' ? 'auto' : Number(previewScale.value)) as PreviewScale }));
@@ -173,28 +199,11 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
   const previewFps = h('select', { class: 'input', 'aria-label': 'Preview frame rate' }, ...PREVIEW_FPS.map((v) => h('option', { value: v, selected: s.previewFps === v }, FPS_LABEL[v])));
   previewFps.addEventListener('change', () => store.updateSettings({ previewFps: previewFps.value as PreviewFps }));
 
-  const exportBtn = h('button', { class: 'btn', onclick: () => saveFile(exportSettings(store.settings), 'turbocut-settings.json', 'application/json') }, 'Export settings');
-  const importBtn = h('button', {
-    class: 'btn',
-    onclick: async () => {
-      const [f] = await pickFiles('.json,application/json');
-      if (!f) return;
-      try {
-        const next = importSettings(await f.text(), DEFAULT_SETTINGS(false));
-        store.updateSettings(() => Object.assign(store.settings, next));
-        store.say('Settings imported.');
-        redraw();
-      } catch (e) {
-        store.say(`Could not import: ${e instanceof Error ? e.message : e}`);
-      }
-    },
-  }, 'Import settings');
-
   return h('div', { class: 'stack' },
     panel('Timeline',
       check('Snap clips and edges to the playhead and to each other', s.snapping, (v) => store.updateSettings({ snapping: v }), 'Hotkey N toggles it.'),
       check('Show audio waveforms', s.waveforms, (v) => store.updateSettings({ waveforms: v }), 'Low detail. Uses a little more battery.'),
-      field('Track order', trackOrder)),
+      trackOrderEditor(store, redraw)),
     panel('Preview',
       h('p', { class: 'hint' }, 'How the picture is drawn while you edit. Exports are always full size and full rate. A lower setting keeps a slow phone smooth.'),
       field('Sharpness', previewScale),
@@ -202,7 +211,8 @@ function general({ store }: SettingsDeps, redraw: () => void): HTMLElement {
     panel('Start', check('Show the home screen when TurboCut starts with an empty project', s.showHome, (v) => store.updateSettings({ showHome: v }), 'The Home button at the top brings it back.')),
     panel('Saving', check('Keep the project file up to date while I edit', s.autosave, (v) => store.updateSettings({ autosave: v }), 'Once a project has been saved to a file, changes are written to that file a few seconds after you make them.')),
     panel('Updates', check('Check for a new version when TurboCut starts', s.autoCheckUpdates, (v) => store.updateSettings({ autoCheckUpdates: v }))),
-    panel('Settings file', h('div', { class: 'row' }, exportBtn, importBtn)),
+    mediaMemoryPanel(store, redraw),
+    panel('Settings file', h('p', { class: 'hint' }, 'Back up your settings, choose which ones to carry over, or set up another device from a file.'), h('button', { class: 'btn', onclick: () => go('Config') }, 'Open Config…')),
   );
 }
 

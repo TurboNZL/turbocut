@@ -1,6 +1,6 @@
 // Runs the built app inside the real Electron shell: protocol, secure context, codecs, import and export.
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -142,9 +142,33 @@ try {
     await menu('New project');
     await menu('Open project…');
     await win.waitForFunction(() => window.turbocutApp.store.project.name === 'Shell short 2');
-    await win.waitForFunction(() => window.turbocutApp.store.missingAssets().length === 0, null, { timeout: 20000 });
+    await win.waitForFunction(() => window.turbocutApp.store.missingAssets().length === 0 && /^Opened /.test(window.turbocutApp.store.status), null, { timeout: 20000 }); // the media is open the moment it is listed, its first picture is checked a moment later
     assert.equal(await win.getByRole('dialog', { name: 'Find the media' }).count(), 0, 'nothing to find: the path was enough');
     assert.equal(await win.evaluate(async () => { const a = window.turbocutApp; return !!(await a.store.lib.thumbnail(Object.keys(a.store.project.assets)[0])); }), true, 'and it plays');
+    // a full project: saved as .turbocutf through the real dialog and written to disk in pieces, then opened with the video gone from where it was
+    const full = join(dir, 'Shell full.turbocutf');
+    await app.evaluate(({ dialog }, f) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: f });
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [f] });
+    }, full);
+    await win.evaluate(() => window.turbocutApp.actions.saveProject(true));
+    await win.waitForFunction(() => /Saved Shell full\.turbocutf/.test(window.turbocutApp.store.status), null, { timeout: 20000 });
+    assert.equal(readFileSync(full).subarray(0, 18).toString(), 'TURBOCUT-BUNDLE-1\n', 'the shell wrote a bundle');
+    assert.ok(statSync(full).size > statSync(clip).size, 'with the video inside');
+    assert.equal(await win.locator('.proj-label').textContent(), 'Shell full.turbocutf', 'the header names the file');
+    assert.deepEqual(readdirSync(dir).filter((f) => f.endsWith('.tmp')), [], 'no temporary file is left behind');
+    renameSync(clip, join(dir, 'gone.webm'));
+    await menu('New project');
+    await win.getByRole('button', { name: 'Discard it' }).click({ timeout: 2000 }).catch(() => {});
+    await menu('Open project…');
+    await win.waitForFunction(() => window.turbocutApp.store.project.name === 'Shell short 2' && /^Opened Shell full\.turbocutf/.test(window.turbocutApp.store.status), null, { timeout: 30000 });
+    assert.equal(await win.evaluate(() => window.turbocutApp.store.missingAssets().length), 0, 'the video came out of the bundle, not from its old path');
+    assert.equal(await win.evaluate(async () => { const a = window.turbocutApp; return !!(await a.store.lib.thumbnail(Object.keys(a.store.project.assets)[0])); }), true, 'and plays');
+    renameSync(join(dir, 'gone.webm'), clip);
+    await app.evaluate(({ dialog }, f) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: f });
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [f] });
+    }, projectFile);
     // the file moves: the project opens and says what is missing
     renameSync(clip, join(dir, 'moved.webm'));
     await menu('Open project…');

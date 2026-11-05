@@ -8,11 +8,13 @@ import { createProject } from '../src/core/timeline.ts';
 import { parseProject, serializeProject } from '../src/core/projectFile.ts';
 import { filesFromPaths } from '../src/app/mediaPaths.ts';
 
-const { projectPath, mediaPath, writeAtomic, readProject } = createRequire(import.meta.url)('../electron/projectFiles.cjs');
+const { projectPath, mediaPath, bundlePath, writeAtomic, readProject, Writers } = createRequire(import.meta.url)('../electron/projectFiles.cjs');
 
 describe('project files on the desktop', () => {
-  it('only reads and writes absolute paths that end in .turbocut (or .json)', () => {
+  it('only reads and writes absolute paths that end in .turbocut, .turbocutc, .turbocutf (or .json)', () => {
     expect(projectPath('/home/me/My short.turbocut')).toBe('/home/me/My short.turbocut');
+    expect(projectPath('/home/me/My short.turbocutf')).toBe('/home/me/My short.turbocutf');
+    expect(projectPath('/home/me/My short.TURBOCUTC')).toBe('/home/me/My short.TURBOCUTC');
     for (const bad of ['', 'relative.turbocut', '/etc/passwd', '/home/me/x.turbocut\0.txt', '/home/me/video.mp4', 42, null]) expect(() => projectPath(bad as any), String(bad)).toThrow();
   });
 
@@ -67,5 +69,50 @@ describe('media paths in a project', () => {
 
   it('opens nothing by path outside the desktop app', async () => {
     expect(await filesFromPaths([{ name: 'x.mp4', path: '/v/x.mp4', size: 1 }])).toEqual([]);
+  });
+});
+
+describe('saving a bundle in pieces', () => {
+  it('writes the pieces to a temporary file and only replaces the project when the last one is in', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tcbundle-'));
+    const f = join(dir, 'big.turbocutf');
+    writeFileSync(f, 'old');
+    const w = new Writers();
+    const id = w.start(f);
+    w.chunk(id, new Uint8Array([1, 2, 3]));
+    w.chunk(id, new Uint8Array([4, 5]));
+    expect(readFileSync(f, 'utf8')).toBe('old'); // not yet
+    w.end(id, true);
+    expect([...readFileSync(f)]).toEqual([1, 2, 3, 4, 5]);
+    expect(readdirSync(dir)).toEqual(['big.turbocutf']);
+  });
+
+  it('a cancelled or failed save leaves the old file and no leftovers', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tcbundle-'));
+    const f = join(dir, 'big.turbocutf');
+    writeFileSync(f, 'old');
+    const w = new Writers();
+    const id = w.start(f);
+    w.chunk(id, new Uint8Array([9]));
+    w.end(id, false);
+    expect(readFileSync(f, 'utf8')).toBe('old');
+    expect(readdirSync(dir)).toEqual(['big.turbocutf']);
+    expect(() => w.chunk(id, new Uint8Array([1]))).toThrow(/over/);
+  });
+
+  it('allows only a few saves at once', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tcbundle-'));
+    const w = new Writers();
+    for (let i = 0; i < 4; i++) w.start(join(dir, `${i}.turbocutf`));
+    expect(() => w.start(join(dir, 'x.turbocutf'))).toThrow(/at once/);
+  });
+
+  it('serves a bundle path only for an existing bundle file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tcbundle-'));
+    const f = join(dir, 'a.turbocutf');
+    writeFileSync(f, 'x');
+    writeFileSync(join(dir, 'plain.turbocut'), 'x');
+    expect(bundlePath(f)).toBe(f);
+    for (const bad of [join(dir, 'plain.turbocut'), join(dir, 'missing.turbocutf'), '/etc/passwd', 'a.turbocutf', f + '\0x', dir]) expect(bundlePath(bad), String(bad)).toBeNull();
   });
 });

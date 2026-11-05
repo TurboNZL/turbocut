@@ -4,7 +4,8 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 let progressHandler = () => {};
 ipcRenderer.on('updater:progress', (_e, percent) => progressHandler(percent));
 
-const listeners = { devices: [], offer: [], received: [], shelf: [] };
+const listeners = { devices: [], offer: [], received: [], shelf: [], paired: [] };
+ipcRenderer.on('share:paired', (_e, list) => listeners.paired.forEach((f) => f(list)));
 ipcRenderer.on('share:shelf', (_e, x) => listeners.shelf.forEach((f) => f(x)));
 ipcRenderer.on('share:devices', (_e, list) => listeners.devices.forEach((f) => f(list)));
 ipcRenderer.on('share:offer', (_e, o) => listeners.offer.forEach((f) => f(o)));
@@ -26,8 +27,11 @@ contextBridge.exposeInMainWorld('turbocut', {
   },
   // Saving and opening project files, and the path a picked or dropped file has on disk (empty for a file that is not on disk).
   project: {
-    saveAs: (name, text) => ipcRenderer.invoke('project:save-as', name, text),
+    choose: (name) => ipcRenderer.invoke('project:choose', name),
     write: (path, text) => ipcRenderer.invoke('project:write', path, text),
+    writeStart: (path) => ipcRenderer.invoke('project:write-start', path),
+    writeChunk: (id, bytes) => ipcRenderer.invoke('project:write-chunk', id, bytes),
+    writeEnd: (id, commit) => ipcRenderer.invoke('project:write-end', id, commit),
     read: (path) => ipcRenderer.invoke('project:read', path),
     open: () => ipcRenderer.invoke('project:open'),
   },
@@ -70,6 +74,8 @@ contextBridge.exposeInMainWorld('turbocut', {
   share: {
     configure: (o) => ipcRenderer.invoke('share:configure', o),
     devices: () => ipcRenderer.invoke('share:devices'),
+    paired: () => ipcRenderer.invoke('share:paired'),
+    forget: (id) => ipcRenderer.send('share:forget', id),
     on: (what, fn) => void listeners[what]?.push(fn),
     answer: (offerId, accept) => ipcRenderer.send('share:answer', offerId, accept),
     offer: (deviceId, summary) => ipcRenderer.invoke('share:send-offer', deviceId, summary),
@@ -78,7 +84,7 @@ contextBridge.exposeInMainWorld('turbocut', {
     partEnd: (transfer, id) => ipcRenderer.invoke('share:part-end', transfer, id),
     finish: (transfer) => ipcRenderer.invoke('share:finish', transfer),
     abort: (transfer) => ipcRenderer.send('share:abort', transfer),
-    shelfOpen: (summary) => ipcRenderer.invoke('share:shelf-open', summary),
+    shelfOpen: (summary, pairedId) => ipcRenderer.invoke('share:shelf-open', summary, pairedId),
     shelfReady: (transfer) => ipcRenderer.invoke('share:shelf-ready', transfer),
   },
   updater: {

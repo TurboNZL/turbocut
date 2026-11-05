@@ -435,6 +435,103 @@ try {
   assert.ok(full.length > 3 && steps(full).some((d) => d === 1), 'at full rate it can draw every frame');
   await page.close();
 
+  // ============================================================ 2. a picture and its sound, selected one after the other, drag together
+  page = await fresh();
+  const clipBox = (kind) => page.locator(`.tl-track.tl-${kind} .tl-clip`).first().boundingBox();
+  const startsOf = () => page.evaluate(() => window.turbocutApp.store.project.tracks.map((t) => t.clips.map((c) => c.start)));
+  // unlink them first: the point is that two clips picked one by one move as one
+  await page.evaluate(() => window.turbocutApp.store.edit((p) => p.tracks.forEach((t) => t.clips.forEach((c) => delete c.link))));
+  let v = await clipBox('video');
+  let a = await clipBox('audio');
+  await page.mouse.click(v.x + v.width / 2, v.y + v.height / 2);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(a.x + a.width / 2, a.y + a.height / 2);
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedIds.length), 2, 'Shift + click adds the sound to the picture');
+  // press on one of them with Shift still held and drag: both move by the same amount
+  v = await clipBox('video');
+  await page.mouse.move(v.x + v.width / 2, v.y + v.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(v.x + v.width / 2 + 40, v.y + v.height / 2, { steps: 4 });
+  await page.mouse.move(v.x + v.width / 2 + 90, v.y + v.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  let [vs, as] = await startsOf();
+  console.log('shift-drag of the picture and the sound: starts', vs, as);
+  assert.ok(vs[0] > 20 && vs[0] === as[0], 'with Shift held the two selected clips move together');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedIds.length), 2, 'and both stay selected');
+  // Shift + click that goes nowhere still takes a clip out of the selection (Ctrl does the toggle)
+  v = await clipBox('video');
+  await page.keyboard.down('Control');
+  await page.mouse.click(v.x + v.width / 2, v.y + v.height / 2);
+  await page.keyboard.up('Control');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.selectedIds.length), 1, 'a Ctrl + click without dragging deselects it');
+  await page.close();
+
+  // ============================================================ 3. dragging the playhead off the edge scrolls, and stops at the end
+  page = await fresh();
+  const geo = () => page.evaluate(() => { const s = document.querySelector('.tl-scroll'); return { left: s.scrollLeft, max: s.scrollWidth - s.clientWidth, view: s.clientWidth, head: window.turbocutApp.store.playhead }; });
+  const rulerBox = await page.locator('.tl-ruler').boundingBox();
+  await page.mouse.move(rulerBox.x + 400, rulerBox.y + rulerBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rulerBox.x + 1000, rulerBox.y + rulerBox.height / 2, { steps: 5 });
+  await page.mouse.move(1279 + 900, rulerBox.y + rulerBox.height / 2, { steps: 5 }); // far past the right edge of the window
+  await page.waitForFunction(() => { const s = document.querySelector('.tl-scroll'); return s.scrollLeft >= s.scrollWidth - s.clientWidth - 2; }, null, { timeout: 15000 });
+  await page.waitForTimeout(400);
+  let g = await geo();
+  console.log('held at the right edge: scrolled to', Math.round(g.left), 'of', Math.round(g.max), 'playhead', g.head);
+  const endFrame = await page.evaluate(() => { const p = window.turbocutApp.store.project; return Math.max(p.fps * 20, ...p.tracks.flatMap((t) => t.clips.map((c) => c.start + c.duration))) + p.fps * 10; });
+  assert.ok(g.head <= endFrame, `the playhead stops at the end of the timeline (${g.head} <= ${endFrame})`);
+  assert.ok(g.head >= endFrame - 3, 'and gets there');
+  await page.waitForTimeout(500);
+  assert.equal((await geo()).head, g.head, 'holding there does not run on');
+  await page.mouse.move(rulerBox.x - 50, rulerBox.y + rulerBox.height / 2, { steps: 4 }); // back past the left edge
+  await page.waitForFunction(() => document.querySelector('.tl-scroll').scrollLeft < 5, null, { timeout: 15000 });
+  await page.mouse.up();
+  g = await geo();
+  assert.ok(g.head <= 2, `and dragging back off the left edge stops at the start (${g.head})`);
+  await page.close();
+
+  // ============================================================ 4. hold a track label and drag it to another track of its kind
+  page = await fresh();
+  await page.evaluate(() => { window.turbocutApp.actions.addTrack('video'); window.turbocutApp.actions.addTrack('video'); });
+  const names = () => page.evaluate(() => window.turbocutApp.store.project.tracks.filter((t) => t.kind === 'video').map((t) => `${t.name}:${t.clips.length}`));
+  assert.deepEqual(await names(), ['V1:1', 'V2:0', 'V3:0']);
+  const headOf = (name) => page.evaluate((n) => { const t = window.turbocutApp.store.project.tracks.find((x) => x.name === n); const r = document.querySelector(`.tl-track[data-track="${t.id}"] .tl-head`).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, name);
+  // a quick drag is not a reorder (the label needs to be held first)
+  let from = await headOf('V1');
+  let to = await headOf('V3');
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 6 });
+  await page.mouse.up();
+  assert.deepEqual(await names(), ['V1:1', 'V2:0', 'V3:0'], 'moving at once does nothing');
+  // held, then dragged: V1 takes the place of V3 (the top video track); its clip goes with it
+  from = await headOf('V1');
+  to = await headOf('V3');
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.waitForTimeout(550);
+  assert.equal(await page.locator('.tl-track.reorder-lift').count(), 1, 'the held track lifts');
+  await page.mouse.move(to.x, to.y, { steps: 6 });
+  assert.equal(await page.locator('.tl-track.reorder-over').count(), 1, 'and the track under it is marked');
+  await page.mouse.up();
+  assert.deepEqual(await names(), ['V2:0', 'V3:0', 'V1:1'], 'the held track is now the top one and kept its clip');
+  const shown = await page.$$eval('.tl-track.tl-video .tl-head', (els) => els.map((e) => e.textContent));
+  assert.deepEqual(shown, ['V1', 'V3', 'V2'], 'the timeline shows it on top');
+  assert.equal(await page.locator('.popup-menu').count(), 0, 'no menu opens at the end of the drag');
+  // the kinds do not mix: dropping on an audio track does nothing
+  from = await headOf('V1');
+  const audio = await page.evaluate(() => { const t = window.turbocutApp.store.project.tracks.find((x) => x.kind === 'audio'); const r = document.querySelector(`.tl-track[data-track="${t.id}"]`).getBoundingClientRect(); return { x: r.x + 200, y: r.y + r.height / 2 }; });
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.waitForTimeout(550);
+  await page.mouse.move(audio.x, audio.y, { steps: 6 });
+  await page.mouse.up();
+  assert.deepEqual(await names(), ['V2:0', 'V3:0', 'V1:1']);
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await names(), ['V1:1', 'V2:0', 'V3:0'], 'one undo puts the order back');
+  await page.close();
+
   assert.deepEqual(errors, [], 'no page errors');
   console.log('editing e2e passed');
 } finally {

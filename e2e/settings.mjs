@@ -39,15 +39,31 @@ try {
   await page.getByRole('button', { name: 'Settings' }).first().click();
   await page.waitForSelector('.settings');
   const tabs = await page.$$eval('.settings-nav .tab', (els) => els.map((e) => e.textContent));
-  assert.deepEqual(tabs, ['General', 'Look', 'Layout', 'Keys', 'Captions', 'Fonts', 'Updates', 'Device', 'Guides', 'About']);
-  await pick(page, 'Track order', 'audio');
-  assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.videoOnTop), false);
-  const kinds = await page.$$eval('.tl-track', (els) => els.map((e) => (e.className.match(/tl-(video|audio|caption)/) ?? [])[1]));
-  console.log('track order with audio on top:', kinds.join(','));
-  assert.deepEqual(kinds, ['audio', 'video', 'caption'], 'audio tracks drawn above video when the setting says so');
-  await pick(page, 'Track order', 'video');
-  const kinds2 = await page.$$eval('.tl-track', (els) => els.map((e) => (e.className.match(/tl-(video|audio|caption)/) ?? [])[1]));
-  assert.deepEqual(kinds2, ['video', 'audio', 'caption']);
+  assert.deepEqual(tabs, ['General', 'Look', 'Layout', 'Keys', 'Captions', 'Fonts', 'Updates', 'Device', 'Config', 'Guides', 'About']);
+  // the order of the three kinds of row is a list with arrows
+  const order = () => page.evaluate(() => window.turbocutApp.store.settings.trackOrder.join());
+  const rowKinds = () => page.$$eval('.tl-track', (els) => els.map((e) => (e.className.match(/tl-(video|audio|caption)/) ?? [])[1]));
+  assert.equal(await order(), 'video,audio,captions');
+  await page.getByRole('button', { name: 'Move Audio tracks up' }).click();
+  assert.equal(await order(), 'audio,video,captions');
+  assert.deepEqual(await rowKinds(), ['audio', 'video', 'caption'], 'audio tracks drawn above video when the setting says so');
+  await page.getByRole('button', { name: 'Move Captions up' }).click();
+  await page.getByRole('button', { name: 'Move Captions up' }).click();
+  assert.equal(await order(), 'captions,audio,video');
+  assert.deepEqual(await rowKinds(), ['caption', 'audio', 'video'], 'the caption row can sit on top too');
+  assert.equal(await page.getByRole('button', { name: 'Move Captions up' }).isDisabled(), true, 'the top row cannot go higher');
+  await page.reload();
+  await page.waitForFunction(() => window.turbocutApp);
+  assert.equal(await order(), 'captions,audio,video', 'and it is kept');
+  await page.evaluate(() => window.turbocutApp.store.updateSettings({ trackOrder: ['video', 'audio', 'captions'] }));
+  assert.equal(await page.evaluate(() => { localStorage.setItem('turbocut.settings', JSON.stringify({ videoOnTop: false, showHome: false })); return 1; }), 1);
+  await page.reload();
+  await page.waitForFunction(() => window.turbocutApp);
+  assert.equal(await order(), 'audio,video,captions', 'a setting saved by an older version still means what it did');
+  await page.evaluate(() => window.turbocutApp.store.updateSettings({ trackOrder: ['video', 'audio', 'captions'] }));
+  await importTwo();
+  await page.getByRole('button', { name: 'Settings' }).first().click();
+  await page.waitForSelector('.settings');
   await page.screenshot({ path: `${out}settings-general.png` });
 
   // ---- 2. Snapping: a clip dropped one frame from its neighbour lands on the edge only when snapping is on
@@ -173,16 +189,16 @@ try {
   await rows.last().getByRole('button', { name: 'Reset' }).click();
   assert.ok((await body.evaluate((el) => el.scrollTop)) > 100, 'nor did resetting one');
   await page.locator('.settings-nav').getByRole('tab', { name: 'General', exact: true }).click();
-  await page.locator('button.themed-select[aria-label="Track order"]').click();
+  await page.locator('button.themed-select[aria-label="Preview sharpness"]').click();
   const menu = page.locator('.themed-select-menu');
   assert.ok(await menu.isVisible(), 'the list is drawn by the theme (a bt-menu), not by the system');
   assert.ok(await menu.evaluate((el) => el.classList.contains('bt-menu')));
-  assert.equal(await menu.locator('.ts-option').count(), 2);
+  assert.equal(await menu.locator('.ts-option').count(), 5);
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
-  assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.videoOnTop), false, 'the keyboard chooses a row');
+  assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.previewScale), 100, 'the keyboard chooses a row');
   assert.equal(await menu.count(), 0, 'and the list closes');
-  await pick(page, 'Track order', 'video');
+  await pick(page, 'Preview sharpness', 'auto');
   await page.locator('.dlg .bt-close').click();
   // every drop-down in the editor is upgraded: no visible native select anywhere
   const native = await page.evaluate(() => [...document.querySelectorAll('select')].filter((s) => !s.classList.contains('ts-native') && getComputedStyle(s).display !== 'none').map((s) => s.getAttribute('aria-label') ?? s.className));

@@ -1,6 +1,8 @@
 import { cueAt, findCue, splitCue } from '../core/captions.ts';
-import { matchMedia, parseProject, projectFileName, serializeProject } from '../core/projectFile.ts';
-import { addClip, createProject, addTrack, clipEnd, createClip, findClip, findFreeStart, newId, projectDuration, removeLinked, removeTrack, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
+import { exportPreset } from '../captions/presets.ts';
+import { packBundle, unpackBundle, type BundlePart } from '../core/bundle.ts';
+import { FORMATS, FORMAT_EXT, FORMAT_LABEL, PROJECT_NAME, formatOfName, matchMedia, parseProject, serializeProject, type ProjectFormat } from '../core/projectFile.ts';
+import { addClip, createProject, addTrack, moveTrackTo, clipEnd, createClip, findClip, findFreeStart, newId, projectDuration, removeLinked, removeTrack, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
 import type { AssetSource, Track } from '../core/types.ts';
 import { overlaps } from '../core/timeline.ts';
 import { exportProject } from '../export/exporter.ts';
@@ -8,7 +10,11 @@ import { dialog, h } from './dom.ts';
 import { keepAwake, pickFiles, saveFile } from './platform.ts';
 import type { Player } from './player.ts';
 import { forgetRecent, recentRef, rememberFile } from './recent.ts';
-import { canWriteQuietly, openDialog, readRef, refName, saveAs, writeRef, type ProjectRef } from './projectFiles.ts';
+import { importFont } from './fonts.ts';
+import { keepCopy, recallCopies } from './mediaMemory.ts';
+import { importPresetFile } from './presetIO.ts';
+import { canWriteQuietly, chooseTarget, openDialog, openedFromFile, readRef, refName, writeRef, writeTarget, type OpenedProject, type ProjectRef, type Target } from './projectFiles.ts';
+import { collectShare } from './share.ts';
 import { filesFromPaths, pathOf } from './mediaPaths.ts';
 import { restorable, restoreDialog } from './restore.ts';
 import { CAPTION_TRACK, type Store } from './store.ts';
@@ -44,6 +50,7 @@ export class Actions {
       if (!asset.path) delete asset.path;
       asset.size = file.size; // the original's size, even when a converted copy was opened: the original is what a saved project will be given again
       if (source) asset.source = source;
+      this.keepForLater(asset, file);
       if (folder && store.project.folders?.some((f) => f.id === folder)) asset.folder = folder;
       store.edit((p) => (p.assets[asset.id] = asset));
       if (place) this.addAsset(asset.id);
@@ -57,26 +64,35 @@ export class Actions {
   // ---------------------------------------------------------------- project files
 
   /**
-   * Save the project to its file. The first time (or with `as`) the person chooses where; after that it writes back to the same file.
+   * Save the project to its file. The first time (or with `as`) the person chooses where, and the file type they pick there is the format
+   * (the full project is offered first); after that it writes back to the same file in the same format.
    * Resolves true when it was saved, false when the person cancelled or it could not be written.
    */
   async saveProject(as = false): Promise<boolean> {
     const { store } = this;
     try {
-      const text = serializeProject(store.project);
-      let ref = as ? null : store.fileRef;
-      let name = ref ? refName(ref) : '';
-      if (ref) await writeRef(ref, text);
+      await Promise.all([...this.keeping]);
+      let target: Target | null;
+      if (!as && store.fileRef) target = { ref: store.fileRef, name: refName(store.fileRef), format: formatOfName(refName(store.fileRef)) };
+      else if (!as && store.fileName && !store.fileRef) target = { ref: null, name: store.fileName, format: formatOfName(store.fileName) }; // a browser that can only download: the same kind again
       else {
-        const r = await saveAs(store.project.name, text);
-        if (!r) return false;
-        ref = r.ref;
-        name = r.name;
+        target = await chooseTarget(store.project.name, () => this.askFormat());
+        if (!target) return false;
       }
-      store.fileRef = ref;
-      store.dirty = false;
-      void rememberFile(store.project, ref);
-      store.say(ref ? `Saved ${name}. It holds the edit, not the video: keep the media files too.` : `Saved a copy as ${name}. This browser cannot save to the same file again, so Save makes a new copy each time.`);
+      const at = store.version;
+      if (target.format !== 'edit') store.say(`Saving ${target.name}…`);
+      const built = await this.buildContent(target.format, target.name);
+      await writeTarget(target, built.content);
+      store.fileRef = target.ref;
+      store.fileName = target.name;
+      if (store.version === at) store.dirty = false; // an edit made while a long save ran stays unsaved
+      void rememberFile(store.project, target.ref);
+      if (target.format !== 'edit' && target.ref?.kind === 'handle') await this.rebindFromBundle(target.ref);
+      store.say(
+        target.ref
+          ? built.note || `Saved ${target.name}. It holds the edit, not the video: keep the media files too.`
+          : `Saved a copy as ${target.name}. This browser cannot save to the same file again, so Save makes a new copy each time.`,
+      );
       store.emit('saved');
       return true;
     } catch (e) {
@@ -85,11 +101,74 @@ export class Actions {
     }
   }
 
-  /** Quietly write the changes to the project's file (Settings → Saving). Does nothing for a project that has no file yet. */
+  /**
+   * What goes into a file of this format. The edit alone is text; the others are a bundle: the edit plus, for `clips`, the clips that came
+   * from a link, and for `full` every video and audio file that is open, the added fonts the project uses and the caption style. Media that
+   * is not open (a project that still waits for its files) cannot go in, and the note says so.
+   */
+  private async buildContent(format: ProjectFormat, fileName: string): Promise<{ content: string | Blob; note: string }> {
+    const { store } = this;
+    const text = serializeProject(store.project);
+    if (format === 'edit') return { content: text, note: '' };
+    const c = await collectShare(store);
+    const media = format === 'full' ? c.media : c.media.filter((m) => m.source);
+    const fonts = format === 'full' ? c.fonts : [];
+    const preset = format === 'full' && !store.preset.builtin ? exportPreset(store.preset, []) : null;
+    const parts: BundlePart[] = [
+      { kind: 'project', name: 'project.turbocut', blob: new Blob([text]) },
+      ...(preset ? [{ kind: 'preset' as const, name: 'style.json', blob: new Blob([preset]) }] : []),
+      ...fonts.map((f, i) => ({ kind: 'font' as const, name: `${f.families[0] ?? `font ${i + 1}`}.ttf`, blob: new Blob([f.bytes as BlobPart]) })),
+      ...media.map((m) => ({ kind: 'media' as const, name: m.name, blob: m.blob })),
+    ];
+    const wanted = Object.values(store.project.assets).filter((a) => format === 'full' || a.source);
+    const left = wanted.length - media.length;
+    const bits = [media.length ? `${media.length} ${format === 'full' ? 'media file' : 'clip'}${media.length === 1 ? '' : 's'}` : '', fonts.length ? `${fonts.length} font${fonts.length === 1 ? '' : 's'}` : '', preset ? 'the caption style' : ''].filter(Boolean);
+    const inside = bits.length ? ` with ${bits.join(', ')}` : '';
+    const rest = left > 0 ? ` ${left} file${left === 1 ? ' was' : 's were'} not open, so ${left === 1 ? 'it is' : 'they are'} not inside: open ${left === 1 ? 'it' : 'them'} and save again.` : '';
+    return { content: packBundle(parts), note: `Saved ${fileName}${inside}.${rest}` };
+  }
+
+  /** Which kind of file to make, for places that cannot show a file type list (a phone, a browser that only downloads). Resolves null on cancel. */
+  private askFormat(): Promise<ProjectFormat | null> {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v: ProjectFormat | null) => {
+        if (done) return;
+        done = true;
+        watch.disconnect();
+        dlg.close();
+        resolve(v);
+      };
+      const choice = (f: ProjectFormat) => h('button', { class: `btn ${f === 'full' ? 'btn-accent' : ''} save-format`.trim(), 'data-format': f, onclick: () => finish(f) }, h('strong', {}, FORMAT_EXT[f]), h('small', { class: 'hint' }, FORMAT_LABEL[f]));
+      const dlg = dialog('Save the project as', h('div', { class: 'stack' }, h('p', { class: 'hint' }, 'The full project is the safest: everything it uses is inside, so it opens anywhere.'), ...FORMATS.map(choice)), [h('button', { class: 'btn btn-ghost', onclick: () => finish(null) }, 'Cancel')]);
+      const watch = new MutationObserver(() => dlg.el.isConnected || finish(null));
+      watch.observe(document.body, { childList: true });
+    });
+  }
+
+  /**
+   * After a bundle was written over the file the media were read from (a browser file handle), those readings point at the old file, which no
+   * longer exists. Read the media from the new one so playback and export keep working.
+   */
+  private async rebindFromBundle(ref: ProjectRef): Promise<void> {
+    if (this.bundled.size === 0) return;
+    try {
+      const o = await readRef(ref);
+      if (!o.bundle) return;
+      const files = (await unpackBundle(o.bundle)).filter((p) => p.kind === 'media').map((p) => new File([p.blob], p.name));
+      await this.relinkMedia(files, true, undefined, this.bundled);
+    } catch {
+      /* the next open reads the file afresh */
+    }
+  }
+  /** Assets whose media were read out of a project bundle that is still the open project's file. */
+  private bundled = new Set<string>();
+
+  /** Quietly write the changes to the project's file (Settings → Saving). Does nothing for a project that has no file yet, nor for a bundle (it would rewrite every video). */
   async autosave(): Promise<void> {
     const { store } = this;
     const ref = store.fileRef;
-    if (!store.settings.autosave || !ref || !store.dirty || this.autosaving) return;
+    if (!store.settings.autosave || !ref || !store.dirty || this.autosaving || formatOfName(refName(ref)) !== 'edit') return;
     this.autosaving = true;
     try {
       if (!(await canWriteQuietly(ref))) return; // a browser file that needs its permission again waits for the next Save
@@ -142,6 +221,7 @@ export class Actions {
     if (!(await this.confirmDiscard())) return false;
     this.player.pause();
     const { width, height } = shape ?? this.store.project;
+    this.bundled.clear();
     this.store.loadProject(createProject({ name: 'Untitled', width, height }));
     this.store.say('New project.');
     return true;
@@ -162,8 +242,7 @@ export class Actions {
       return false;
     }
     try {
-      const r = await readRef(ref);
-      return this.adopt(r.text, r.name, ref);
+      return this.adoptOpened(await readRef(ref));
     } catch (e) {
       await forgetRecent(key);
       this.store.say(`Could not open ${refName(ref)}: ${e instanceof Error && e.message ? e.message : 'the file has moved or been deleted'}. It was taken off the list.`);
@@ -200,14 +279,18 @@ export class Actions {
       if (file) {
         // A project dropped on the desktop app has a place on disk: keep it, so Save writes back to it.
         const path = pathOf(file);
-        return this.adopt(await file.text(), file.name, path ? { kind: 'path', path } : null);
+        return this.adoptOpened(await openedFromFile(file, file.name, path ? { kind: 'path', path } : null));
       }
       const r = await openDialog();
-      return r ? this.adopt(r.text, r.name, r.ref) : false;
+      return r ? this.adoptOpened(r) : false;
     } catch (e) {
       store.say(`Could not open ${file?.name ?? 'the file'}: ${e instanceof Error ? e.message : e}`);
       return false;
     }
+  }
+
+  private adoptOpened(o: OpenedProject): Promise<boolean> {
+    return o.bundle ? this.adoptBundle(o.bundle, o.name, o.ref) : this.adopt(o.text ?? '', o.name, o.ref);
   }
 
   /** Load the text of a project file and remember where it lives. */
@@ -219,8 +302,44 @@ export class Actions {
       store.say(`Could not open ${name}: ${e instanceof Error ? e.message : e}`);
       return false;
     }
+    this.bundled.clear();
     store.fileRef = ref;
+    store.fileName = name;
     void rememberFile(store.project, ref);
+    store.emit('saved');
+    await this.afterOpen(name);
+    return true;
+  }
+
+  /**
+   * Open a `.turbocutf` or `.turbocutc`: the edit, plus the fonts, the caption style and the media that were saved inside it. Fonts and the
+   * style are added to this device first, the media is opened from the file itself (nothing is copied out of it), and whatever the file does not
+   * hold is looked for the usual way.
+   */
+  private async adoptBundle(bundle: Blob, name: string, ref: ProjectRef | null): Promise<boolean> {
+    const { store } = this;
+    let parts: BundlePart[];
+    let project;
+    try {
+      parts = await unpackBundle(bundle);
+      project = parseProject(await parts.find((p) => p.kind === 'project')!.blob.text());
+    } catch (e) {
+      store.say(`Could not open ${name}: ${e instanceof Error ? e.message : e}`);
+      return false;
+    }
+    store.say(`Opening ${name}…`);
+    for (const p of parts) if (p.kind === 'font') await importFont(new File([p.blob], p.name)).catch(() => []);
+    const style = parts.find((p) => p.kind === 'preset');
+    if (style) await importPresetFile(store, new File([style.blob], 'saved.turbocut-preset.json', { type: 'application/json' })).catch(() => {});
+    store.loadProject(project);
+    this.bundled.clear();
+    store.fileRef = ref;
+    store.fileName = name;
+    void rememberFile(store.project, ref);
+    store.emit('saved');
+    const ids: string[] = [];
+    await this.relinkMedia(parts.filter((p) => p.kind === 'media').map((p) => new File([p.blob], p.name)), false, ids, undefined, true); // read from the file itself: no second copy
+    if (ref?.kind === 'handle') for (const id of ids) this.bundled.add(id); // these read from the file, which a save replaces
     await this.afterOpen(name);
     return true;
   }
@@ -230,16 +349,29 @@ export class Actions {
     // The desktop app remembers where each video was: open them again without asking.
     const back = await filesFromPaths(store.missingAssets());
     if (back.length) await this.relinkMedia(back);
+    // Elsewhere the copies kept at import are the same thing (the media bin remembers where each file is).
+    const kept = store.missingAssets().length ? await recallCopies(store.missingAssets()) : [];
+    if (kept.length) await this.relinkMedia(kept, false, undefined, undefined, true);
     const missing = store.missingAssets();
     store.say(missing.length ? `Opened ${label}. ${missing.length} media file${missing.length === 1 ? '' : 's'} to find.` : `Opened ${label}.`);
     if (missing.length && ask) this.relinkDialog();
   }
 
+  /** Keep a copy of an imported or found file for later (see `mediaMemory.ts`), unless the desktop app already knows where it lives. */
+  private keepForLater(asset: { path?: string }, file: File): void {
+    if (asset.path || !this.store.settings.rememberMedia) return;
+    const copy: Promise<void> = keepCopy(file, file.name).finally(() => this.keeping.delete(copy));
+    this.keeping.add(copy);
+  }
+  /** Copies still being written. A save waits for them, so a project that was saved can always find its files again. */
+  private keeping = new Set<Promise<void>>();
+
   /** Give media entries without a file their files again, matched by name (and size). Returns how many were found. */
-  async relinkMedia(files: File[]): Promise<number> {
+  async relinkMedia(files: File[], reopen = false, into?: string[], only?: Set<string>, fromMemory = false): Promise<number> {
     const { store } = this;
-    const missing = store.missingAssets();
-    const found = matchMedia(missing, files);
+    // `reopen`: also give the assets that already have a file their file again (after a save replaced the file they were read from).
+    const targets = reopen ? Object.values(store.project.assets).filter((a) => !only || only.has(a.id)) : store.missingAssets();
+    const found = matchMedia(targets, files);
     let n = 0;
     for (const [id, i] of found) {
       const file = files[i]!;
@@ -249,7 +381,9 @@ export class Actions {
         if (a.size === undefined) a.size = file.size;
         const at = pathOf(file);
         if (at) a.path = at;
+        else if (!reopen && !fromMemory) this.keepForLater(a, file);
         if (a.hasVideo && dims.width && dims.height) (a.width = dims.width), (a.height = dims.height);
+        into?.push(id);
         n++;
       } catch (e) {
         store.say(`Could not open ${file.name}: ${e instanceof Error ? e.message : e}`);
@@ -286,7 +420,7 @@ export class Actions {
 
   /** Files dropped on the window: a project opens, media that a loaded project is missing goes back, the rest is imported. */
   async dropFiles(files: File[]): Promise<void> {
-    const project = files.find((f) => /\.turbocut$/i.test(f.name));
+    const project = files.find((f) => PROJECT_NAME.test(f.name));
     if (project) return void (await this.openProject(project));
     const missing = this.store.missingAssets();
     const matched = new Set(missing.length ? [...matchMedia(missing, files).values()] : []);
@@ -406,6 +540,13 @@ export class Actions {
     let ok = false;
     this.store.edit((p) => (ok = removeTrack(p, trackId)));
     if (!ok) this.store.say('Only an empty track can be deleted, and the last video and audio tracks stay.');
+  }
+
+  /** Put a track where another track of the same kind is (hold a track label on the timeline and drag it). */
+  moveTrack(trackId: string, targetId: string): void {
+    let ok = false;
+    this.store.edit((p) => (ok = moveTrackTo(p, trackId, targetId)));
+    if (!ok) this.store.say('A track can only be moved among tracks of its own kind.');
   }
 
   toggleTrack(trackId: string, what: 'hidden' | 'muted' | 'locked'): void {

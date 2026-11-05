@@ -49,6 +49,8 @@ export class Store {
   version = 0;
   /** The file this project was saved to or opened from (Save writes back to it). Null for a project that has not been saved anywhere yet. */
   fileRef: ProjectRef | null = null;
+  /** The name of the file the project was last saved to or opened from, also in a browser that cannot keep a reference (it only downloaded a copy). Null: not saved anywhere yet. */
+  fileName: string | null = null;
   settings: Settings = loadSettings(typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
   presets: CaptionPreset[] = [builtinPreset(this.settings.defaultFont, this.settings.counters), ...readPresets()];
   preset: CaptionPreset = this.presets.find((p) => p.name === localStorage.getItem(ACTIVE_KEY)) ?? this.presets[0]!;
@@ -119,6 +121,7 @@ export class Store {
     this.playhead = 0;
     this.dirty = false;
     this.fileRef = null; // the caller says where it came from (opening a file sets it afterwards)
+    this.fileName = null;
     this.emit('project', 'selection', 'playhead');
   }
 

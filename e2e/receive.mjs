@@ -82,6 +82,40 @@ try {
   assert.equal(pc.shelves.size, 0, 'the computer closed the shelf when the page had everything');
   assert.equal(await b.getByRole('dialog', { name: 'Find the media' }).count(), 0, 'nothing is left to find');
 
+  // ---- after that first transfer the computer is remembered on both sides: the second time needs no link
+  const remembered = await b.evaluate(() => JSON.parse(localStorage.getItem('turbocut.pairing')));
+  assert.equal(remembered.computers.length, 1);
+  assert.equal(remembered.computers[0].name, 'Studio PC');
+  assert.equal(remembered.computers[0].base, `http://127.0.0.1:${info.port}`);
+  assert.equal(pc.pairedList().length, 1, 'the computer remembers the phone');
+  assert.equal(pc.pairedList()[0].name, 'TurboCut device');
+  const second = JSON.parse(projectText);
+  second.project.name = 'Second one';
+  second.project.assets = {};
+  second.project.tracks.forEach((t) => (t.clips = []));
+  const again = pc.shelfOpen({ project: 'Second one', media: 0, fonts: 0, links: 0, bytes: 0 }, pc.pairedList()[0].id);
+  const w2 = pc.shelfPart(again.id, 'project', 'project.turbocut');
+  await w2.write(Buffer.from(JSON.stringify(second)));
+  await w2.end();
+  pc.shelfReady(again.id);
+  await b.evaluate(() => import('/src/app/receive.ts').then((m) => m.openReceiveDialog(window.turbocutApp.store, window.turbocutApp.actions)));
+  const d3 = b.getByRole('dialog', { name: 'Receive from a computer' });
+  await d3.getByText('Studio PC').waitFor();
+  await b.getByRole('dialog', { name: 'Save this project first?' }).getByRole('button', { name: 'Discard it' }).click({ timeout: 20000 });
+  await b.waitForFunction(() => window.turbocutApp.store.project.name === 'Second one', null, { timeout: 20000 });
+  assert.equal(pc.shelves.size, 0, 'it arrived without anyone pasting a link, and the shelf closed');
+  // a device the computer does not know sees nothing of it
+  const stranger = await newPage();
+  const other = pc.shelfOpen({ project: 'Private', media: 0, fonts: 0, links: 0, bytes: 0 }, pc.pairedList()[0].id);
+  const w3 = pc.shelfPart(other.id, 'project', 'project.turbocut');
+  await w3.write(Buffer.from(JSON.stringify(second)));
+  await w3.end();
+  pc.shelfReady(other.id);
+  const seen = await stranger.evaluate(async (port) => (await fetch(`http://127.0.0.1:${port}/inbox`, { headers: { 'X-Turbocut-Key': 'Z'.repeat(22) } })).json(), info.port);
+  assert.deepEqual(seen, { none: true });
+  pc.shelfClose(other.id);
+  await stranger.close();
+
   // ---- the same link, when Twitch cannot be reached: the project still opens and asks for the file
   const c = await newPage();
   await c.route('https://gql.twitch.tv/gql', (r) => r.abort());

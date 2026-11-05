@@ -6,6 +6,8 @@
 export const SHARE_PORT = 47903;
 
 export interface Pulled {
+  /** The computer's address (`http://192.168.1.20:47903`), kept so the next time needs no link. */
+  base: string;
   from: string;
   project: string;
   preset: string | null;
@@ -20,6 +22,15 @@ export interface PullOptions {
   signal?: AbortSignal;
   /** `done` and `total` are bytes of the whole shelf. */
   onProgress?: (done: number, total: number, label: string) => void;
+  /** Who is asking. Told to the computer when the transfer is finished, so it can remember this device and put things in its inbox. */
+  identity?: { key: string; name: string };
+}
+
+/** What a computer has waiting for a device it remembers. */
+export interface Waiting {
+  token: string;
+  from: string;
+  project: string;
 }
 
 interface Manifest {
@@ -57,17 +68,40 @@ async function getJson(base: string, path: string, f: typeof fetch, signal?: Abo
   return res.json();
 }
 
-/** Download everything on the shelf. Throws a sentence for the person. */
+/**
+ * Ask a computer that remembers this device whether it has something waiting. Resolves null for "nothing" (and for a computer that does not
+ * know this device, which looks the same on purpose); throws a sentence when the computer cannot be reached.
+ */
+export async function checkInbox(base: string, key: string, o: { fetch?: typeof fetch; signal?: AbortSignal } = {}): Promise<Waiting | null> {
+  const f = o.fetch ?? fetch;
+  let res: Response;
+  try {
+    res = await f(`${base}/inbox`, { headers: { 'X-Turbocut-Key': key }, signal: o.signal });
+  } catch (e) {
+    if (o.signal?.aborted) throw e;
+    throw unreachable(base);
+  }
+  if (!res.ok) throw new Error(`The computer answered ${res.status}.`);
+  const j = await res.json().catch(() => null);
+  if (!j || typeof j.token !== 'string' || !/^[A-Za-z0-9_-]{22}$/.test(j.token)) return null;
+  return { token: j.token, from: String(j.from?.name || 'the computer').slice(0, 60), project: String(j.summary?.project || 'a project').slice(0, 80) };
+}
+
+/** Download everything on the shelf behind a link. Throws a sentence for the person. */
 export async function pullShelf(link: string, o: PullOptions = {}): Promise<Pulled> {
   const parsed = parseLink(link);
   if (!parsed) throw new Error('That is not a TurboCut link. It looks like http://192.168.1.20:47903/shelf/… and the computer shows it under File, Send to another device, Get a link.');
-  const { base, token } = parsed;
+  return pullToken(parsed.base, parsed.token, o);
+}
+
+/** Download everything on a shelf of a computer whose address is known. */
+export async function pullToken(base: string, token: string, o: PullOptions = {}): Promise<Pulled> {
   const f = o.fetch ?? fetch;
   const manifest = (await getJson(base, `/shelf/${token}/manifest`, f, o.signal)) as Manifest;
   if (!Array.isArray(manifest.items) || !manifest.items.some((i) => i.kind === 'project')) throw new Error('What the computer offers is not a TurboCut project.');
   const total = manifest.items.reduce((n, i) => n + (Number(i.size) || 0), 0);
   let done = 0;
-  const out: Pulled = { from: String(manifest.from?.name || 'the computer').slice(0, 60), project: '', preset: null, media: [], fonts: [], links: Number(manifest.summary?.links) | 0 };
+  const out: Pulled = { base, from: String(manifest.from?.name || 'the computer').slice(0, 60), project: '', preset: null, media: [], fonts: [], links: Number(manifest.summary?.links) | 0 };
   for (const item of manifest.items) {
     o.onProgress?.(done, total, item.name);
     let res: Response;
@@ -94,6 +128,7 @@ export async function pullShelf(link: string, o: PullOptions = {}): Promise<Pull
     else if (item.kind === 'media') out.media.push(new File([blob], item.name));
   }
   // Best effort: the computer closes the shelf, and shows "sent".
-  await f(`${base}/shelf/${token}/done`, { method: 'POST' }).catch(() => {});
+  // text/plain keeps it a simple request (no preflight); the computer reads the body as JSON all the same.
+  await f(`${base}/shelf/${token}/done`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: o.identity ? JSON.stringify(o.identity) : undefined }).catch(() => {});
   return out;
 }

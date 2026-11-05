@@ -42,14 +42,22 @@ interface ShelfEvent {
   sent: number;
   total: number;
 }
+/** A device that fetched a project from here before (a phone): it can be sent to without a link. */
+export interface PairedDevice {
+  id: string;
+  name: string;
+  at: number;
+}
 type Summary = { project: string; media: number; fonts: number; links: number; bytes: number };
 interface ShareApi {
   configure(o: { enabled: boolean; name: string }): Promise<{ running: boolean; error?: string }>;
   devices(): Promise<ShareDevice[]>;
-  on(what: 'devices' | 'offer' | 'received' | 'shelf', fn: (x: any) => void): void;
+  on(what: 'devices' | 'offer' | 'received' | 'shelf' | 'paired', fn: (x: any) => void): void;
+  paired(): Promise<PairedDevice[]>;
+  forget(id: string): void;
   answer(offerId: string, accept: boolean): void;
   offer(deviceId: string, summary: Summary): Promise<Reply>;
-  shelfOpen(summary: Summary): Promise<Reply>;
+  shelfOpen(summary: Summary, pairedId?: string): Promise<Reply>;
   shelfReady(transfer: string): Promise<Reply>;
   partOpen(transfer: string, kind: string, name: string): Promise<Reply>;
   partWrite(transfer: string, id: string, bytes: Uint8Array): Promise<Reply>;
@@ -143,6 +151,8 @@ export function openSendDialog(store: Store): void {
   const linkRow = h('label', { class: 'setting', hidden: true }, linkOnly, linkLabel);
   const linkBox = h('div', { class: 'share-code', hidden: true });
   const linkBtn = h('button', { class: 'btn', onclick: () => void sendWithLink() }, 'Get a link for a phone');
+  const pairedBox = h('div', { class: 'share-found share-paired', role: 'list', hidden: true });
+  let paired: PairedDevice[] = [];
   let devices: ShareDevice[] = [];
   let busy = false;
   let transfer: string | null = null;
@@ -155,6 +165,7 @@ export function openSendDialog(store: Store): void {
     linkRow,
     h('label', { class: 'setting' }, withFonts, fontLabel),
     h('div', { class: 'share-found' }, list),
+    pairedBox,
     h('div', { class: 'row' }, linkBtn),
     linkBox, note, progress), [h('button', { class: 'btn', onclick: () => dlg.close() }, 'Close')]);
   // Closing the window stops a push that is still being sent. A link that is ready stays up (send and forget) until it is used or an hour passes.
@@ -176,11 +187,26 @@ export function openSendDialog(store: Store): void {
   });
 
   const draw = () => {
+    drawPaired();
     note.textContent = devices.length ? '' : 'Looking for other TurboCut apps on this network… Both need to be on the same network with sharing turned on (Settings, Device). For a phone, get a link.';
     list.replaceChildren(...devices.map((d) => h('div', { class: 'share-device', role: 'listitem' },
       h('div', {}, h('strong', {}, d.name), h('small', { class: 'hint' }, ` ${d.platform} · ${d.version}`)),
       h('button', { class: 'btn btn-accent', disabled: busy, onclick: () => void send(d) }, 'Send'))));
   };
+  /** Phones that fetched from here before: send to one and it picks the project up by itself (no link). */
+  const drawPaired = () => {
+    pairedBox.hidden = paired.length === 0;
+    pairedBox.replaceChildren(
+      ...(paired.length ? [h('p', { class: 'hint' }, 'Devices you sent a link to before. Send to one, then open Receive from a computer on it.')] : []),
+      ...paired.map((d) => h('div', { class: 'share-device', role: 'listitem', 'data-paired': d.id },
+        h('div', {}, h('strong', {}, d.name)),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn btn-accent', disabled: busy, onclick: () => void sendWithLink(d) }, 'Send'),
+          h('button', { class: 'btn btn-ghost', 'aria-label': `Forget ${d.name}`, onclick: () => api.forget(d.id) }, 'Forget')))),
+    );
+  };
+  api.on('paired', (l: PairedDevice[]) => ((paired = l), drawPaired()));
+  void api.paired().then((l) => ((paired = l), drawPaired()));
   api.on('devices', (l: ShareDevice[]) => ((devices = l), !busy && draw()));
   void api.devices().then((l) => ((devices = l), draw()));
   draw();
@@ -258,7 +284,7 @@ export function openSendDialog(store: Store): void {
   };
 
   /** Put the parts on a shelf and show the link; the other device opens it (paste it into Receive from a computer). */
-  const sendWithLink = async () => {
+  const sendWithLink = async (to?: PairedDevice) => {
     busy = true;
     linkBtn.disabled = true;
     linkBox.hidden = true;
@@ -268,7 +294,7 @@ export function openSendDialog(store: Store): void {
     try {
       const g = await gather();
       note.textContent = 'Getting it ready…';
-      const o = await api.shelfOpen(g.summary);
+      const o = await api.shelfOpen(g.summary, to?.id);
       if (!o.ok || !o.transfer) throw new Error(o.message || 'Could not get it ready.');
       transfer = o.transfer;
       await upload(transfer, g.parts, g.total, (pct) => (note.textContent = `Getting it ready… ${pct}%`));
@@ -277,6 +303,12 @@ export function openSendDialog(store: Store): void {
       shelfUp = true;
       const shelf = transfer;
       progress.style.display = 'none';
+      if (to) {
+        // For a device the computer remembers there is no link: the phone looks in its inbox when Receive from a computer is open.
+        linkBox.hidden = false;
+        linkBox.replaceChildren(h('p', {}, 'On ', h('strong', {}, to.name), ' open TurboCut, ', h('strong', {}, 'Receive from a computer'), '. It finds this by itself and starts.'));
+        note.textContent = `Ready for ${to.name}. It works once, for an hour, on this Wi-Fi. You can close this window${stats.linked && linkOnly.checked ? '. The Twitch clips download on the other device' : ''}.`;
+      } else {
       const field = h('input', { class: 'input share-link', type: 'text', readonly: true, value: r.links[0]!, 'aria-label': 'Link for the other device' }) as HTMLInputElement;
       const copy = h('button', { class: 'btn btn-accent', onclick: async () => {
         field.select();
@@ -292,7 +324,8 @@ export function openSendDialog(store: Store): void {
         h('p', {}, 'On the other device open TurboCut, choose ', h('strong', {}, 'From a computer'), ' (Home screen, or File menu) and paste this link:'),
         h('div', { class: 'share-link-row' }, field, copy),
         ...(r.links.length > 1 ? [h('small', { class: 'hint' }, `If that one does not work, try ${r.links.slice(1).join(' or ')}`)] : []));
-      note.textContent = `Ready. The link works once, for an hour, on this Wi-Fi. You can close this window${stats.linked && linkOnly.checked ? '. The Twitch clips download on the other device' : ''}.`;
+      note.textContent = `Ready. The link works once, for an hour, on this Wi-Fi. You can close this window${stats.linked && linkOnly.checked ? '. The Twitch clips download on the other device' : ''}. After this first transfer the phone remembers this computer, and it shows up here to send to without a link.`;
+      }
       shelfWatch = (e) => {
         if (e.id !== shelf) return;
         if (e.state === 'sending') note.textContent = `Sending… ${Math.round((e.sent / Math.max(1, e.total)) * 100)}%`;
