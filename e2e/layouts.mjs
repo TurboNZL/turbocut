@@ -36,7 +36,7 @@ try {
   assert.deepEqual(await attrs(), { panel: 'right', density: 'normal', tools: 'inline' }, 'automatic on a wide mouse screen');
   assert.ok((await box('.side-right')).x > (await box('.stage')).x, 'panel right of the preview');
   assert.equal(await page.locator('.side-left').isVisible(), false, 'nothing on the left');
-  assert.equal(await page.locator('.side-right .tab[aria-selected="true"]').textContent(), 'Media', 'the first tab is Media, not Clip');
+  assert.equal(await page.locator('.side-right .tab[aria-selected="true"]').getAttribute('aria-label'), 'Media', 'the first tab is Media, not Clip');
   assert.equal(await page.locator('.transport .edit-bar').count(), 1, 'the tools sit in the play button row');
   const play = await box('.transport-main');
   const split = await box('.edit-bar [aria-label="Split"]');
@@ -45,12 +45,14 @@ try {
 
   // ---- presets
   await openLayout();
-  assert.equal(await dlg().locator('.layout-card').count(), 4, 'four presets');
+  assert.equal(await dlg().locator('.layout-card').count(), 8, 'eight presets');
   await choose('Library and editor');
   assert.ok((await box('.side-left')).x < (await box('.stage')).x, 'Library on the left');
   assert.ok((await box('.side-right')).x > (await box('.stage')).x, 'Editor on the right');
-  assert.deepEqual(await page.$$eval('.pane-name', (els) => els.map((e) => e.textContent)), ['Library', 'Editor'], 'each panel shows its own name');
-  assert.deepEqual(await page.$$eval('.side-left .tab', (els) => els.map((e) => e.textContent)), ['Media', 'Project']);
+  assert.deepEqual(await page.$$eval('.pane-name', (els) => els.map((e) => e.textContent)), ['Library', 'Editor'], 'each panel keeps its own name');
+  assert.deepEqual(await page.$$eval('.side-left .tab', (els) => els.map((e) => e.getAttribute('aria-label'))), ['Media', 'Project']);
+  assert.equal(await page.locator('.pane-name').first().isVisible(), false, 'panel names are kept in the layout but not drawn');
+  assert.equal(await page.locator('.side-left .tab').first().textContent(), '', 'tabs are icons, the name is the tooltip');
   await choose('Stacked panels');
   assert.equal(await page.locator('.side-right .pane').count(), 2, 'two panels stacked on one side');
   await choose('Bottom sheet');
@@ -241,7 +243,7 @@ try {
   const toolButtons = await phone.$$eval('.edit-bar .tool:not(.fab-toggle)', (els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.left, r.right]; }));
   const mid = (Math.min(...toolButtons.map((b) => b[0])) + Math.max(...toolButtons.map((b) => b[1]))) / 2;
   assert.ok(Math.abs(mid - 195) < 14, `the tools are centred (${mid} vs 195)`);
-  await phone.locator('.side-right .tab', { hasText: 'Project' }).click();
+  await phone.locator('.side-right .tab[data-tab="Project"]').click();
   await phone.waitForTimeout(500);
   const open = { stage: await pbox('.stage'), tl: await pbox('.bottom'), side: await pbox('.side-right') };
   assert.ok(open.tl.h >= 100 && open.tl.y + open.tl.h <= open.side.y + 1, `open: the timeline is still in view (${open.tl.h} px tall) above the panel`);

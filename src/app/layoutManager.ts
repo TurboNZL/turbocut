@@ -21,6 +21,10 @@ const BLURB: Record<string, string> = {
   'Library and editor': 'Media and Project on the left, Clip and Captions on the right.',
   'Stacked panels': 'Two named panels in one column on the right.',
   'Bottom sheet': 'The panel slides up from the bottom, even on a wide screen.',
+  'Premiere style': 'Project on the left, effect controls on the right, tools in a column, a tall timeline.',
+  'Kdenlive style': 'A project bin on the left, properties on the right, a tall timeline under the tools.',
+  'DaVinci style': 'A media pool on the left, one inspector on the right, tools in their own row.',
+  'Final Cut style': 'A browser on the left, an inspector on the right, a calm timeline.',
 };
 
 const field = (label: string, control: HTMLElement) => h('label', { class: 'setting col' }, h('span', { class: 'prop-l' }, label), control);

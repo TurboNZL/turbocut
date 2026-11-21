@@ -1,4 +1,5 @@
 import { h } from './dom.ts';
+import { icon, type IconName } from './icons.ts';
 import { LIMITS, maxColumn, normalizeSizes, type AppliedLayout, type Division, type Side, type TabName } from './layout.ts';
 import { splitter } from './splitter.ts';
 
@@ -12,6 +13,9 @@ export interface PanelHooks {
   /** Put the sizes back to what the preset says. */
   resetSizes(): void;
 }
+
+/** The icon each tab shows (its name is the tooltip and the accessible label). */
+const TAB_ICON: Record<TabName, IconName> = { Clip: 'sliders', Media: 'video', Captions: 'captions', Project: 'file' };
 
 interface Pane {
   name: string;
@@ -126,7 +130,7 @@ export class PanelHost {
   private build(c: Column, divs: Division[]): void {
     const old = new Map(this.panes().flatMap((p) => p.tabs.map((t) => [t, p.active] as const)));
     c.panes = divs.map((d) => {
-      const strip = h('div', { class: 'tabs', role: 'tablist' }, ...d.tabs.map((name) => h('button', { class: 'tab', role: 'tab', 'data-tab': name, onclick: () => this.show(name, true) }, name)));
+      const strip = h('div', { class: 'tabs', role: 'tablist' }, ...d.tabs.map((name) => h('button', { class: 'tab', role: 'tab', 'data-tab': name, 'aria-label': name, title: name, onclick: () => this.show(name, true) }, icon(TAB_ICON[name], 18))));
       const body = h('div', { class: 'tab-body' });
       const el = h('div', { class: 'pane', 'data-pane': d.name }, h('div', { class: 'pane-name' }, d.name), strip, body);
       const keep = d.tabs.find((t) => old.get(t) === t);
@@ -175,10 +179,16 @@ export class PanelHost {
     });
   }
 
+  /** A panel heading that only repeats the tab's name is hidden (the tab already says it). */
+  private quietTitles(content: HTMLElement, tab: string): void {
+    for (const t of content.querySelectorAll<HTMLElement>('.bt-panel-title')) t.hidden = t.textContent?.trim().toLowerCase() === tab.toLowerCase();
+  }
+
   /** Draw a pane's chosen tab: the strip marks it and the body holds its panel. */
   private paint(pane: Pane): void {
     for (const b of pane.strip.children) (b as HTMLElement).setAttribute('aria-selected', String((b as HTMLElement).dataset.tab === pane.active));
     const content = this.tabs[pane.active];
+    this.quietTitles(content, pane.active);
     if (pane.body.firstChild !== content) pane.body.replaceChildren(content); // putting the same panel back would restart whatever animation its look gives a new element
   }
 
