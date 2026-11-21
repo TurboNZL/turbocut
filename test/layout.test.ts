@@ -7,8 +7,19 @@ describe('layouts', () => {
   const auto = BUILTIN_LAYOUTS[0]!;
   const byName = (n: string) => BUILTIN_LAYOUTS.find((l) => l.name === n)!;
 
-  it('there are four presets, not a dozen that barely differ', () => {
-    expect(BUILTIN_LAYOUTS.map((l) => l.name)).toEqual([AUTO_LAYOUT, 'Library and editor', 'Stacked panels', 'Bottom sheet']);
+  it('there are eight presets: four plain ones and four editor-style workspaces', () => {
+    expect(BUILTIN_LAYOUTS.map((l) => l.name)).toEqual([AUTO_LAYOUT, 'Library and editor', 'Stacked panels', 'Bottom sheet', 'Premiere style', 'Kdenlive style', 'DaVinci style', 'Final Cut style']);
+  });
+
+  it('every preset survives cleaning unchanged, shows each tab once and sizes its columns to 100', () => {
+    for (const l of BUILTIN_LAYOUTS) {
+      expect(cleanLayout(JSON.parse(JSON.stringify(l)))).toEqual(l);
+      expect([...layoutTabs(l)].sort(), l.name).toEqual(['Captions', 'Clip', 'Media', 'Project']);
+      for (const side of ['left', 'right'] as const) {
+        const col = column(l, side);
+        if (col.length) expect(col.reduce((a, d) => a + d.size, 0), `${l.name} ${side}`).toBe(100);
+      }
+    }
   });
 
   it('automatic is a right panel on a wide screen and a sheet on a narrow one', () => {

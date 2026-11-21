@@ -1,7 +1,7 @@
 # Layouts, shortcuts and snapping
 
 ## Layouts
-Settings → Layout. Pick a **preset** and it applies at once; there are four: *Automatic* (one panel on the right, a bottom sheet on a phone), *Library and editor* (Media and Project on the left, Clip and Captions on the right), *Stacked panels* (two named panels in one column) and *Bottom sheet*. Change anything and TurboCut makes **your own copy**, so the presets stay as they were. Your layouts can be renamed, deleted, exported and imported as small files.
+Settings → Layout. Pick a **preset** and it applies at once; there are eight: *Automatic* (one panel on the right, a bottom sheet on a phone), *Library and editor* (Media and Project on the left, Clip and Captions on the right), *Stacked panels* (two named panels in one column), *Bottom sheet*, and four workspaces arranged like well-known editors, *Premiere style*, *Kdenlive style*, *DaVinci style* and *Final Cut style*. The workspaces go well with the matching looks in Settings → Look (Editor: Premiere, Editor: Kdenlive and so on), but any layout works with any look. Change anything and TurboCut makes **your own copy**, so the presets stay as they were. Your layouts can be renamed, deleted, exported and imported as small files.
 
 - **Panels.** Each panel is its own named box with its own tabs, on the **left** or the **right** of the preview. Settings → Layout → Panels lists them: give each a name, choose its side, tick the tabs it holds (a tab lives in one panel; a tab in no panel is hidden) and press *Add a panel*. Panels on the same side stack and show their names.
 - **Resizing:** drag the bar at the edge of a panel, the bar between two panels, or the bar above the timeline (it is as wide as the timeline). Double-click a bar to reset it.

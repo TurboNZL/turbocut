@@ -61,12 +61,17 @@ const base = (over: Partial<Layout> & { name: string }): Layout => ({
   ...over,
 });
 
-/** Four presets. Anything else is made by changing one of them: the change is saved as the person's own layout. */
+/** Eight presets. Anything else is made by changing one of them: the change is saved as the person's own layout. */
 export const BUILTIN_LAYOUTS: Layout[] = [
   base({ name: AUTO_LAYOUT }),
   base({ name: 'Library and editor', divisions: [div('Library', 'left', ['Media', 'Project']), div('Editor', 'right', ['Clip', 'Captions'])] }),
   base({ name: 'Stacked panels', panelWidth: 360, divisions: [div('Editor', 'right', ['Clip', 'Captions'], 55), div('Library', 'right', ['Media', 'Project'], 45)] }),
   base({ name: 'Bottom sheet', panel: 'sheet' }),
+  // Workspaces arranged the way well-known editors arrange theirs. They pair with the editor looks (Settings → Look) but work with any look.
+  base({ name: 'Premiere style', panelWidth: 320, leftWidth: 320, timelineHeight: 42, density: 'compact', tools: 'left', divisions: [div('Project', 'left', ['Media', 'Project']), div('Effect controls', 'right', ['Clip', 'Captions'])] }),
+  base({ name: 'Kdenlive style', panelWidth: 340, leftWidth: 340, timelineHeight: 40, density: 'compact', tools: 'top', divisions: [div('Project bin', 'left', ['Media', 'Project']), div('Properties', 'right', ['Clip', 'Captions'])] }),
+  base({ name: 'DaVinci style', panelWidth: 360, leftWidth: 300, timelineHeight: 38, density: 'compact', tools: 'row', divisions: [div('Media pool', 'left', ['Media']), div('Inspector', 'right', ['Clip', 'Captions', 'Project'])] }),
+  base({ name: 'Final Cut style', panelWidth: 340, leftWidth: 320, timelineHeight: 36, density: 'normal', tools: 'top', divisions: [div('Browser', 'left', ['Media', 'Project']), div('Inspector', 'right', ['Clip', 'Captions'])] }),
 ];
 
 /** The preview never gets narrower than this: the side panels give way first, so a panel cannot be dragged (or saved wide) over the picture. */

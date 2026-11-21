@@ -45,7 +45,7 @@ try {
 
   // ---- presets
   await openLayout();
-  assert.equal(await dlg().locator('.layout-card').count(), 4, 'four presets');
+  assert.equal(await dlg().locator('.layout-card').count(), 8, 'eight presets');
   await choose('Library and editor');
   assert.ok((await box('.side-left')).x < (await box('.stage')).x, 'Library on the left');
   assert.ok((await box('.side-right')).x > (await box('.stage')).x, 'Editor on the right');

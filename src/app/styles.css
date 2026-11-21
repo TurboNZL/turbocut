@@ -674,3 +674,5 @@ input.input, textarea.input, select.input { color: hsl(var(--fg)); }
 .home-links { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; margin-top: 0.4rem; padding-top: 0.8rem; border-top: 1px solid hsl(var(--line) / 0.6); }
 .home-links .link { background: none; border: 0; padding: 0.2rem 0; font: inherit; font-size: 0.9em; color: hsl(var(--accent)); text-decoration: none; cursor: pointer; }
 .home-links .link:hover { text-decoration: underline; }
+/* A floating panel scrolls under its rounded bottom edge: fade the content out instead of cutting it. */
+:is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) #app:not([data-panel='sheet']) .side.bt-shell .tab-body { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.4rem), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 1.4rem), transparent); }
