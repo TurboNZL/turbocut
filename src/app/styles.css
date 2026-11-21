@@ -685,3 +685,5 @@ input.input, textarea.input, select.input { color: hsl(var(--fg)); }
 :is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) :is(.tabs, .settings-nav, .guide-list) .tab:focus-visible { outline-offset: 0; }
 :is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) .tabs { border-bottom: 0; gap: 0.2rem; }
 :is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) :is(.settings-nav, .guide-list) { gap: 0.15rem; padding: 0.5rem; }
+/* Floating tool buttons stay clear of the right-hand panel: they sit at the bottom right of the picture and the timeline, not on top of the panel's fields. */
+#app[data-tools='float']:not([data-panel='sheet']) > .edit-bar { right: calc(var(--right-on, 0) * (var(--right-w, 0px) + var(--side-extra, 0px)) + 14px); }
