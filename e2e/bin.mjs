@@ -162,7 +162,7 @@ try {
   await p2.waitForSelector('.bin-item');
   assert.equal(await p2.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((x) => x.clips).length), 0, 'importing does not put anything on the timeline');
   assert.ok(await p2.getByRole('tab', { name: 'Media', exact: true }).isVisible(), 'and the bin is shown');
-  assert.equal(await p2.locator('.tab[aria-selected=true]').first().textContent(), 'Media');
+  assert.equal(await p2.locator('.tab[aria-selected=true]').first().getAttribute('aria-label'), 'Media');
   // a folder: create, move the item in with the menu, it is listed inside, rename, delete keeps the item
   await p2.getByRole('button', { name: 'New folder' }).click();
   await p2.getByLabel('Folder name').fill('Interviews');

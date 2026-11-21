@@ -83,3 +83,9 @@ Pinned to TurboNZL/turboengine (`.turboengine.json`; `docs/development/ENGINE.md
 - Timeline: hold a track label (`HOLD_MS`) and drag to reorder tracks of a kind (`holdToReorder`, `moveTrackTo`); a press with Shift/Ctrl on a clip keeps/extends the selection and can drag it (`clipDrag` `mod`); scrubbing clamps to `endFrame()` and scrolls at the edges (`scrub`, `frameInside`).
 - e2e: `bundles.mjs`, `config.mjs`; `browser.mjs` `serveFakeBundles(page)` answers `/project/<path>` for the fake shell (`files: true`), whose `saveAsPath` default turns the full name into `.turbocut` so the older suites keep saving plain files.
 
+
+## Added 2026-11-21 (calmer panels, home downloads, editor looks)
+- **Panel tabs are icons** (`panelHost.ts` `TAB_ICON`; the name is the tooltip and `aria-label`, so `getByRole('tab', { name })` still works; e2e that read a tab's text use `aria-label`). Panel names (`.pane-name`) are kept in the layout data but never drawn, and a `.bt-panel-title` that repeats the tab's name is hidden (`quietTitles`).
+- A floating side panel (Liquid Glass, Spotify, One UI) clips to its own rounded shape (`.side.bt-shell { overflow: clip }`, no straight left border, pill tabs); the glass rim used to be cut by the straight tab-strip line.
+- Home "other devices" card: a row per platform (icon, size, one round download button), then plain links (install help, web server, all releases). No loose buttons under the grid.
+- Editor looks (Kdenlive, Premiere, DaVinci, Final Cut) are engine styles (`themes/<id>` in turboengine, full pack only). They reach the app through the engine's online updater once CI has built `themes/dist`, or by bumping `engine.ref` and the lockfile pin. In a preview, a downloaded bundle from GitHub overrides the built-in one: block `raw.githubusercontent.com` in the test page to see local theme changes.

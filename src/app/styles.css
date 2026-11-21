@@ -366,7 +366,6 @@ button:disabled, .btn:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; flex: 1 1 0; }
 .pane > .tabs { flex: none; }
 .pane-name { display: none; padding: 0.45rem 0.85rem 0; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: hsl(var(--muted)); font-weight: 600; }
-.side[data-named='yes'] .pane-name { display: block; }
 .side[hidden] { display: none !important; }
 .pane > .tab-body { flex: 1; min-height: 0; overflow: auto; }
 .pane + .splitter-pane + .pane { border-top: 0; }
@@ -648,3 +647,30 @@ input.input, textarea.input, select.input { color: hsl(var(--fg)); }
 .config-preview { max-height: 14rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .save-format { display: grid; gap: 0.15rem; justify-items: start; text-align: left; height: auto; padding: 0.55rem 0.75rem; }
 .save-format small { white-space: normal; }
+
+/* ---------------------------------------------------------------- calmer panels (2026-11-21)
+   Tabs are icons (the name is the tooltip), panel names are not drawn, and a floating side panel clips its own contents to its rounded shape. */
+.pane > .tabs { gap: 0.15rem; padding: 0.35rem 0.5rem 0; }
+.tabs .tab { display: inline-flex; align-items: center; justify-content: center; padding: 0.5rem 0.4rem; }
+.tabs .tab .ico { display: inline-flex; }
+.pane-name { display: none !important; }
+.side { border-radius: inherit; }
+.side.bt-shell { border-left: 0; overflow: clip; }
+.side.bt-shell > .pane > .tabs { border-bottom-color: hsl(var(--line) / 0.6); margin-inline: 0.4rem; padding-inline: 0; }
+.side.bt-shell .tab-body { padding-bottom: 1rem; }
+:is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) #app:not([data-panel='sheet']) .side.bt-shell { margin-bottom: 12px; align-self: stretch; }
+:is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) .side.bt-shell > .pane > .tabs { padding-top: 0.5rem; }
+:is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) .side.bt-shell .tab { border-radius: 9999px; border-bottom: 0; margin: 0; }
+:is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) .side.bt-shell .tab[aria-selected='true'] { background: hsl(var(--accent) / 0.18); color: hsl(var(--accent)); }
+:is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) .side.bt-shell > .pane > .tabs { border-bottom: 0; }
+
+/* The "other devices" card: one list, each row a platform. */
+.home-downloads { grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+.home-download { align-items: flex-start; gap: 0.75rem; justify-content: flex-start; padding: 0.8rem 0.9rem; }
+.home-download-ico { display: grid; place-items: center; flex: none; width: 2.4rem; height: 2.4rem; border-radius: 0.7rem; background: hsl(var(--accent) / 0.14); color: hsl(var(--accent)); }
+.home-download-text { flex: 1; min-width: 0; }
+.home-download-text p { font-size: 0.78em; line-height: 1.35; }
+.home-download > a.btn { flex: none; width: 2.2rem; height: 2.2rem; min-width: 0; min-height: 0; padding: 0; display: grid; place-items: center; border-radius: 9999px; }
+.home-links { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; margin-top: 0.4rem; padding-top: 0.8rem; border-top: 1px solid hsl(var(--line) / 0.6); }
+.home-links .link { background: none; border: 0; padding: 0.2rem 0; font: inherit; font-size: 0.9em; color: hsl(var(--accent)); text-decoration: none; cursor: pointer; }
+.home-links .link:hover { text-decoration: underline; }

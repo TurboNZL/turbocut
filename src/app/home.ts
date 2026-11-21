@@ -31,13 +31,13 @@ const mb = (n: number) => `${(n / 1048576).toFixed(n > 10485760 ? 0 : 1)} MB`;
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
 /** What each download is, in the order shown. */
-const DOWNLOADS: { id: string; label: string; test: RegExp; note: string }[] = [
-  { id: 'apk', label: 'Android', test: /\.apk$/i, note: 'Open the file on the phone and allow installing from that source once. New versions install over the old one.' },
-  { id: 'win', label: 'Windows installer', test: /windows-setup\.exe$/i, note: 'Keeps itself up to date. Windows warns about an unknown publisher: the build is not code-signed.' },
-  { id: 'winp', label: 'Windows portable', test: /windows-portable\.exe$/i, note: 'Runs from anywhere without installing. Download a new file to update.' },
-  { id: 'appimage', label: 'Linux AppImage', test: /\.AppImage$/i, note: 'Make it executable (chmod +x) and run it. It updates itself.' },
-  { id: 'deb', label: 'Linux .deb', test: /\.deb$/i, note: 'Install with sudo apt install ./file.deb.' },
-  { id: 'web', label: 'Your own web server', test: /-web\.zip$/i, note: 'Unzip, then run node serve.mjs --https. Other devices open the address it prints.' },
+const DOWNLOADS: { id: string; label: string; test: RegExp; note: string; ico: IconName }[] = [
+  { id: 'apk', ico: 'phone', label: 'Android', test: /\.apk$/i, note: 'Open the file on the phone and allow installing from that source once. New versions install over the old one.' },
+  { id: 'win', ico: 'monitor', label: 'Windows installer', test: /windows-setup\.exe$/i, note: 'Keeps itself up to date. Windows warns about an unknown publisher: the build is not code-signed.' },
+  { id: 'winp', ico: 'monitor', label: 'Windows portable', test: /windows-portable\.exe$/i, note: 'Runs from anywhere without installing. Download a new file to update.' },
+  { id: 'appimage', ico: 'terminal', label: 'Linux AppImage', test: /\.AppImage$/i, note: 'Make it executable (chmod +x) and run it. It updates itself.' },
+  { id: 'deb', ico: 'terminal', label: 'Linux .deb', test: /\.deb$/i, note: 'Install with sudo apt install ./file.deb.' },
+  { id: 'web', ico: 'globe', label: 'Your own web server', test: /-web\.zip$/i, note: 'Unzip, then run node serve.mjs --https. Other devices open the address it prints.' },
 ];
 
 /**
@@ -95,10 +95,10 @@ export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement }
       ...(rows.length
         ? rows.map(({ d, a }) =>
             h('div', { class: 'home-download' },
-              h('div', {}, h('strong', {}, d.label), h('span', { class: 'hint' }, ` ${mb(a.size)}`), h('p', { class: 'hint' }, d.note)),
-              Object.assign(h('a', { class: 'btn', rel: 'noopener noreferrer', target: '_blank' }, 'Download'), { href: a.url })))
+              h('span', { class: 'home-download-ico' }, icon(d.ico, 20)),
+              h('div', { class: 'home-download-text' }, h('strong', {}, d.label), h('span', { class: 'hint' }, ` ${mb(a.size)}`), h('p', { class: 'hint' }, d.note)),
+              Object.assign(h('a', { class: 'btn btn-accent', rel: 'noopener noreferrer', target: '_blank', 'aria-label': `Download ${d.label}`, title: 'Download' }, icon('download', 16)), { href: a.url })))
         : [h('p', { class: 'hint' }, 'The downloads could not be listed. They are on the releases page.')]),
-      Object.assign(h('a', { class: 'btn btn-ghost', rel: 'noopener noreferrer', target: '_blank' }, 'All releases'), { href: RELEASES }),
     );
   };
 
@@ -139,7 +139,10 @@ export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement }
           ? h('p', { class: 'hint' }, 'This is the Android app. Updates install from inside the app.')
           : h('p', { class: 'hint' }, 'Android, Windows and Linux apps, or run it in a browser from your own computer. Each download is a plain file.'),
         downloads,
-        h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => openGuides('ANDROID_APK.md') }, 'Android install help'), h('button', { class: 'btn', onclick: () => openGuides('WEB_SERVER.md') }, 'Run your own web server'))), 1)));
+        h('div', { class: 'home-links' },
+          h('button', { class: 'link', onclick: () => openGuides('ANDROID_APK.md') }, 'Android install help'),
+          h('button', { class: 'link', onclick: () => openGuides('WEB_SERVER.md') }, 'Run your own web server'),
+          Object.assign(h('a', { class: 'link', rel: 'noopener noreferrer', target: '_blank' }, 'All releases'), { href: RELEASES }))), 1)));
 
   const first = h('section', { class: 'home-page home-first' },
     h('div', { class: 'home-inner' },
