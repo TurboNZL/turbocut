@@ -28,7 +28,8 @@ const DEFAULT_PORT = 47903;
 const ANNOUNCE_MS = 3000;
 const EXPIRE_MS = 10_000;
 const OFFER_WAIT_MS = 60_000;
-const KINDS = new Set(['project', 'preset', 'media', 'font']);
+// `bundle`: a whole .turbocutf file (the project, its fonts, caption style and videos in one). The older loose parts are still accepted, so an older app can still send.
+const KINDS = new Set(['project', 'preset', 'media', 'font', 'bundle']);
 const MAX_JSON = 64 * 1024;
 const SHELF_MS = 60 * 60_000;
 const TOKEN = /^[A-Za-z0-9_-]{22}$/;
@@ -356,6 +357,11 @@ class Share extends EventEmitter {
     const t = this.transfers.get(transfer);
     if (!t) return reply(404, { error: 'no such transfer' });
     this.transfers.delete(transfer);
+    const bundle = t.files.find((f) => f.kind === 'bundle');
+    if (bundle) {
+      this.emit('received', { transfer, from: t.from, dir: t.dir, bundle: { name: bundle.name, path: path.join(t.dir, bundle.file) }, project: null, preset: null, media: [], fonts: [] });
+      return reply(200, { ok: true });
+    }
     const project = t.files.find((f) => f.kind === 'project');
     if (!project) return reply(400, { error: 'the project itself did not arrive' });
     const by = (k) => t.files.filter((f) => f.kind === k).map((f) => ({ name: f.name, file: f.file, path: path.join(t.dir, f.file) }));
@@ -416,7 +422,7 @@ class Share extends EventEmitter {
   shelfReady(id) {
     const sh = this.shelfById(id);
     if (!sh) throw new Error('That shelf is closed.');
-    if (!sh.items.some((i) => i.kind === 'project' && i.done)) throw new Error('The project itself is not on the shelf.');
+    if (!sh.items.some((i) => (i.kind === 'project' || i.kind === 'bundle') && i.done)) throw new Error('The project itself is not on the shelf.');
     sh.ready = true;
     sh.state = 'waiting';
     this.emit('shelf', { id, state: 'waiting', sent: 0, total: sh.total });

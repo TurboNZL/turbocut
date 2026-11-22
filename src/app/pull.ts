@@ -1,7 +1,7 @@
 /**
  * Fetching a "shelf" from a computer that put one up for this device (see `electron/share.cjs`). A phone cannot listen for a sender, so the
- * person pastes the link the computer shows (its address and a long random token in one), and this downloads the project, the caption style, the
- * fonts and the media. Plain `fetch` and no DOM, so it runs the same in the app, a browser and the tests.
+ * person pastes the link the computer shows (its address and a long random token in one), and this downloads the project file (or, from an older
+ * computer, the project, the caption style, the fonts and the media in loose parts). Plain `fetch` and no DOM, so it runs the same in the app, a browser and the tests.
  */
 export const SHARE_PORT = 47903;
 
@@ -9,7 +9,10 @@ export interface Pulled {
   /** The computer's address (`http://192.168.1.20:47903`), kept so the next time needs no link. */
   base: string;
   from: string;
+  /** The project as text. Empty when the computer sent a whole project file instead (`bundle`). */
   project: string;
+  /** A whole project file (`.turbocutf`): the project, its fonts, caption style and videos in one. What a computer sends now. */
+  bundle: File | null;
   preset: string | null;
   media: File[];
   fonts: File[];
@@ -98,10 +101,10 @@ export async function pullShelf(link: string, o: PullOptions = {}): Promise<Pull
 export async function pullToken(base: string, token: string, o: PullOptions = {}): Promise<Pulled> {
   const f = o.fetch ?? fetch;
   const manifest = (await getJson(base, `/shelf/${token}/manifest`, f, o.signal)) as Manifest;
-  if (!Array.isArray(manifest.items) || !manifest.items.some((i) => i.kind === 'project')) throw new Error('What the computer offers is not a TurboCut project.');
+  if (!Array.isArray(manifest.items) || !manifest.items.some((i) => i.kind === 'project' || i.kind === 'bundle')) throw new Error('What the computer offers is not a TurboCut project.');
   const total = manifest.items.reduce((n, i) => n + (Number(i.size) || 0), 0);
   let done = 0;
-  const out: Pulled = { base, from: String(manifest.from?.name || 'the computer').slice(0, 60), project: '', preset: null, media: [], fonts: [], links: Number(manifest.summary?.links) | 0 };
+  const out: Pulled = { base, from: String(manifest.from?.name || 'the computer').slice(0, 60), project: '', bundle: null, preset: null, media: [], fonts: [], links: Number(manifest.summary?.links) | 0 };
   for (const item of manifest.items) {
     o.onProgress?.(done, total, item.name);
     let res: Response;
@@ -122,7 +125,8 @@ export async function pullToken(base: string, token: string, o: PullOptions = {}
       done += value!.byteLength;
       o.onProgress?.(done, total, item.name);
     }
-    if (item.kind === 'project') out.project = await blob.text();
+    if (item.kind === 'bundle') out.bundle = new File([blob], item.name);
+    else if (item.kind === 'project') out.project = await blob.text();
     else if (item.kind === 'preset') out.preset = await blob.text();
     else if (item.kind === 'font') out.fonts.push(new File([blob], item.name));
     else if (item.kind === 'media') out.media.push(new File([blob], item.name));

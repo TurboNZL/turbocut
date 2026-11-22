@@ -36,6 +36,8 @@ export interface SettingsDeps {
   store: Store;
   hotkeys: Hotkeys;
   touch: boolean;
+  /** Open the project manager (the Projects panel in General has a button for it). */
+  openProjects?: () => void;
 }
 
 const check = (label: string, on: boolean, set: (v: boolean) => void, hint?: string) => {
@@ -190,7 +192,7 @@ function mediaMemoryPanel(store: Store, redraw: () => void): HTMLElement {
     ...(platform === 'electron' ? [] : [used, h('button', { class: 'btn', onclick: async () => (await forgetCopies(), redraw()) }, 'Forget the kept copies')]));
 }
 
-function general({ store }: SettingsDeps, redraw: () => void, go: (t: SettingsTab) => void): HTMLElement {
+function general({ store, openProjects }: SettingsDeps, redraw: () => void, go: (t: SettingsTab) => void): HTMLElement {
   const s = store.settings;
   const SCALE_LABEL: Record<string, string> = { auto: 'Automatic (up to 960 px on the long side, 640 px on a phone)', '100': 'Full size of the project', '75': '75 %', '50': '50 %', '25': '25 %, draft' };
   const previewScale = h('select', { class: 'input', 'aria-label': 'Preview sharpness' }, ...PREVIEW_SCALES.map((v) => h('option', { value: String(v), selected: s.previewScale === v }, SCALE_LABEL[String(v)]!)));
@@ -209,6 +211,7 @@ function general({ store }: SettingsDeps, redraw: () => void, go: (t: SettingsTa
       field('Sharpness', previewScale),
       field('Frame rate while playing', previewFps)),
     panel('Start', check('Show the home screen when TurboCut starts with an empty project', s.showHome, (v) => store.updateSettings({ showHome: v }), 'The Home button at the top brings it back.')),
+    panel('Projects', h('p', { class: 'hint' }, 'Projects are saved in TurboCut\'s own folder unless you pick another place. The project manager lists them, and on a computer you can add folders of your own and choose where new projects go.'), h('button', { class: 'btn', onclick: () => openProjects?.() }, 'Open the project manager…')),
     panel('Saving', check('Keep the project file up to date while I edit', s.autosave, (v) => store.updateSettings({ autosave: v }), 'Once a project has been saved to a file, changes are written to that file a few seconds after you make them.')),
     panel('Updates', check('Check for a new version when TurboCut starts', s.autoCheckUpdates, (v) => store.updateSettings({ autoCheckUpdates: v }))),
     mediaMemoryPanel(store, redraw),

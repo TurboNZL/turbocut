@@ -76,7 +76,7 @@ export class Actions {
       if (!as && store.fileRef) target = { ref: store.fileRef, name: refName(store.fileRef), format: formatOfName(refName(store.fileRef)) };
       else if (!as && store.fileName && !store.fileRef) target = { ref: null, name: store.fileName, format: formatOfName(store.fileName) }; // a browser that can only download: the same kind again
       else {
-        target = await chooseTarget(store.project.name, () => this.askFormat());
+        target = await chooseTarget(store.project.name, () => this.askFormat(), store.settings.saveIn);
         if (!target) return false;
       }
       const at = store.version;
@@ -246,6 +246,17 @@ export class Actions {
     } catch (e) {
       await forgetRecent(key);
       this.store.say(`Could not open ${refName(ref)}: ${e instanceof Error && e.message ? e.message : 'the file has moved or been deleted'}. It was taken off the list.`);
+      return false;
+    }
+  }
+
+  /** Open a project file that is already known by reference (a row in the project manager, or a project another device just sent). Asks about unsaved work first. */
+  async openFromRef(ref: ProjectRef): Promise<boolean> {
+    if (!(await this.confirmDiscard())) return false;
+    try {
+      return await this.adoptOpened(await readRef(ref));
+    } catch (e) {
+      this.store.say(`Could not open ${refName(ref)}: ${e instanceof Error && e.message ? e.message : 'the file has moved or been deleted'}.`);
       return false;
     }
   }

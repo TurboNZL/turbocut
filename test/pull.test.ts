@@ -57,6 +57,18 @@ describe('pulling a shelf', () => {
     expect(pc.shelves.size).toBe(0);
   });
 
+  it('brings a whole project file across as one file, with its name', async () => {
+    const pc = await computer();
+    const bundle = Buffer.alloc(150_000, 9);
+    const info = await put(pc, [['bundle', 'My short.turbocutf', bundle]]);
+    const got = await pullShelf(`http://127.0.0.1:${info.port}/shelf/${info.token}`);
+    expect(got.bundle?.name).toBe('My short.turbocutf');
+    expect(got.bundle?.size).toBe(150_000);
+    expect(Buffer.from(await got.bundle!.arrayBuffer()).equals(bundle)).toBe(true);
+    expect(got.project).toBe('');
+    expect(got.media).toEqual([]);
+  });
+
   it('says what is wrong in words: a used link, a bad link, a computer that is not there', async () => {
     const pc = await computer();
     const info = await put(pc, [['project', 'p', Buffer.from('{}')]]);

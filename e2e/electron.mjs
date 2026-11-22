@@ -8,7 +8,9 @@ import { _electron as electron } from 'playwright-core';
 
 const root = new URL('..', import.meta.url).pathname;
 mkdirSync(`${root}e2e/.out`, { recursive: true });
-const app = await electron.launch({ args: ['--no-sandbox', root], cwd: root });
+// A profile of its own for each run: the project folders the app was told about are kept in it, and a run must not see the last one's.
+const profile = mkdtempSync(join(tmpdir(), 'tcprofile-'));
+const app = await electron.launch({ args: ['--no-sandbox', `--user-data-dir=${profile}`, root], cwd: root });
 try {
   const win = await app.firstWindow();
   const errors = [];
@@ -177,6 +179,58 @@ try {
     await win.keyboard.press('Escape');
     await win.getByRole('dialog', { name: 'Find the media' }).waitFor({ state: 'detached' });
     console.log('shell project files ok');
+
+    // ---- the dialogs remember the folder, and the project manager reads the default folder (app data) and folders the person adds
+    const ask = { save: null, open: null };
+    const stub = async (file) => {
+      await app.evaluate(({ dialog }, f) => {
+        globalThis.__asked = {};
+        dialog.showSaveDialog = async (_w, o) => ((globalThis.__asked.save = o), { canceled: false, filePath: f });
+        dialog.showOpenDialog = async (_w, o) => ((globalThis.__asked.open = o), { canceled: false, filePaths: [f] });
+      }, file);
+    };
+    const asked = () => app.evaluate(() => globalThis.__asked);
+    await stub(join(dir, 'Remember me.turbocutf'));
+    await win.evaluate(() => window.turbocutApp.actions.saveProject(true));
+    await win.waitForFunction(() => /Saved Remember me\.turbocutf/.test(window.turbocutApp.store.status), null, { timeout: 20000 });
+    await win.evaluate(() => window.turbocutApp.actions.saveProject(true)); // asks again: where does the dialog start now?
+    await win.waitForFunction(() => window.turbocutApp.store.status.length > 0);
+    assert.equal((await asked()).save.defaultPath.startsWith(dir), true, `Save as starts in the folder used last (${(await asked()).save.defaultPath}), not the home folder`);
+    await menu('Open project…');
+    assert.equal((await asked()).open.defaultPath, dir, 'Open starts there too');
+    await win.getByRole('dialog', { name: 'Find the media' }).waitFor({ timeout: 10000 }).then(() => win.keyboard.press('Escape'), () => {}); // that project's video was moved earlier in this suite
+    await win.getByRole('dialog', { name: 'Find the media' }).waitFor({ state: 'detached' });
+
+    const lib = await win.evaluate(async () => {
+      const f = await window.turbocut.project.folders();
+      return { folders: f.folders.map((x) => x.kind), def: f.folders[0].path, saveIn: f.saveIn };
+    });
+    assert.deepEqual(lib.folders, ['default'], 'only the app-data folder to begin with');
+    assert.equal(lib.saveIn, lib.def, 'new projects go there');
+    assert.match(lib.def, /Projects$/);
+    // a project saved into the default folder shows up in the manager, and opens from it
+    await stub(join(lib.def, 'In app data.turbocutf'));
+    await win.evaluate(() => { const a = window.turbocutApp; a.store.edit((p) => (p.name = 'App data one')); return a.actions.saveProject(true); });
+    await win.waitForFunction(() => /Saved In app data\.turbocutf/.test(window.turbocutApp.store.status), null, { timeout: 20000 });
+    // the folder the person adds is read too (the dialog is answered by the test)
+    await app.evaluate(({ dialog }, d) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] }); }, dir);
+    await menu('Projects…');
+    const pm = win.getByRole('dialog', { name: 'Projects' });
+    await pm.locator('.pm-row[data-name="In app data.turbocutf"]').waitFor();
+    assert.equal(await pm.locator('.pm-row[data-name="Shell full.turbocutf"]').count(), 0, 'a folder that was not added is not read');
+    await pm.getByRole('button', { name: 'Add a folder…' }).click();
+    await pm.locator('.pm-row[data-name="Shell full.turbocutf"]').waitFor();
+    assert.equal(await pm.locator('.pm-folder').count(), 2);
+    assert.match(await pm.locator('.pm-folders').textContent(), /TurboCut \(app data\)/);
+    await pm.getByRole('radio', { name: /Save new projects in/ }).nth(1).check(); // new projects go to the added folder now
+    assert.equal((await win.evaluate(() => window.turbocut.project.folders())).saveIn, dir);
+    // open one from the list
+    await win.evaluate(() => void window.turbocutApp.actions.newProject()); // the manager is open: the menu behind it cannot be pressed
+    await win.getByRole('button', { name: 'Discard it' }).click({ timeout: 2000 }).catch(() => {});
+    await pm.locator('.pm-row[data-name="In app data.turbocutf"] .pm-open').click();
+    await win.waitForFunction(() => window.turbocutApp.store.project.name === 'App data one' && window.turbocutApp.store.fileName === 'In app data.turbocutf', null, { timeout: 20000 });
+    await pm.waitFor({ state: 'detached', timeout: 10000 }); // the manager closes when a project was opened
+    assert.equal(void ask, undefined);
   }
   assert.deepEqual(errors, []);
   console.log('electron e2e passed');

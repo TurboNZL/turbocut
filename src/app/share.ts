@@ -1,5 +1,6 @@
 import { exportPreset } from '../captions/presets.ts';
-import { serializeProject } from '../core/projectFile.ts';
+import { packBundle, type BundlePart } from '../core/bundle.ts';
+import { projectFileName, serializeProject } from '../core/projectFile.ts';
 import type { Project } from '../core/types.ts';
 import type { Actions } from './actions.ts';
 import { dialog, h } from './dom.ts';
@@ -120,7 +121,15 @@ export function startSharing(store: Store, actions: Actions): void {
     gone.observe(document.body, { childList: true });
   });
 
-  api.on('received', async (r: Received) => {
+  api.on('received', async (r: Received & { bundlePath?: string; error?: string }) => {
+    // A whole project file: the shell already filed it in the projects folder. Open it from there.
+    if (r.error) return void store.say(`Could not keep what ${r.from.name} sent: ${r.error}`);
+    if (r.bundlePath) {
+      const name = r.bundlePath.split(/[\\/]/).pop() ?? 'the project';
+      store.say(`Received ${name.replace(/\.turbocut[cf]?$/i, '')} from ${r.from.name}. It is in Projects.`);
+      await actions.openFromRef({ kind: 'path', path: r.bundlePath });
+      return;
+    }
     try {
       const get = async (x: { name: string; url: string }) => new File([await (await fetch(x.url)).blob()], x.name);
       await applyReceived(store, actions, { from: r.from.name, project: r.project, preset: r.preset, media: await Promise.all(r.media.map(get)), fonts: await Promise.all(r.fonts.map(get)) });
@@ -160,7 +169,7 @@ export function openSendDialog(store: Store): void {
   let stats = { media: 0, mediaBytes: 0, fonts: 0, fontBytes: 0, linked: 0 };
 
   const dlg = dialog('Send to another device', h('div', { class: 'stack' },
-    h('p', {}, `Send "${store.project.name}" to another TurboCut on this network. A computer asks its person to accept first. For a phone, get a link: paste it in TurboCut on the phone and you are done.`),
+    h('p', {}, `Send "${store.project.name}" to another TurboCut on this network as one project file. The other device keeps it in its Projects and opens it. A computer asks its person to accept first. For a phone, get a link: paste it in TurboCut on the phone and you are done.`),
     h('label', { class: 'setting' }, withMedia, mediaLabel),
     linkRow,
     h('label', { class: 'setting' }, withFonts, fontLabel),
@@ -218,14 +227,16 @@ export function openSendDialog(store: Store): void {
     const media = withMedia.checked ? c.media.filter((m) => !(asLink && m.source)) : [];
     const fonts = withFonts.checked ? c.fonts : [];
     const preset = store.preset.builtin ? null : exportPreset(store.preset, []);
-    const projectText = serializeProject(store.project);
-    const parts: { kind: string; name: string; blob: Blob }[] = [
-      { kind: 'project', name: 'project.turbocut', blob: new Blob([projectText]) },
-      ...(preset ? [{ kind: 'preset', name: 'style.json', blob: new Blob([preset]) }] : []),
-      ...fonts.map((f) => ({ kind: 'font', name: `${f.families[0] ?? 'font'}.ttf`, blob: new Blob([f.bytes as BlobPart]) })),
-      ...media.map((m) => ({ kind: 'media', name: m.name, blob: m.blob })),
+    // One project file (.turbocutf) holding the project, the caption style, the fonts and the videos: the other device keeps it as it is, in its projects folder.
+    const inside: BundlePart[] = [
+      { kind: 'project', name: 'project.turbocut', blob: new Blob([serializeProject(store.project)]) },
+      ...(preset ? [{ kind: 'preset' as const, name: 'style.json', blob: new Blob([preset]) }] : []),
+      ...fonts.map((f) => ({ kind: 'font' as const, name: `${f.families[0] ?? 'font'}.ttf`, blob: new Blob([f.bytes as BlobPart]) })),
+      ...media.map((m) => ({ kind: 'media' as const, name: m.name, blob: m.blob })),
     ];
-    const total = parts.reduce((n, p) => n + p.blob.size, 0);
+    const bundle = packBundle(inside);
+    const parts: { kind: string; name: string; blob: Blob }[] = [{ kind: 'bundle', name: projectFileName(store.project.name, 'full'), blob: bundle }];
+    const total = bundle.size;
     const links = asLink ? c.linked : 0;
     return { parts, total, summary: { project: store.project.name, media: media.length, fonts: fonts.length, links, bytes: total } satisfies Summary };
   };

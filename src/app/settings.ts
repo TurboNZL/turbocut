@@ -39,6 +39,8 @@ export interface Settings {
   trackOrder: TrackGroup[];
   /** Keep a copy of imported media inside TurboCut (browser and phone) so a saved project finds its files again by itself. */
   rememberMedia: boolean;
+  /** Android: where a new project is saved. `app` is TurboCut's own storage (the default), `personal` is Documents/TurboCut, which other apps and a computer can see. The desktop app keeps this choice in the shell. */
+  saveIn: 'app' | 'personal';
   /** Font for new caption styles, new text layers and the built-in caption style. */
   defaultFont: string;
   /** What the holes of letters look like in new styles. */
@@ -75,6 +77,7 @@ export const DEFAULT_SETTINGS = (touch: boolean): Settings => ({
   waveforms: !touch, // a phone has less to spare
   trackOrder: [...TRACK_GROUPS],
   rememberMedia: true,
+  saveIn: 'app',
   defaultFont: 'Arial Black',
   counters: 'filled',
   layout: AUTO_LAYOUT,
@@ -101,6 +104,7 @@ export function mergeSettings(stored: unknown, defaults: Settings): Settings {
   if (!stored || typeof stored !== 'object') return out;
   const s = stored as Record<string, any>;
   for (const k of ['snapping', 'waveforms', 'rememberMedia', 'autoCheckUpdates', 'showHome', 'autosave', 'dock', 'autoSwitch', 'shareEnabled'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
+  if (s.saveIn === 'app' || s.saveIn === 'personal') out.saveIn = s.saveIn;
   // The row order: a list with each kind once. Older settings only said whether video sat above audio.
   if (Array.isArray(s.trackOrder) && s.trackOrder.length === 3 && TRACK_GROUPS.every((g) => s.trackOrder.includes(g))) out.trackOrder = [...s.trackOrder];
   else if (typeof s.videoOnTop === 'boolean') out.trackOrder = s.videoOnTop ? ['video', 'audio', 'captions'] : ['audio', 'video', 'captions'];

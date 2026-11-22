@@ -123,3 +123,8 @@ The vanilla CommonJS .deb updater (`electron/updater.cjs`, `electron/debInstall.
 - **`config-file`** (settings): `src/app/config.ts` lists single settings against the defaults, exports ticked ones, previews an import as now → new, applies a config to the device (left-out ones reset). Pure functions, `test/config.test.ts`.
 - **`media-memory`**: `src/app/mediaMemory.ts`, copies of imported media in the origin-private file system so a project finds its files again in a browser or WebView; streamed with `pipeTo`, oldest evicted over a cap.
 
+
+## 2026-11-22
+- **Project manager** (a `projects-library` module): the folders (an app-data default plus personal ones), the listing, rename/delete to the bin, "where do new projects go", and file dialogs that start in the last folder used (`electron/projectLibrary.cjs`, its IPC in `projectFiles.cjs`, `src/app/projectLibrary.ts`, `projectManager.ts`, `test/projectLibrary.test.ts`). Any app that saves documents as files wants the last-folder rule: Electron's dialogs start in the home folder unless told otherwise.
+- **`device-share` sends one file** (a bundle) instead of loose parts when the app has a file format that holds everything.
+- **Liquid Glass**: only tracked shapes may paint `var(--lg-spec)` (a custom property inherits). Already fixed in the engine's liquid style on branch `claude/rimlight-ui-design-u3g1lp`.

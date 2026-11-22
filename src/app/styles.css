@@ -253,11 +253,18 @@ textarea.input { width: 100%; resize: vertical; font: inherit; }
 }
 
 /* Home screen */
-.home { position: fixed; inset: 0; z-index: 40; overflow-y: auto; color: hsl(var(--fg)); padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); background: radial-gradient(60rem 28rem at 50% -6rem, hsl(var(--accent) / 0.16), transparent 70%), hsl(var(--bg)); animation: tk-fade 220ms ease-out backwards; display: flex; flex-direction: column; scroll-snap-type: y mandatory; overscroll-behavior: contain; }
+.home { --hsat: var(--home-sat, env(safe-area-inset-top, 0px)); --hsab: var(--home-sab, env(safe-area-inset-bottom, 0px)); position: fixed; inset: 0; z-index: 40; overflow-y: auto; color: hsl(var(--fg)); background: radial-gradient(60rem 28rem at 50% -6rem, hsl(var(--accent) / 0.16), transparent 70%), hsl(var(--bg)); animation: tk-fade 220ms ease-out backwards; display: flex; flex-direction: column; scroll-snap-type: y mandatory; overscroll-behavior: contain; }
 /* The page itself takes focus when it opens (so keys work); a browser or look that outlines :focus-visible drew a ring round the whole screen. */
 .home:focus, .home:focus-visible, .view-layer:focus, .view-layer:focus-visible { outline: none; }
-.home.docked { bottom: var(--dock-h, 0px); z-index: 20; }
-.home-page { flex: 0 0 100%; min-height: 100%; scroll-snap-align: start; display: flex; flex-direction: column; }
+.home.docked { bottom: var(--dock-h, 0px); z-index: 20; --hsab: 0px; } /* the dock below it already clears the bottom of the screen */
+.home-page { flex: 0 0 auto; min-height: 100%; scroll-snap-align: start; display: flex; flex-direction: column; }
+/* The safe areas belong to the pages, not to the scrolling box: padding on a snapping scroller moved the snap point past it, which pulled the logo under the
+   status bar and left a strip of the next page showing at the bottom. A page is at least one screen and grows with its content (a fixed height let a tall
+   page spill over the next one, and a hard snap then kept the second page from scrolling to its end). */
+.home-page > .home-inner { padding-bottom: calc(var(--hsab) + 1.5rem); }
+.home-first > .home-inner { padding-top: calc(var(--hsat) + 1rem); }
+.home-more > .home-inner { padding-top: calc(var(--hsat) + 1rem); padding-bottom: calc(var(--hsab) + 3rem); }
+.home.tall { scroll-snap-type: y proximity !important; }
 .home-page > .home-inner { flex: 1; width: 100%; box-sizing: border-box; }
 .home-first > .home-inner { align-content: start; }
 .home-more > .home-inner { align-content: center; }
@@ -687,3 +694,32 @@ input.input, textarea.input, select.input { color: hsl(var(--fg)); }
 :is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) :is(.settings-nav, .guide-list) { gap: 0.15rem; padding: 0.5rem; }
 /* Floating tool buttons stay at the bottom right of the window (the owner's choice), so the right-hand panel keeps room under its last field for them. */
 #app[data-tools='float']:not([data-panel='sheet']) .side-right .tab-body { padding-bottom: 5rem; }
+/* Liquid Glass sets `--lg-spec` (the glass rim image) on its own shapes only, but a custom property inherits: a button inside the side panel painted the panel's rim over itself, a straight edge across its round end. Buttons and fields own no rim image. (Fixed in the engine's liquid style too; this keeps older engine bundles right.) */
+[data-ui='liquid'] :is(.btn, .input) { --lg-spec: none; }
+
+/* ---------------------------------------------------------------- the project manager */
+.pm-dlg { width: min(46rem, calc(100vw - 1.5rem)); }
+.pm { gap: 0.8rem; }
+.pm-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.pm-bar .input { flex: 1 1 12rem; min-width: 0; }
+.pm-rows { display: flex; flex-direction: column; gap: 0.35rem; max-height: min(22rem, 42dvh); overflow: auto; }
+.pm-row { display: flex; align-items: center; gap: 0.25rem; border: 1px solid hsl(var(--line) / 0.7); border-radius: calc(var(--radius, 6px) * 1.2); }
+.pm-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.7rem; padding: 0.55rem 0.7rem; text-align: left; background: none; border: 0; color: inherit; font: inherit; border-radius: inherit; }
+.pm-open:hover, .pm-open:focus-visible { background: hsl(var(--hover) / 0.5); }
+.pm-ico { display: grid; place-items: center; flex: none; width: 2.2rem; height: 2.2rem; border-radius: 0.6rem; background: hsl(var(--accent) / 0.14); color: hsl(var(--accent)); }
+.pm-text { display: grid; gap: 0.1rem; min-width: 0; }
+.pm-text strong, .pm-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-text small, .pm-pick small { color: hsl(var(--muted)); }
+.pm-acts { display: flex; flex: none; gap: 0.1rem; padding-right: 0.3rem; }
+.pm-empty { padding: 0.8rem 0.2rem; }
+.pm-h { margin: 0; font-size: 0.78rem; letter-spacing: 0.09em; text-transform: uppercase; color: hsl(var(--muted)); font-weight: 600; }
+.pm-folders { display: flex; flex-direction: column; gap: 0.35rem; padding-top: 0.6rem; border-top: 1px solid hsl(var(--line) / 0.6); }
+.pm-folder { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.pm-folder.gone strong { opacity: 0.6; }
+.pm-pick { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+.pm-pick > span { display: grid; min-width: 0; }
+.pm-pick small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-pick .bad { color: hsl(var(--bad)); }
+@media (max-width: 520px) { .pm-text small { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; } }
+/* On a phone the download notes are two lines at most (the guides have the whole story), so the second screen is not three screens long. */
+@media (max-width: 520px) { .home-download-text p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; } .home-download { padding: 0.6rem 0.7rem; } }
