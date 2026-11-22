@@ -31,6 +31,7 @@ import { detectSystemFonts, fontPermission } from './systemFonts.ts';
 import { TimelineView } from './timelineView.ts';
 import { checkForUpdate } from './updater.ts';
 import { openTwitchImport } from './twitchDialog.ts';
+import { openProjectManager } from './projectManager.ts';
 import { openReceiveDialog } from './receive.ts';
 import { openSendDialog, startSharing } from './share.ts';
 
@@ -59,7 +60,7 @@ const touch = timeline.touch;
 /** Settings: a page of its own with the bottom dock, otherwise a window. */
 const settings = (tab?: SettingsTab) => {
   if (store.settings.dock) setView('settings', tab);
-  else openSettings({ store, hotkeys, touch }, tab);
+  else openSettings({ store, hotkeys, touch, openProjects: () => void openProjectManager(store, actions) }, tab);
 };
 captions.openEngineSettings = () => settings('Captions');
 
@@ -187,7 +188,7 @@ function drawLayout(): void {
     // The dock was switched off while a dock page was open: leave that page (Settings becomes its window).
     const was = view;
     setView('edit');
-    if (was === 'settings') openSettings({ store, hotkeys, touch }, 'Look');
+    if (was === 'settings') openSettings({ store, hotkeys, touch, openProjects: () => void openProjectManager(store, actions) }, 'Look');
   }
   dock.render(store.settings.dock, view);
 }
@@ -256,6 +257,7 @@ const fileMenu = h('button', { class: 'btn btn-ghost', 'aria-haspopup': 'menu' }
 fileMenu.addEventListener('click', () =>
   popupMenu(fileMenu, [
     { label: 'New project', run: () => void actions.newProject() },
+    { label: 'Projects…', run: () => void openProjectManager(store, actions) },
     { label: 'Open project…', run: () => void actions.openProject() },
     { label: 'Save project', run: () => void actions.saveProject() },
     { label: 'Save project as…', run: () => void actions.saveProject(true) },
@@ -406,6 +408,7 @@ function showHome(): void {
     store,
     importFiles: () => importFiles(),
     openProject: () => actions.openProject(),
+    openProjects: (opened) => void openProjectManager(store, actions, opened),
     openRecent: (key) => actions.openRecent(key),
     newProject: (w, hh) => actions.newProject({ width: w, height: hh }),
     receive: () => openReceiveDialog(store, actions),

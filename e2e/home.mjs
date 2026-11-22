@@ -85,9 +85,12 @@ try {
 
   // opening a project and backing out of the file picker does not drop you into the editor
   await page.getByRole('button', { name: 'Home', exact: true }).click();
-  await page.getByRole('button', { name: /Open a project/ }).click(); // the test's open dialog is cancelled (no file chosen)
+  await page.locator('.home-quick', { hasText: 'Projects' }).click(); // the project manager (nothing saved in this fresh browser)
+  await page.getByRole('dialog', { name: 'Projects' }).waitFor();
+  assert.match(await page.locator('.pm-empty').textContent(), /No projects here yet/, 'the manager says it is empty');
+  await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
-  assert.equal(await page.locator('.home').count(), 1, 'cancelling the picker leaves the home screen where it was');
+  assert.equal(await page.locator('.home').count(), 1, 'closing the manager leaves the home screen where it was');
   const [chooser2] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: /Import video/ }).click()]);
   await chooser2.setFiles([]);
   await page.waitForTimeout(300);
@@ -148,6 +151,40 @@ try {
     assert.equal(m.outside, 0, 'no shape picture escapes its tile on a phone');
     assert.ok(m.overflow <= 0, `the first screen fits a tall phone (over by ${m.overflow}px)`);
     assert.equal(m.snap, 'y mandatory', 'two stops on a tall phone, as on a computer');
+    await phone.context().close();
+  }
+  // ---- a phone with a camera cut-out and gesture bar (the safe areas are simulated: a test cannot set env(safe-area-inset-*)), and a second screen taller than the display
+  {
+    const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, home: true })).newPage();
+    phone.on('pageerror', (e) => errors.push(e.message));
+    await phone.route('https://api.github.com/**', ok);
+    await phone.addInitScript(() => document.addEventListener('DOMContentLoaded', () => document.documentElement.style.cssText += '--home-sat: 48px; --home-sab: 24px;'));
+    await phone.goto('http://localhost:5217/');
+    await phone.waitForSelector('.home-start');
+    await phone.waitForFunction(() => document.querySelectorAll('.home-download').length === 6, null, { timeout: 10000 });
+    await phone.waitForTimeout(1200);
+    const g = await phone.evaluate(() => {
+      const home = document.querySelector('.home');
+      const top = (sel) => document.querySelector(sel).getBoundingClientRect();
+      return { scrollTop: home.scrollTop, vh: innerHeight, logo: top('.home-logo').top, word: top('.home-switch').top, more: top('.home-more').top, updatesBottom: top('.home-updates').bottom, learnTop: top('.home-more .home-card').top, tall: home.classList.contains('tall'), snap: getComputedStyle(home).scrollSnapType, moreHeight: top('.home-more').height };
+    });
+    assert.equal(g.scrollTop, 0, 'the home screen starts at its top');
+    assert.ok(g.logo >= 48 && g.word >= 48, `the logo and the startup switch sit below the status bar (${g.logo}, ${g.word})`);
+    assert.ok(g.more >= g.vh - 1, `nothing of the second screen shows at the bottom before scrolling (it starts at ${g.more} of ${g.vh})`);
+    assert.ok(g.updatesBottom <= g.learnTop, `the Learn card does not overlap the Updates card (${g.updatesBottom} vs ${g.learnTop})`);
+    assert.ok(g.moreHeight > g.vh, `this test needs a second screen taller than the display (${g.moreHeight} vs ${g.vh})`);
+    assert.ok(g.tall && g.snap !== 'y mandatory', `a page taller than the display scrolls freely (${g.snap}, tall: ${g.tall})`);
+    // scroll to the second screen, then on to its end: the last link is reachable and the gesture bar's room is kept under it
+    await phone.evaluate(() => document.querySelector('.home').scrollTo({ top: 1e6 }));
+    await phone.waitForTimeout(700);
+    const end = await phone.evaluate(() => {
+      const home = document.querySelector('.home');
+      const last = [...document.querySelectorAll('.home-links .link')].pop().getBoundingClientRect();
+      return { atEnd: home.scrollTop + home.clientHeight >= home.scrollHeight - 2, lastBottom: last.bottom, vh: innerHeight };
+    });
+    assert.ok(end.atEnd, 'the second screen scrolls all the way to its end');
+    assert.ok(end.lastBottom <= end.vh - 24, `the last link clears the gesture bar (${end.lastBottom} of ${end.vh})`);
+    await phone.screenshot({ path: `${out}home-phone-end.png` });
     await phone.context().close();
   }
   console.log('home e2e passed');

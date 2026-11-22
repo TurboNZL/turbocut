@@ -9,6 +9,7 @@ const { loadFrame, saveFrame } = require('./frameConfig.cjs');
 const { downloadClip } = require('./twitch.cjs');
 const { Share } = require('./share.cjs');
 const { setupProjectFiles, mediaPath, bundlePath } = require('./projectFiles.cjs');
+const { ProjectLibrary } = require('./projectLibrary.cjs');
 const { Transcoder, defaultDir } = require('./transcode.cjs');
 const os = require('node:os');
 
@@ -105,6 +106,7 @@ ipcMain.handle('window:set-frame', async (_e, on) => {
 
 // ---------------------------------------------------------------- finding other TurboCut apps and sending projects to them
 let share = null;
+let library = null;
 const toPage = (channel, ...args) => BrowserWindow.getAllWindows()[0]?.webContents.send(channel, ...args);
 function configureShare({ enabled, name }) {
   const label = String(name || '').trim().slice(0, 60) || os.hostname();
@@ -122,15 +124,23 @@ function configureShare({ enabled, name }) {
   share.on('offer', (o) => toPage('share:offer', o));
   share.on('shelf', (e) => toPage('share:shelf', e));
   share.on('paired', (l) => toPage('share:paired', l));
-  share.on('received', (r) =>
-    toPage('share:received', {
+  share.on('received', (r) => {
+    // A whole project file (.turbocutf) goes straight into the projects folder; the page opens it from there.
+    if (r.bundle) {
+      try {
+        return toPage('share:received', { from: r.from, bundlePath: library.importFile(r.bundle.path, r.bundle.name) });
+      } catch (e) {
+        return toPage('share:received', { from: r.from, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    return toPage('share:received', {
       from: r.from,
       project: r.project,
       preset: r.preset,
       media: r.media.map((m) => ({ name: m.name, url: `app://turbocut/received/${encodeURIComponent(r.transfer)}/${encodeURIComponent(m.file)}` })),
       fonts: r.fonts.map((m) => ({ name: m.name, url: `app://turbocut/received/${encodeURIComponent(r.transfer)}/${encodeURIComponent(m.file)}` })),
-    }),
-  );
+    });
+  });
   return share.start().then(
     () => ({ running: true, id: share.id, name: label }),
     (e) => {
@@ -290,7 +300,8 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   let mainWindow = null;
-  setupProjectFiles({ ipcMain, dialog, win: () => BrowserWindow.getAllWindows()[0] ?? mainWindow, documents: () => app.getPath('documents') });
+  library = new ProjectLibrary({ defaultDir: path.join(app.getPath('userData'), 'Projects'), configFile: path.join(app.getPath('userData'), 'project-folders.json'), documents: () => app.getPath('documents') });
+  setupProjectFiles({ ipcMain, dialog, shell, win: () => BrowserWindow.getAllWindows()[0] ?? mainWindow, library });
   setupUpdater(() => BrowserWindow.getAllWindows()[0] ?? mainWindow);
   mainWindow = createWindow();
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow());

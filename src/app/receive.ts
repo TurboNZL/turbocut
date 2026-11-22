@@ -3,15 +3,22 @@ import { dialog, h } from './dom.ts';
 import { importFont } from './fonts.ts';
 import { importPresetFile } from './presetIO.ts';
 import { platform } from './platform.ts';
+import { keepReceived } from './projectLibrary.ts';
 import { checkInbox, parseLink, pullShelf, pullToken, type Pulled } from './pull.ts';
 import { deviceKey, forgetComputer, knownComputers, rememberComputer } from './pairing.ts';
 import type { Store } from './store.ts';
 
 const mb = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(n >= 10485760 ? 0 : 1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
-/** Open what another TurboCut sent, whichever way it arrived (pushed to this app, or fetched from a link): fonts, caption style, then the project. */
-export async function applyReceived(store: Store, actions: Actions, r: Pick<Pulled, 'from' | 'project' | 'preset' | 'media' | 'fonts'>): Promise<boolean> {
+/** Open what another TurboCut sent, whichever way it arrived (pushed to this app, or fetched from a link): a project file, or (from an older app) fonts, caption style, then the project. */
+export async function applyReceived(store: Store, actions: Actions, r: Pick<Pulled, 'from' | 'project' | 'preset' | 'media' | 'fonts'> & { bundle?: File | null }): Promise<boolean> {
   try {
+    // A whole project file: keep it in the projects folder (so it is there next time, in the project manager) and open it from there.
+    if (r.bundle) {
+      const ref = await keepReceived(r.bundle, r.bundle.name, store.settings.saveIn);
+      store.say(`Received ${r.bundle.name.replace(/\.turbocut[cf]?$/i, '')} from ${r.from}. It is in Projects.`);
+      return await actions.openFromRef(ref);
+    }
     for (const f of r.fonts) await importFont(f).catch(() => []);
     if (r.preset) await importPresetFile(store, new File([r.preset], 'received.turbocut-preset.json', { type: 'application/json' }));
     return await actions.openReceived(r.project, r.media, r.from);
@@ -23,7 +30,7 @@ export async function applyReceived(store: Store, actions: Actions, r: Pick<Pull
 
 /**
  * "Receive from a computer": for devices that cannot be found on the network by themselves (a phone). The first time, the computer shows a link
- * (File → Send to another device… → Get a link for a phone); pasting it here brings the project, fonts and media across. After that first
+ * (File → Send to another device… → Get a link for a phone); pasting it here brings the project file (with its videos, fonts and caption style inside) across and keeps it in Projects. After that first
  * transfer this device remembers the computer: opening this window looks for it by itself, and a project the computer puts up for this device
  * (Send, next to the device's name) starts arriving as soon as it is ready. A link on the clipboard is still offered at once.
  */

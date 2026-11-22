@@ -58,7 +58,7 @@ export const baseName = (path: string): string => path.replace(/[\\/]+$/, '').sp
 export const refName = (ref: ProjectRef): string => (ref.kind === 'handle' ? ref.handle.name : baseName(ref.path));
 
 /** A short line for the recent list: where the file is. Browsers do not reveal folders, so a handle shows its file name only. */
-export const refWhere = (ref: ProjectRef): string => (ref.kind === 'handle' ? ref.handle.name : platform === 'android' ? `Documents/${ref.path}` : ref.path);
+export const refWhere = (ref: ProjectRef): string => (ref.kind === 'handle' ? ref.handle.name : platform === 'android' ? (isAppPath(ref.path) ? `TurboCut/${ref.path.slice(APP_PREFIX.length)}` : `Documents/${ref.path}`) : ref.path);
 
 const fsa = (): { save?: (o: object) => Promise<FileSystemFileHandle>; open?: (o: object) => Promise<FileSystemFileHandle[]> } => ({
   save: (window as any).showSaveFilePicker?.bind(window),
@@ -78,11 +78,24 @@ async function androidFs() {
   return { Filesystem, Directory, Encoding };
 }
 
+/** The folder inside TurboCut's own storage that projects live in by default (a path starting with this is in app storage, any other is under Documents). */
+export const APP_PREFIX = 'data:';
+export const APP_FOLDER = `${APP_PREFIX}Projects`;
+/** The personal folder, under Documents, where other apps and a computer can see the files. */
+export const PERSONAL_FOLDER = FOLDER;
+export const isAppPath = (path: string): boolean => path.startsWith(APP_PREFIX);
+
+/** Where an Android project path really is: Capacitor wants the base directory and a path inside it. */
+export async function androidLoc(path: string): Promise<{ directory: any; path: string }> {
+  const { Directory } = await androidFs();
+  return isAppPath(path) ? { directory: Directory.Data, path: path.slice(APP_PREFIX.length) } : { directory: Directory.Documents, path };
+}
+
 /**
  * Ask where to save. Resolves null when the person cancels. The desktop app and browsers with file handles show their own dialog with the three
  * file types (the full project first, so it is what a plain "Save" makes); elsewhere `ask` is called to choose the format. Nothing is written yet.
  */
-export async function chooseTarget(projectName: string, ask: () => Promise<ProjectFormat | null>): Promise<Target | null> {
+export async function chooseTarget(projectName: string, ask: () => Promise<ProjectFormat | null>, saveIn: 'app' | 'personal' = 'app'): Promise<Target | null> {
   const d = desktop();
   if (d) {
     const r = await d.choose(projectFileName(projectName, 'full'));
@@ -93,11 +106,13 @@ export async function chooseTarget(projectName: string, ask: () => Promise<Proje
     if (!format) return null;
     const name = projectFileName(projectName, format);
     try {
-      const { Filesystem, Directory } = await androidFs();
-      await Filesystem.mkdir({ path: FOLDER, directory: Directory.Documents, recursive: true }).catch(() => {});
+      const { Filesystem } = await androidFs();
+      const folder = saveIn === 'personal' ? PERSONAL_FOLDER : APP_FOLDER;
+      const at = await androidLoc(folder);
+      await Filesystem.mkdir({ path: at.path, directory: at.directory, recursive: true }).catch(() => {});
       // A second project with the same name must not overwrite the first.
-      let path = `${FOLDER}/${name}`;
-      for (let i = 2; await Filesystem.stat({ path, directory: Directory.Documents }).then(() => true, () => false); i++) path = `${FOLDER}/${name.slice(0, -FORMAT_EXT[format].length)} ${i}${FORMAT_EXT[format]}`;
+      let path = `${folder}/${name}`;
+      for (let i = 2; await androidLoc(path).then((l) => Filesystem.stat(l)).then(() => true, () => false); i++) path = `${folder}/${name.slice(0, -FORMAT_EXT[format].length)} ${i}${FORMAT_EXT[format]}`;
       return { ref: { kind: 'path', path }, name: baseName(path), format };
     } catch {
       return { ref: null, name, format }; // storage not allowed: hand it to the share sheet instead
@@ -145,13 +160,14 @@ async function writeThroughShell(d: DesktopApi, path: string, blob: Blob): Promi
 }
 
 async function writeAndroid(path: string, content: Content): Promise<void> {
-  const { Filesystem, Directory, Encoding } = await androidFs();
-  if (typeof content === 'string') return void (await Filesystem.writeFile({ path, data: content, directory: Directory.Documents, encoding: Encoding.UTF8 }));
+  const { Filesystem, Encoding } = await androidFs();
+  const at = await androidLoc(path);
+  if (typeof content === 'string') return void (await Filesystem.writeFile({ path: at.path, data: content, directory: at.directory, encoding: Encoding.UTF8 }));
   for (let off = 0; off < Math.max(1, content.size); off += CHUNK) {
     const bytes = new Uint8Array(await content.slice(off, off + CHUNK).arrayBuffer());
     let bin = '';
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    const args = { path, data: btoa(bin), directory: Directory.Documents };
+    const args = { path: at.path, data: btoa(bin), directory: at.directory };
     await (off === 0 ? Filesystem.writeFile(args) : Filesystem.appendFile(args)); // the first piece creates (or empties) the file
   }
 }
@@ -189,8 +205,9 @@ async function bundleFromPath(path: string): Promise<Blob> {
     if (!res.ok) throw new Error('the file has moved or been deleted');
     return res.blob();
   }
-  const { Filesystem, Directory } = await androidFs();
-  const { uri } = await Filesystem.getUri({ path, directory: Directory.Documents });
+  const { Filesystem } = await androidFs();
+  const at = await androidLoc(path);
+  const { uri } = await Filesystem.getUri({ path: at.path, directory: at.directory });
   const res = await fetch(Capacitor.convertFileSrc(uri));
   if (!res.ok) throw new Error('the file has moved or been deleted');
   return res.blob();
@@ -205,8 +222,9 @@ export async function readRef(ref: ProjectRef): Promise<OpenedProject> {
   if (formatOfName(name) !== 'edit') return { name, ref, text: null, bundle: await bundleFromPath(ref.path) };
   const d = desktop();
   if (d) return { name, ref, text: (await d.read(ref.path)).text, bundle: null };
-  const { Filesystem, Directory, Encoding } = await androidFs();
-  const r = await Filesystem.readFile({ path: ref.path, directory: Directory.Documents, encoding: Encoding.UTF8 });
+  const { Filesystem, Encoding } = await androidFs();
+  const at = await androidLoc(ref.path);
+  const r = await Filesystem.readFile({ path: at.path, directory: at.directory, encoding: Encoding.UTF8 });
   return { name, ref, text: typeof r.data === 'string' ? r.data : await r.data.text(), bundle: null };
 }
 

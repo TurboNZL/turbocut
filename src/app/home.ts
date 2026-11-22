@@ -15,6 +15,8 @@ export interface HomeDeps {
   importFiles: () => Promise<boolean>;
   /** Pick a `.turbocut` project file and open it. Resolves true only when one was opened. */
   openProject: () => Promise<boolean>;
+  /** Open the project manager (every project in TurboCut's folders). `opened` runs when one was opened, so this screen can close. */
+  openProjects: (opened: () => void) => void;
   /** Start a new, empty project of this shape (asks about unsaved work first). Resolves true when it was made. */
   newProject: (width: number, height: number) => Promise<boolean>;
   /** Open one of the recent projects. Resolves true when it was opened. */
@@ -49,7 +51,9 @@ const DOWNLOADS: { id: string; label: string; test: RegExp; note: string; ico: I
 export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement } {
   const { store } = deps;
   const root = h('div', { class: `home${deps.docked ? ' docked' : ''}`, role: 'dialog', 'aria-label': 'Home' });
+  let fitWatch: ResizeObserver | null = null;
   const close = () => {
+    fitWatch?.disconnect();
     root.remove();
     deps.onClose?.();
   };
@@ -161,7 +165,7 @@ export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement }
         startCard('Square', '1:1 · 1080×1080', 1080, 1080)), 2),
       arrive(recent, 3),
       arrive(h('div', { class: 'home-quicks' },
-        quick('folder', 'Open a project', 'A .turbocut file you saved', async () => ((await deps.openProject()) && close())),
+        quick('folder', 'Projects', 'Open one you saved, or find a file', () => deps.openProjects(close)),
         quick('video', 'Import video', 'Straight into the media bin', async () => ((await deps.importFiles()) && close())),
         quick('download', 'From a computer', 'Paste the link it gives', () => deps.receive()),
         quick('settings', 'Make it yours', 'Layouts, fonts and looks', () => deps.openSettings('Layout'))), 4),
@@ -174,6 +178,11 @@ export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement }
 
   root.append(first, more);
   document.body.append(root);
+  // A page taller than the screen cannot be a hard snap stop: the snap would pull the scroll back to the top of the page and the end of it could never
+  // be reached. Such a page scrolls freely (soft snapping); when both pages fit, the two screens are two stops.
+  const fit = () => root.classList.toggle('tall', first.offsetHeight > root.clientHeight + 1 || more.offsetHeight > root.clientHeight + 1);
+  fitWatch = new ResizeObserver(fit);
+  for (const el of [root, first, more]) fitWatch.observe(el);
   root.tabIndex = -1;
   root.focus({ preventScroll: true }); // keyboard users tab into the first shape; nothing is outlined on arrival
   return { close, el: root };

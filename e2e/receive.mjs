@@ -134,6 +134,55 @@ try {
   assert.match(await c.getByRole('dialog', { name: 'Find the media' }).textContent(), /clip\.webm/);
   assert.match(await c.getByRole('dialog', { name: 'Find the media' }).textContent(), /Twitch moment\.mp4/);
 
+  // ---- a computer now sends ONE project file (.turbocutf): the phone keeps it in Projects, opens it from there, and the project manager lists it
+  const bundleB64 = await a.evaluate(async () => {
+    const app = window.turbocutApp;
+    const { packBundle } = await import('/src/core/bundle.ts');
+    const { serializeProject, projectFileName } = await import('/src/core/projectFile.ts');
+    const media = Object.values(app.store.project.assets).map((x) => ({ name: x.name, blob: app.store.lib.fileFor(x.id) })).filter((m) => m.blob && m.name === 'clip.webm');
+    const blob = packBundle([{ kind: 'project', name: 'project.turbocut', blob: new Blob([serializeProject(app.store.project)]) }, ...media.map((m) => ({ kind: 'media', name: m.name, blob: m.blob }))]);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return { b64: btoa(bin), name: projectFileName(app.store.project.name, 'full') };
+  });
+  assert.equal(bundleB64.name, 'From the PC.turbocutf');
+  const sh2 = pc.shelfOpen({ project: 'From the PC', media: 1, fonts: 0, links: 0, bytes: 0 });
+  const wb = pc.shelfPart(sh2.id, 'bundle', bundleB64.name);
+  await wb.write(Buffer.from(bundleB64.b64, 'base64'));
+  await wb.end();
+  const info3 = pc.shelfReady(sh2.id);
+  const d = await newPage({ home: true });
+  await d.locator('.home-quick', { hasText: 'From a computer' }).click();
+  const dd = d.getByRole('dialog', { name: 'Receive from a computer' });
+  await dd.getByLabel('Link from the computer').fill(`http://127.0.0.1:${info3.port}/shelf/${info3.token}`);
+  await dd.getByRole('button', { name: 'Receive' }).click();
+  await d.waitForFunction(() => window.turbocutApp.store.project.name === 'From the PC', null, { timeout: 20000 });
+  const kept = await d.evaluate(() => ({ ref: window.turbocutApp.store.fileRef?.kind, file: window.turbocutApp.store.fileName, missing: window.turbocutApp.store.missingAssets().length }));
+  assert.deepEqual(kept, { ref: 'handle', file: 'From the PC.turbocutf', missing: 1 }, 'kept as a project file in Projects; the clip came inside it, the Twitch clip is still to download');
+  assert.equal(pc.shelves.size, 0, 'the shelf closed');
+  // ... and the project manager lists it
+  await d.getByRole('dialog', { name: 'Find the media' }).waitFor({ timeout: 5000 }).then(() => d.keyboard.press('Escape'), () => {});
+  await d.evaluate(() => import('/src/app/projectManager.ts').then((m) => m.openProjectManager(window.turbocutApp.store, window.turbocutApp.actions)));
+  const pm = d.getByRole('dialog', { name: 'Projects' });
+  await pm.locator('.pm-row').first().waitFor();
+  assert.deepEqual(await pm.locator('.pm-row').evaluateAll((els) => els.map((e) => e.dataset.name)), ['From the PC.turbocutf']);
+  assert.match(await pm.locator('.pm-row').first().textContent(), /Full project/);
+  assert.match(await pm.locator('.pm-folders').textContent(), /private storage/);
+  // rename (the open project follows its file), then delete with the confirmation
+  await pm.getByRole('button', { name: 'Rename From the PC.turbocutf' }).click();
+  const ask = d.getByRole('dialog', { name: 'Rename project' });
+  await ask.locator('input').fill('Renamed on the phone');
+  await ask.getByRole('button', { name: 'Rename' }).click();
+  await pm.locator('.pm-row[data-name="Renamed on the phone.turbocutf"]').waitFor();
+  assert.equal(await d.evaluate(() => window.turbocutApp.store.fileName), 'Renamed on the phone.turbocutf', 'the open project follows its renamed file');
+  await pm.getByRole('button', { name: 'Delete Renamed on the phone.turbocutf' }).click();
+  await d.getByRole('dialog', { name: 'Delete this project?' }).getByRole('button', { name: 'Cancel' }).click();
+  assert.equal(await pm.locator('.pm-row').count(), 1, 'cancelling keeps it');
+  await pm.getByRole('button', { name: 'Delete Renamed on the phone.turbocutf' }).click();
+  await d.getByRole('dialog', { name: 'Delete this project?' }).getByRole('button', { name: 'Delete' }).click();
+  await pm.locator('.pm-empty').waitFor();
+
   assert.deepEqual(errors, [], `page errors: ${errors.join(' | ')}`);
   console.log('receive ok');
 } finally {

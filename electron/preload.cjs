@@ -34,6 +34,16 @@ contextBridge.exposeInMainWorld('turbocut', {
     writeEnd: (id, commit) => ipcRenderer.invoke('project:write-end', id, commit),
     read: (path) => ipcRenderer.invoke('project:read', path),
     open: () => ipcRenderer.invoke('project:open'),
+    // the project manager
+    folders: () => ipcRenderer.invoke('project:folders'),
+    list: () => ipcRenderer.invoke('project:list'),
+    addFolder: () => ipcRenderer.invoke('project:add-folder'),
+    removeFolder: (dir) => ipcRenderer.invoke('project:remove-folder', dir),
+    setSaveFolder: (dir) => ipcRenderer.invoke('project:set-save-folder', dir),
+    reveal: (file) => ipcRenderer.invoke('project:reveal', file),
+    trash: (file) => ipcRenderer.invoke('project:trash', file),
+    uniquePath: (name) => ipcRenderer.invoke('project:unique-path', name),
+    rename: (file, name) => ipcRenderer.invoke('project:rename', file, name),
   },
   media: {
     pathFor: (file) => {

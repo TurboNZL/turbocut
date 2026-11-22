@@ -136,6 +136,32 @@ describe('sending a project', () => {
   });
 });
 
+describe('sending a whole project file', () => {
+  it('a bundle arrives as one file, byte for byte, and is reported as the bundle (no loose project)', async () => {
+    const a = await device('Desktop');
+    const b = await device('Laptop');
+    introduce(a, b);
+    b.on('offer', (o: any) => b.answer(o.offerId, true));
+    const got = new Promise<any>((r) => b.on('received', r));
+    const bundle = Buffer.from(Array.from({ length: 70_000 }, (_, i) => (i * 7) % 256));
+    await send(a, b, [{ kind: 'bundle', name: 'My short.turbocutf', data: bundle }]);
+    const r = await got;
+    expect(r.bundle.name).toBe('My short.turbocutf');
+    expect(Buffer.compare(readFileSync(r.bundle.path), bundle)).toBe(0);
+    expect(r.project).toBeNull();
+    expect(r.media).toEqual([]);
+  });
+
+  it('a shelf can hold just the bundle and still be ready', async () => {
+    const a = await device('Desktop');
+    const { id } = a.shelfOpen({ project: 'My short', media: 0, fonts: 0, links: 0, bytes: 3 });
+    const w = a.shelfPart(id, 'bundle', 'My short.turbocutf');
+    await w.write(Buffer.from('abc'));
+    await w.end();
+    expect(a.shelfReady(id).token).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  });
+});
+
 describe('a shelf, fetched by a device that cannot listen (a phone)', () => {
   async function shelf(a: any, parts: { kind: string; name: string; data: Buffer }[]) {
     const { id, token } = a.shelfOpen({ project: 'My short', media: 1, fonts: 0, links: 1, bytes: parts.reduce((n, p) => n + p.data.length, 0) });

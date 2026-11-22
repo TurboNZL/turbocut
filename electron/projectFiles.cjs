@@ -94,8 +94,8 @@ function readProject(file) {
   return fs.readFileSync(file, 'utf8');
 }
 
-/** Register the IPC handlers. `dialog` is Electron's, `win` returns the window to attach dialogs to, `documents` is the folder the dialogs start in. */
-function setupProjectFiles({ ipcMain, dialog, win, documents }) {
+/** Register the IPC handlers. `dialog` and `shell` are Electron's, `win` returns the window to attach dialogs to, `library` is the `ProjectLibrary` (folders, and where the dialogs start). */
+function setupProjectFiles({ ipcMain, dialog, shell, win, library }) {
   // The full project comes first: it is what a plain Save makes. The file type picked in the dialog is the extension of the name.
   const filters = [
     { name: 'TurboCut full project (edit, videos, fonts, style)', extensions: ['turbocutf'] },
@@ -106,9 +106,11 @@ function setupProjectFiles({ ipcMain, dialog, win, documents }) {
   // Only the place is chosen here; the page then writes (text, or a bundle in pieces) once it knows the format.
   ipcMain.handle('project:choose', async (_e, defaultName) => {
     const name = path.basename(String(defaultName || 'project.turbocutf')).replace(/[\\/:*?"<>|\0]/g, ' ');
-    const r = await dialog.showSaveDialog(win(), { title: 'Save project', defaultPath: path.join(documents(), name), filters });
+    const r = await dialog.showSaveDialog(win(), { title: 'Save project', defaultPath: path.join(library.startDir(), name), filters });
     if (r.canceled || !r.filePath) return null;
-    return { path: projectPath(/\.(turbocut[cf]?|json)$/i.test(r.filePath) ? r.filePath : `${r.filePath}.turbocutf`) };
+    const file = projectPath(/\.(turbocut[cf]?|json)$/i.test(r.filePath) ? r.filePath : `${r.filePath}.turbocutf`);
+    library.remember(file); // the next dialog starts here, not in the home folder
+    return { path: file };
   });
   ipcMain.handle('project:write', (_e, file, text) => {
     if (typeof text !== 'string') throw new Error('Nothing to save.');
@@ -119,11 +121,36 @@ function setupProjectFiles({ ipcMain, dialog, win, documents }) {
   ipcMain.handle('project:write-end', (_e, id, commit) => writers.end(id, commit === true));
   ipcMain.handle('project:read', (_e, file) => ({ text: readProject(projectPath(file)) }));
   ipcMain.handle('project:open', async () => {
-    const r = await dialog.showOpenDialog(win(), { title: 'Open project', defaultPath: documents(), properties: ['openFile'], filters: [{ name: 'TurboCut projects', extensions: ['turbocutf', 'turbocut', 'turbocutc', 'json'] }, { name: 'All files', extensions: ['*'] }] });
+    const r = await dialog.showOpenDialog(win(), { title: 'Open project', defaultPath: library.startDir(), properties: ['openFile'], filters: [{ name: 'TurboCut projects', extensions: ['turbocutf', 'turbocut', 'turbocutc', 'json'] }, { name: 'All files', extensions: ['*'] }] });
     if (r.canceled || !r.filePaths[0]) return null;
     const file = projectPath(r.filePaths[0]);
+    library.remember(file);
     return { path: file, text: BUNDLE_EXT.test(file) ? null : readProject(file) };
   });
+  // ---- the project manager: the folders, what is in them, and the few things done to a listed file
+  ipcMain.handle('project:folders', () => ({ folders: library.folders(), saveIn: library.saveFolder() }));
+  ipcMain.handle('project:list', () => library.list());
+  ipcMain.handle('project:add-folder', async () => {
+    const r = await dialog.showOpenDialog(win(), { title: 'Add a folder TurboCut reads projects from', defaultPath: library.startDir(), properties: ['openDirectory', 'createDirectory'] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    library.addFolder(r.filePaths[0]);
+    return { folders: library.folders(), saveIn: library.saveFolder() };
+  });
+  ipcMain.handle('project:remove-folder', (_e, dir) => (library.removeFolder(dir), { folders: library.folders(), saveIn: library.saveFolder() }));
+  ipcMain.handle('project:set-save-folder', (_e, dir) => (library.setSaveFolder(dir), { folders: library.folders(), saveIn: library.saveFolder() }));
+  ipcMain.handle('project:reveal', (_e, file) => {
+    if (library.owns(file)) shell.showItemInFolder(path.normalize(file));
+  });
+  ipcMain.handle('project:trash', async (_e, file) => {
+    if (!library.owns(file)) throw new Error('That file is not in a TurboCut project folder.');
+    await shell.trashItem(path.normalize(file)); // the system's bin, so a mistake can be undone
+  });
+  // A path in the folder new projects go to, under a name that is not taken: where a project fetched through the page (a link) is written.
+  ipcMain.handle('project:unique-path', (_e, name) => {
+    const dir = library.saveFolder();
+    return projectPath(path.join(dir, library.uniqueName(dir, name)));
+  });
+  ipcMain.handle('project:rename', (_e, file, name) => library.rename(file, name));
   // Which of these remembered media paths still hold a file (and how big): the page uses it to know what it can open again by itself.
   ipcMain.handle('media:stat', (_e, list) => {
     const out = {};
