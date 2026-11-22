@@ -687,3 +687,5 @@ input.input, textarea.input, select.input { color: hsl(var(--fg)); }
 :is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) :is(.settings-nav, .guide-list) { gap: 0.15rem; padding: 0.5rem; }
 /* Floating tool buttons stay at the bottom right of the window (the owner's choice), so the right-hand panel keeps room under its last field for them. */
 #app[data-tools='float']:not([data-panel='sheet']) .side-right .tab-body { padding-bottom: 5rem; }
+/* Liquid Glass sets `--lg-spec` (the glass rim image) on its own shapes only, but a custom property inherits: a button inside the side panel painted the panel's rim over itself, a straight edge across its round end. Buttons and fields own no rim image. (Fixed in the engine's liquid style too; this keeps older engine bundles right.) */
+[data-ui='liquid'] :is(.btn, .input) { --lg-spec: none; }
