@@ -31,6 +31,5 @@ export function editLayout(store: Store, patch: Partial<Layout>): Layout {
     s.layouts.push(copy);
     s.layout = copy.name;
   });
-  store.say(`Saved as your own layout "${copy.name}"; the preset itself is unchanged.`);
   return copy;
 }

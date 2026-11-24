@@ -79,7 +79,7 @@ export function parseProject(json: string): Project {
     }
   }
   if (!p.tracks.some((t: any) => t.kind === 'video') || !p.tracks.some((t: any) => t.kind === 'audio')) throw new Error('The project needs a video and an audio track.');
-  return { ...p, name: typeof p.name === 'string' && p.name.trim() ? p.name : 'Untitled', captionPreset: typeof p.captionPreset === 'string' ? p.captionPreset : null } as Project;
+  return { ...p, name: typeof p.name === 'string' && p.name.trim() ? p.name : 'Untitled', nameSet: p.nameSet === true || (p.nameSet === undefined && typeof p.name === 'string' && p.name.trim() !== '' && p.name !== 'Untitled') ? true : undefined, captionPreset: typeof p.captionPreset === 'string' ? p.captionPreset : null } as Project;
 }
 
 /** A Twitch clip link, short enough to be a link and on a Twitch address (the project may come from anyone). */
@@ -119,3 +119,6 @@ export function matchMedia(assets: Pick<Asset, 'id' | 'name' | 'size'>[], files:
   }
   return out;
 }
+
+/** The name a file stands for: its file name without the project extension. */
+export const nameOfFile = (fileName: string): string => fileName.replace(/\.turbocut[cf]?$/i, '').trim();

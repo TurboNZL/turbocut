@@ -92,16 +92,16 @@ export class Player {
       while (this.wanted >= 0 && !this.store.playing) {
         const f = this.wanted;
         this.wanted = -1;
-        await this.draw(f, this.store.lib);
+        await this.draw(f, this.store.lib, true);
       }
     } finally {
       this.busy = false;
     }
   }
 
-  private async draw(frame: number, src: FrameSource): Promise<void> {
+  private async draw(frame: number, src: FrameSource, still = false): Promise<void> {
     const p = this.store.project;
-    await drawVideo(this.ctx, p, frame, src, () => drawCaption(this.ctx, p, this.store.preset, frame));
+    await drawVideo(this.ctx, p, frame, src, () => drawCaption(this.ctx, p, this.store.preset, frame), still);
   }
 
   async play(): Promise<void> {

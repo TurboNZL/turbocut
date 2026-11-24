@@ -31,7 +31,7 @@ try {
     s.seek(120);
     window.turbocutApp.split();
     window.turbocutApp.actions.addText('Saved text');
-    s.edit((p) => (p.name = 'My short'));
+    s.edit((p) => ((p.name = 'My short'), (p.nameSet = true)));
   }, media.toString('base64'));
   assert.equal(await a.evaluate(() => window.turbocutApp.store.dirty), true, 'edits make the project dirty');
   const before = await a.evaluate(() => JSON.parse(JSON.stringify(window.turbocutApp.store.project)));
@@ -86,7 +86,7 @@ try {
   console.log('export from the reopened project:', JSON.stringify(exp));
 
   // ---- unsaved work is not thrown away silently
-  await b.evaluate(() => window.turbocutApp.store.edit((p) => (p.name = 'Changed')));
+  await b.evaluate(() => window.turbocutApp.store.edit((p) => ((p.name = 'Changed'), (p.nameSet = true))));
   await b.getByRole('button', { name: 'File', exact: true }).click();
   await b.getByRole('menuitem', { name: 'New project' }).click();
   await b.getByRole('dialog', { name: 'Save this project first?' }).waitFor();

@@ -1,7 +1,7 @@
 import { dialogueToCues, parseAss, writeAss } from '../captions/ass.ts';
 import { entranceTags, styleByName } from '../captions/presets.ts';
 import { groupingFor, groupWords } from '../transcribe/provider.ts';
-import { LocalTranscriber, MODELS, type Compute } from '../transcribe/local.ts';
+import { MODELS, sharedTranscriber, type Compute } from '../transcribe/local.ts';
 import { cleanWords } from '../transcribe/post.ts';
 import { projectDuration } from '../core/timeline.ts';
 import { renderPcm16k } from '../transcribe/pcm.ts';
@@ -27,7 +27,8 @@ export class CaptionsPanel {
     store.on('preset', () => this.build());
     store.on('settings', () => this.build());
     store.on('project', () => this.renderCues());
-    store.on('selection', () => this.renderCues());
+    // A selection only moves the highlight (and brings the row into view): redrawing the list threw the panel back to its top.
+    store.on('selection', () => this.markSelected(true));
     this.build();
   }
 
@@ -151,21 +152,41 @@ export class CaptionsPanel {
     this.store.emit('selection');
   }
 
+  /** Bring the selected caption's row into view (after the tab has been shown). */
+  reveal(): void {
+    this.markSelected(true);
+  }
+
+  /** Highlight the selected caption's row; with `reveal`, scroll the panel to it unless it is already in view. */
+  private markSelected(reveal: boolean): void {
+    const id = this.store.selectedCue;
+    let row: HTMLElement | null = null;
+    for (const el of this.list.querySelectorAll<HTMLElement>('.cue')) {
+      const on = el.dataset.cue === id;
+      el.classList.toggle('sel', on);
+      if (on) row = el;
+    }
+    if (reveal && row && row.isConnected) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
   private renderCues(): void {
     const store = this.store;
     const { project: p, preset } = store;
+    const scroller = this.list.closest<HTMLElement>('.tab-body, .bt-body, .side') ?? null;
+    const top = scroller?.scrollTop ?? 0;
     this.list.replaceChildren(
       ...p.captions.map((cue) => {
-        const text = h('input', { class: 'input', value: cue.text, 'aria-label': 'Caption text' });
+        const text = h('input', { class: 'input cue-text', value: cue.text, 'aria-label': 'Caption text' });
         text.addEventListener('change', () => store.edit(() => (cue.text = text.value)));
-        const style = h('select', { class: 'input sm', 'aria-label': 'Caption style' }, ...preset.styles.map((s) => h('option', { value: s.name, selected: s.name === cue.style }, s.name.replace(/^Default ?-? ?/, '') || 'Default')));
+        const style = h('select', { class: 'input sm cue-style', 'aria-label': 'Caption style' }, ...preset.styles.map((s) => h('option', { value: s.name, selected: s.name === cue.style }, s.name.replace(/^Default ?-? ?/, '') || 'Default')));
         style.addEventListener('change', () => store.edit(() => (cue.style = style.value)));
-        const del = h('button', { class: 'btn btn-ghost', 'aria-label': 'Delete caption', onclick: () => store.edit((pr) => (pr.captions = pr.captions.filter((c) => c.id !== cue.id))) }, '×');
-        const time = h('button', { class: 'btn btn-ghost mono', title: 'Go to caption', onclick: () => store.seek(cue.start) }, `${(cue.start / p.fps).toFixed(1)}s`);
-        return h('div', { class: `cue${cue.id === store.selectedCue ? ' sel' : ''}` }, time, text, style, del);
+        const del = h('button', { class: 'btn btn-ghost cue-del', 'aria-label': 'Delete caption', onclick: () => store.edit((pr) => (pr.captions = pr.captions.filter((c) => c.id !== cue.id))) }, '×');
+        const time = h('button', { class: 'btn btn-ghost mono cue-time', title: 'Go to caption', onclick: () => store.seek(cue.start) }, `${(cue.start / p.fps).toFixed(1)}s`);
+        return h('div', { class: `cue${cue.id === store.selectedCue ? ' sel' : ''}`, 'data-cue': cue.id }, time, style, del, text);
       }),
     );
     if (p.captions.length === 0) this.list.append(h('p', { class: 'hint' }, 'No captions yet. Generate them above, import an .ass file, or add one by hand.'));
+    if (scroller) scroller.scrollTop = top; // a redraw keeps the place in the list
   }
 
   private async generate(
@@ -176,8 +197,9 @@ export class CaptionsPanel {
   ): Promise<void> {
     const { project: p, lib } = this.store;
     if (!p.tracks.some((t) => t.kind === 'audio' && t.clips.length)) throw new Error('Add a clip with audio first');
-    const localProvider = new LocalTranscriber(local.model, local.compute);
-    localProvider.onStatus = (s) => say(s.phase === 'download' ? `Downloading speech model… ${Math.round((s.progress ?? 0) * 100)}%` : 'Listening…', s.phase === 'download' ? s.progress : undefined);
+    const localProvider = sharedTranscriber(local.model, local.compute);
+    // The percentage is the model being read in: from the network the first time, from this device's own copy after that.
+    localProvider.onStatus = (s) => say(s.phase === 'download' ? `Loading the speech model… ${Math.round((s.progress ?? 0) * 100)}% (it is only downloaded once)` : s.note ?? 'Listening…', s.phase === 'download' ? s.progress : undefined);
     const provider = localProvider;
     say('Preparing audio…');
     const pcm = await renderPcm16k(p, lib, (f) => say('Preparing audio…', f), signal);

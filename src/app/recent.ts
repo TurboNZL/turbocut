@@ -106,12 +106,14 @@ async function existingKey(all: Row[], ref: ProjectRef): Promise<string | undefi
 }
 
 /** Note that this project lives in this file. Never throws: a blocked or full database only means the list stays as it was. */
-export async function rememberFile(p: Project, ref: ProjectRef | null): Promise<void> {
+export async function rememberFile(p: Project, ref: ProjectRef | null, edited = true): Promise<void> {
   if (!ref) return;
   try {
     const all = await rows();
     const key = (await existingKey(all, ref)) ?? (ref.kind === 'path' ? ref.path : `h-${crypto.randomUUID()}`);
-    const meta = describeProject(p, key, refWhere(ref));
+    // `at` is when the project was last EDITED: saving writes it, opening only keeps what was there (or starts it now for a file not listed yet).
+    const before = all.find((r) => r.key === key)?.meta.at;
+    const meta = describeProject(p, key, refWhere(ref), edited || before === undefined ? Date.now() : before);
     await tx('readwrite', (s) => s.put({ key, meta, ref } satisfies Row));
     const kept = newestFirst([...all.filter((r) => r.key !== key).map((r) => r.meta), meta]);
     for (const old of all.filter((r) => r.key !== key && !kept.some((k) => k.key === r.key))) await tx('readwrite', (s) => s.delete(old.key));

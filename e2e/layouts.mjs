@@ -40,7 +40,7 @@ try {
   assert.equal(await page.locator('.transport .edit-bar').count(), 1, 'the tools sit in the play button row');
   const play = await box('.transport-main');
   const split = await box('.edit-bar [aria-label="Split"]');
-  assert.ok(Math.abs(play.y + play.h / 2 - (split.y + split.h / 2)) < 30, 'on the same row as play');
+  assert.ok(split.y + split.h / 2 - (play.y + play.h / 2) < 80, 'on the play row, or whole on the row right under it when the picture area is narrow');
   assert.deepEqual(await page.$$eval('.edit-bar .tool:not(.fab-toggle)', (els) => els.map((e) => e.getAttribute('aria-label')).slice(0, 3)), ['Trim start', 'Split', 'Trim end'], 'Split sits between the two trim buttons');
 
   // ---- presets
@@ -95,7 +95,7 @@ try {
   l = (await saved())[0];
   assert.ok(l.divisions[1].tabs.includes('Project') && !l.divisions[0].tabs.includes('Project'), 'a tab moves from one panel to the other');
   await dlg().getByLabel('Right panel width').fill('480');
-  await page.locator('.dlg .bt-close').click();
+  await page.locator('.dlg button.bt-close').click();
   assert.ok((await box('.side-left')).x < (await box('.stage')).x && (await box('.side-right')).x > (await box('.stage')).x, 'the two panels flank the preview');
   assert.ok(Math.abs((await box('.side-right')).w - 480) < 30, `right panel width applied (${(await box('.side-right')).w})`);
   await page.screenshot({ path: `${out}layout-custom.png` });
@@ -174,20 +174,20 @@ try {
   await page.getByLabel('Bottom dock with Home, Edit and Settings').uncheck();
   await page.locator('.dock').waitFor({ state: 'hidden' });
   await dlg().waitFor(); // turning it off while on the Settings page turns that page into the Settings window
-  await page.locator('.dlg .bt-close').click();
+  await page.locator('.dlg button.bt-close').click();
 
   // the Settings window starts in the search box too
   await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
   assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('settings-search')), true, 'the search box has the focus when the window opens');
   await page.keyboard.type('waveform');
   assert.ok(await dlg().locator('.settings-hit').getByText('Show audio waveforms').isVisible(), 'typing right away searches');
-  await page.locator('.dlg .bt-close').click();
+  await page.locator('.dlg button.bt-close').click();
 
   // ---- the first tab and tab switching are settings
   await openLayout();
   await pick(page, 'Tab that opens first', 'Captions', dlg());
   assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.openTab), 'Captions');
-  await page.locator('.dlg .bt-close').click();
+  await page.locator('.dlg button.bt-close').click();
   await page.evaluate(() => window.turbocutApp.store.updateSettings({ openTab: 'Media' }));
 
   // ---- export and import in a fresh browser profile
@@ -222,7 +222,7 @@ try {
 
   // a narrow window always gets the sheet, even for a two-sided layout, and comes back when widened
   await choose('Library and editor');
-  await page.locator('.dlg .bt-close').click();
+  await page.locator('.dlg button.bt-close').click();
   await page.setViewportSize({ width: 600, height: 800 });
   await page.waitForFunction(() => document.getElementById('app').dataset.panel === 'sheet');
   await page.setViewportSize({ width: 1280, height: 800 });

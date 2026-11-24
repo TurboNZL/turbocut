@@ -4,6 +4,7 @@ import { addClip, createClip, createProject, splitAt } from '../src/core/timelin
 
 const sample = () => {
   const p = createProject({ name: 'Short one', fps: 60 });
+  p.nameSet = true; // a typed name; a file saved before names followed files counts as typed too (see the migration test below)
   p.assets.a1 = { id: 'a1', name: 'clip.mp4', ref: 'clip.mp4', hasVideo: true, hasAudio: true, size: 1234, duration: 600, width: 1080, height: 1920 };
   const c = createClip('a1', 0, 600);
   c.keys.x = [{ t: 0, v: 0, ease: 'linear' }, { t: 100, v: 50, ease: 'inOut' }];
@@ -68,5 +69,14 @@ describe('project files', () => {
   it('falls back to the name alone when the size changed', () => {
     const m = matchMedia([{ id: 'a', name: 'x.mp4', size: 10 }], [{ name: 'x.mp4', size: 11 }]);
     expect(m.get('a')).toBe(0);
+  });
+});
+
+describe('project names', () => {
+  it('treats an old file with a name other than Untitled as a typed name, and Untitled as following the file', () => {
+    const a = createProject({ name: 'Mine' });
+    const b = createProject({ name: 'Untitled' });
+    expect(parseProject(serializeProject(a)).nameSet).toBe(true);
+    expect(parseProject(serializeProject(b)).nameSet).toBeUndefined();
   });
 });

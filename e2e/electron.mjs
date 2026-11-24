@@ -124,19 +124,19 @@ try {
     const menu = async (name) => { await win.getByRole('button', { name: 'File', exact: true }).click(); await win.getByRole('menuitem', { name }).click(); };
     await menu('New project');
     await win.getByRole('button', { name: 'Discard it' }).click();
-    const [chooser] = await Promise.all([win.waitForEvent('filechooser'), menu('Import media…')]);
+    const [chooser] = await Promise.all([win.waitForEvent('filechooser'), win.getByRole('button', { name: 'Import files…' }).click()]);
     await chooser.setFiles(clip);
     await win.waitForFunction(() => Object.keys(window.turbocutApp.store.project.assets).length === 1, null, { timeout: 20000 });
     const imported = await win.evaluate(() => Object.values(window.turbocutApp.store.project.assets)[0]);
     console.log('imported asset path:', imported.path);
     assert.equal(imported.path, clip, 'the shell told the page where the picked file is');
-    await win.evaluate(() => { const a = window.turbocutApp; a.actions.addAsset(Object.keys(a.store.project.assets)[0]); a.store.edit((p) => (p.name = 'Shell short')); });
+    await win.evaluate(() => { const a = window.turbocutApp; a.actions.addAsset(Object.keys(a.store.project.assets)[0]); a.store.edit((p) => ((p.name = 'Shell short'), (p.nameSet = true))); });
     await win.keyboard.press('Control+s');
     await win.waitForFunction(() => !window.turbocutApp.store.dirty);
     const saved = readFileSync(projectFile, 'utf8');
     assert.ok(saved.includes(JSON.stringify(clip).slice(1, -1)), 'the project file remembers the video\'s path');
     assert.ok(!saved.includes('AAAA') && saved.length < 20000, 'and holds the edit, not the video');
-    await win.evaluate(() => window.turbocutApp.store.edit((p) => (p.name = 'Shell short 2'))); // autosave writes it after a few seconds
+    await win.evaluate(() => window.turbocutApp.store.edit((p) => ((p.name = 'Shell short 2'), (p.nameSet = true)))); // autosave writes it after a few seconds
     await win.waitForFunction(() => !window.turbocutApp.store.dirty, null, { timeout: 15000 });
     assert.match(readFileSync(projectFile, 'utf8'), /Shell short 2/, 'autosave wrote to the same file');
 
@@ -210,7 +210,7 @@ try {
     assert.match(lib.def, /Projects$/);
     // a project saved into the default folder shows up in the manager, and opens from it
     await stub(join(lib.def, 'In app data.turbocutf'));
-    await win.evaluate(() => { const a = window.turbocutApp; a.store.edit((p) => (p.name = 'App data one')); return a.actions.saveProject(true); });
+    await win.evaluate(() => { const a = window.turbocutApp; a.store.edit((p) => ((p.name = 'App data one'), (p.nameSet = true))); return a.actions.saveProject(true); });
     await win.waitForFunction(() => /Saved In app data\.turbocutf/.test(window.turbocutApp.store.status), null, { timeout: 20000 });
     // the folder the person adds is read too (the dialog is answered by the test)
     await app.evaluate(({ dialog }, d) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] }); }, dir);

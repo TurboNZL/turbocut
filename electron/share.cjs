@@ -36,7 +36,7 @@ const TOKEN = /^[A-Za-z0-9_-]{22}$/;
 const KEY = /^[A-Za-z0-9_-]{22,64}$/;
 const MAX_PAIRED = 20;
 const hashKey = (k) => crypto.createHash('sha256').update(String(k)).digest('hex');
-const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Private-Network': 'true', 'Access-Control-Max-Age': '600' };
+const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Private-Network': 'true', 'Access-Control-Max-Age': '600' };
 
 /** Addresses that mean "on this network": loopback, link-local and the private ranges. */
 function isLocalAddress(ip) {
@@ -288,6 +288,10 @@ class Share extends EventEmitter {
       if (!isLocalAddress(req.socket.remoteAddress)) return reply(403, { error: 'local network only' });
       const url = new URL(req.url, 'http://x');
       const parts = url.pathname.split('/').filter(Boolean);
+      // A phone's page (https://localhost) sends a project to this computer with plain fetch: offer, parts, done. The offer is still answered
+      // by the person here, so letting the page talk to these routes decides nothing.
+      for (const [k, v] of Object.entries(CORS)) res.setHeader(k, v);
+      if (req.method === 'OPTIONS') return (res.writeHead(204), res.end());
       if (parts[0] === 'shelf') return this.onShelf(req, res, reply, parts, url);
       if (parts[0] === 'inbox') return this.onInbox(req, res, reply);
       if (req.method === 'GET' && parts[0] === 'hello') return reply(200, { app: 'turbocut', id: this.id, name: this.name, version: this.version });

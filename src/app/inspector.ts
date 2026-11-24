@@ -84,6 +84,8 @@ export class Inspector {
 
   /** The setting the person last worked on: the `,` and `.` keys jump between ITS keyframes. */
   private activeParam: string | null = null;
+  /** Settings the person opened out (kept while the panel is redrawn for another clip). */
+  private openParams = new Set<string>();
   /** The keyframe last clicked in a lane (highlighted, and the one the menu was opened on). */
   private selKey: { param: string; t: number } | null = null;
   private laneDragging = false;
@@ -104,8 +106,19 @@ export class Inspector {
     const key = h('button', { class: 'btn btn-ghost kf', title: 'Add or remove a keyframe at the playhead', 'aria-label': `Keyframe ${param.label}` }, icon('key', 16));
     const keys = h('span', { class: 'kf-group' }, prev, key, next);
     const lane = h('div', { class: 'kf-lane', 'data-param': param.id, style: { display: 'none' } });
-    const row = h('label', { class: 'prop' }, h('span', { class: 'prop-l' }, param.label), range, num, keys);
+    // The name is a button: pressing it opens the setting out (slider on a line of its own, then the keyframe controls); in a narrow panel
+    // that is where the slider and the keyframe buttons live, so nothing is squeezed to a sliver.
+    const name = h('button', { class: 'prop-l prop-name', type: 'button', 'aria-expanded': String(this.openParams.has(param.id)), title: `Show or hide the slider and keyframes of ${param.label}` }, param.label);
+    const row = h('div', { class: 'prop' }, name, range, num, keys);
     const block = h('div', { class: 'prop-block', 'data-param': param.id }, row, lane);
+    if (this.openParams.has(param.id)) block.dataset.open = '';
+    name.addEventListener('click', () => {
+      const open = !block.hasAttribute('data-open');
+      block.toggleAttribute('data-open', open);
+      name.setAttribute('aria-expanded', String(open));
+      if (open) this.openParams.add(param.id);
+      else this.openParams.delete(param.id);
+    });
     const mark = () => {
       this.activeParam = param.id;
       this.el.querySelectorAll('.prop-block.active').forEach((x) => x !== block && x.classList.remove('active'));
@@ -269,6 +282,7 @@ export class Inspector {
       ...(Object.keys(EASE_LABEL) as Easing[]).map((e) => ({ label: `${k.ease === e ? '✓ ' : '   '}${EASE_LABEL[e]}`, run: () => this.store.edit(() => (k.ease = e)) })),
       {
         label: 'Delete keyframe',
+        icon: 'trash',
         run: () =>
           this.store.edit(() => {
             const left = removeKeyframe(param.keys(clip), t);

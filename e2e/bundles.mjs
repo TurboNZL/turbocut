@@ -33,7 +33,7 @@ try {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     await window.turbocutApp.importMedia([new File([bytes], 'clip.webm', { type: 'video/webm' })], true);
     await window.turbocutApp.importMedia([new File([bytes], 'twitch-clip.webm', { type: 'video/webm' })]);
-    window.turbocutApp.store.edit((p) => (p.name = 'Bundle test'));
+    window.turbocutApp.store.edit((p) => ((p.name = 'Bundle test'), (p.nameSet = true)));
     // the second file came from a link
     const a = Object.values(window.turbocutApp.store.project.assets).find((x) => x.name === 'twitch-clip.webm');
     a.source = { type: 'twitch', url: 'https://clips.twitch.tv/SomeSlug' };

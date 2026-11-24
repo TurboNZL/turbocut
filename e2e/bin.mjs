@@ -156,8 +156,7 @@ try {
   p2.on('pageerror', (e) => errors.push(e.message));
   await p2.goto('http://localhost:5203/');
   await p2.waitForFunction(() => window.turbocutApp);
-  await p2.getByRole('button', { name: 'File', exact: true }).click();
-  const [chooser] = await Promise.all([p2.waitForEvent('filechooser'), p2.getByRole('menuitem', { name: 'Import media…' }).click()]);
+  const [chooser] = await Promise.all([p2.waitForEvent('filechooser'), p2.getByRole('button', { name: 'Import files…' }).click()]);
   await chooser.setFiles(`${root}e2e/.media/src.webm`);
   await p2.waitForSelector('.bin-item');
   assert.equal(await p2.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((x) => x.clips).length), 0, 'importing does not put anything on the timeline');

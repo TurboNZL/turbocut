@@ -47,3 +47,27 @@ describe('converting a video the device cannot decode', () => {
     expect(existsSync(join(dir, 'work', id))).toBe(false);
   }, 60_000);
 });
+
+describe('GPU conversion and the NVIDIA VA-API setup', () => {
+  const { ffmpegArgsGpu } = createRequire(import.meta.url)('../electron/transcode.cjs');
+  const { nvidiaDriver, setupNvidia } = createRequire(import.meta.url)('../electron/graphics.cjs');
+  it('reads with NVDEC and writes H.264 with NVENC, keeping even sides and 4:2:0', () => {
+    const a = ffmpegArgsGpu('in', 'out.mp4').join(' ');
+    expect(a).toContain('-hwaccel cuda');
+    expect(a).toContain('-c:v h264_nvenc');
+    expect(a).toContain('yuv420p');
+    expect(a).toContain('trunc(iw/2)*2');
+  });
+  it('finds the driver and sets what Chromium needs, but leaves a person\'s own setting alone', () => {
+    expect(nvidiaDriver(['/a', '/b'], (p: string) => p === '/b/nvidia_drv_video.so')).toBe('/b/nvidia_drv_video.so');
+    expect(nvidiaDriver(['/a'], () => false)).toBeNull();
+    const switches: string[] = [];
+    const app = { commandLine: { appendSwitch: (s: string) => switches.push(s) } };
+    const env: Record<string, string> = {};
+    expect(setupNvidia(app, env, '/x/nvidia_drv_video.so')).toBe(true);
+    expect(env.LIBVA_DRIVER_NAME).toBe('nvidia');
+    expect(switches).toContain('disable-gpu-sandbox');
+    expect(setupNvidia(app, { LIBVA_DRIVER_NAME: 'iHD' }, '/x')).toBe(false);
+    expect(setupNvidia(app, {}, null)).toBe(false);
+  });
+});

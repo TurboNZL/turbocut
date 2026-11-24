@@ -19,8 +19,7 @@ try {
     page.on('console', (m) => m.type() === 'error' && !ignorable(m.text()) && errors.push(m.text()));
     await page.goto('http://localhost:5211/');
     await page.waitForFunction(() => window.turbocutApp);
-    await page.getByRole('button', { name: 'File', exact: true }).click();
-    const [ch] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('menuitem', { name: 'Import media…' }).click()]);
+    const [ch] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Import files…' }).click()]);
     await ch.setFiles(`${root}e2e/.media/src.webm`);
     await page.waitForFunction(() => Object.keys(window.turbocutApp.store.project.assets).length === 1);
     // importing only fills the bin; put the clip on the timeline the way a person does, from the bin
@@ -266,7 +265,7 @@ try {
   assert.equal(await page.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((t) => t.clips).find((c) => c.text).text.animation.type), 'none');
   const stillFirst = await bright(textStart);
   console.log('text pixels on its first frame: bounce', popFirst, ' none', stillFirst);
-  assert.ok(stillFirst > 300 && popFirst < 50, 'static text is fully there on its first frame; the bounce starts from nothing');
+  assert.ok(stillFirst > 300 && popFirst > 300, 'text is visible on its first frame in the paused preview (the pop-in itself still starts from nothing when playing and in the export)');
   await pick(page, 'Entrance animation', 'bounce');
   assert.equal(await page.evaluate(() => window.turbocutApp.store.project.tracks.flatMap((t) => t.clips).find((c) => c.text).text.animation.type), 'bounce');
   await page.close();
@@ -277,8 +276,8 @@ try {
   assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.transcribe.model), 'onnx-community/whisper-small_timestamped', 'a computer defaults to the accurate model');
   await page.getByRole('button', { name: 'Generate captions' }).click();
   await page.getByRole('dialog', { name: 'Choose a speech model' }).waitFor();
-  assert.ok(await page.getByRole('radio', { name: /Accurate/ }).isChecked(), 'the accurate model is preselected on a computer');
-  await page.getByRole('radio', { name: /Fast/ }).check();
+  assert.ok(await page.getByRole('radio', { name: /^Small/ }).isChecked(), 'the Small model is preselected on a computer');
+  await page.getByRole('radio', { name: /^Tiny/ }).check();
   await page.getByRole('button', { name: 'Use this model' }).click();
   await page.waitForFunction(() => window.turbocutApp.store.settings.transcribe.modelChosen);
   assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.transcribe.model), 'onnx-community/whisper-tiny.en_timestamped');
@@ -335,7 +334,7 @@ try {
     await page.waitForTimeout(80);
     await noHand(`settings ${t}`);
   }
-  await page.locator('.dlg .bt-close').click();
+  await page.locator('.dlg button.bt-close').click();
   await page.getByRole('tab', { name: 'Media', exact: true }).click();
   await noHand('media');
   await page.getByRole('tab', { name: 'Captions', exact: true }).click();

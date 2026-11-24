@@ -1,3 +1,5 @@
+import { icon, type IconName } from './icons.ts';
+
 type Child = Node | string | null | undefined | false;
 
 /** Tiny element builder: h('button', { class: 'btn', onclick }, 'Label'). */
@@ -67,6 +69,8 @@ export interface MenuItem {
   label: string;
   run: () => void;
   disabled?: boolean;
+  /** A small picture before the label. */
+  icon?: IconName;
 }
 
 /** A small themed pop-up menu next to `anchor`. Closes on a choice, an outside press or Escape. */
@@ -83,7 +87,7 @@ export function popupMenu(anchor: HTMLElement | { x: number; y: number }, items:
   };
   const esc = (e: KeyboardEvent) => e.key === 'Escape' && close();
   for (const it of items) {
-    const b = h('button', { class: 'btn btn-ghost', role: 'menuitem', disabled: !!it.disabled }, it.label);
+    const b = h('button', { class: 'btn btn-ghost menu-item', role: 'menuitem', disabled: !!it.disabled }, ...(it.icon ? [icon(it.icon, 16)] : []), h('span', {}, it.label));
     b.addEventListener('click', () => {
       close();
       it.run();

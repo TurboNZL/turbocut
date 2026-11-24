@@ -1,22 +1,28 @@
 import type { Pcm16k, TimedWord, Transcriber, TranscribeOptions } from './provider.ts';
 
+/** Smallest to largest, named by size so the order says what to expect: each step up is slower and more accurate. The ids are Hugging Face repositories. */
 export const MODELS = [
-  { id: 'onnx-community/whisper-base_timestamped', label: 'Balanced (base, about 80 MB)' },
-  { id: 'onnx-community/whisper-tiny.en_timestamped', label: 'Fast, English only (tiny)' },
-  { id: 'onnx-community/whisper-small_timestamped', label: 'Accurate (small, about 250 MB)' },
+  { id: 'onnx-community/whisper-tiny.en_timestamped', label: 'Tiny, English only (about 40 MB): quickest, roughest' },
+  { id: 'onnx-community/whisper-base_timestamped', label: 'Base (about 80 MB): good for clear speech, best on a phone' },
+  { id: 'onnx-community/whisper-small_timestamped', label: 'Small (about 250 MB): fewer wrong words, tighter timing' },
+  // Larger models for a computer. Their download sizes have not been measured here (the sandbox cannot reach Hugging Face): expect several hundred MB, and slower captions.
+  { id: 'onnx-community/whisper-medium_timestamped', label: 'Medium (large download, computers only): slower, more accurate again' },
+  { id: 'onnx-community/whisper-large-v3-turbo_timestamped', label: 'Large, turbo (very large download, computers only): the most accurate, slowest' },
 ] as const;
-export const BALANCED_MODEL: string = MODELS[0].id;
-export const ACCURATE_MODEL: string = MODELS[2].id;
+const modelId = (repo: string): string => MODELS.find((m) => m.id.endsWith(`/${repo}`))!.id;
+export const TINY_MODEL: string = modelId('whisper-tiny.en_timestamped');
+export const BALANCED_MODEL: string = modelId('whisper-base_timestamped');
+export const ACCURATE_MODEL: string = modelId('whisper-small_timestamped');
 
-/** The model offered first: accurate on a computer (the download is once, the wait is for a short clip), balanced on a phone. */
+/** The model offered first: small on a computer (the download is once, the wait is for a short clip), base on a phone. */
 export const recommendedModel = (touch: boolean): string => (touch ? BALANCED_MODEL : ACCURATE_MODEL);
 export const DEFAULT_MODEL = BALANCED_MODEL;
 
-/** The choices shown the first time captions are generated: what each costs and gives. */
+/** The choices shown the first time captions are generated and in the first-run setup, smallest first: what each costs and gives. */
 export const MODEL_CHOICES: { id: string; name: string; size: string; note: string }[] = [
-  { id: 'onnx-community/whisper-tiny.en_timestamped', name: 'Fast', size: 'about 40 MB', note: 'English only. Quickest, and the most mistakes and the loosest timing.' },
-  { id: BALANCED_MODEL, name: 'Balanced', size: 'about 80 MB', note: 'Good for clear speech. The best fit for a phone.' },
-  { id: ACCURATE_MODEL, name: 'Accurate', size: 'about 250 MB', note: 'Fewer wrong words and tighter timing. Slower, and the better choice on a computer.' },
+  { id: TINY_MODEL, name: 'Tiny (English only)', size: 'about 40 MB', note: 'Quickest. The most mistakes and the loosest timing.' },
+  { id: BALANCED_MODEL, name: 'Base', size: 'about 80 MB', note: 'Good for clear speech. The best fit for a phone.' },
+  { id: ACCURATE_MODEL, name: 'Small', size: 'about 250 MB', note: 'Fewer wrong words and tighter timing. Slower, and the better choice on a computer.' },
 ];
 
 export type Compute = 'auto' | 'webgpu' | 'wasm';
@@ -30,10 +36,23 @@ export interface RunInfo {
 }
 
 export async function hasWebGpu(): Promise<boolean> {
+  return (await webGpuState()).ok;
+}
+
+/**
+ * Whether WebGPU can be trusted for the speech model: there has to be a real graphics adapter. A software ("fallback") adapter is slower than the
+ * CPU path and a weak one can run out of video memory, which on some systems takes the whole desktop down, so Automatic leaves both to the CPU.
+ */
+export async function webGpuState(): Promise<{ ok: boolean; why?: string }> {
   try {
-    return !!(await (navigator as any).gpu?.requestAdapter());
+    const gpu = (navigator as any).gpu;
+    if (!gpu) return { ok: false, why: 'This device has no WebGPU.' };
+    const adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
+    if (!adapter) return { ok: false, why: 'No graphics adapter answered.' };
+    if (adapter.isFallbackAdapter || adapter.info?.isFallbackAdapter) return { ok: false, why: 'WebGPU here is software only, which is slower than the CPU path.' };
+    return { ok: true };
   } catch {
-    return false;
+    return { ok: false, why: 'WebGPU could not be started.' };
   }
 }
 
@@ -48,7 +67,7 @@ export class LocalTranscriber implements Transcriber {
   readonly label = 'This device';
   private worker: Worker | null = null;
   /** Reported while the model downloads (0..1) or runs. */
-  onStatus?: (s: { phase: 'download' | 'transcribing'; progress?: number }) => void;
+  onStatus?: (s: { phase: 'download' | 'transcribing'; progress?: number; note?: string }) => void;
 
   /** What the last run actually used and heard, for the copyable report. */
   lastInfo?: RunInfo;
@@ -57,7 +76,48 @@ export class LocalTranscriber implements Transcriber {
 
   async transcribe(audio: Pcm16k, opts: TranscribeOptions = {}): Promise<TimedWord[]> {
     opts.signal?.throwIfAborted();
-    const device = this.compute === 'auto' ? ((await hasWebGpu()) ? 'webgpu' : 'wasm') : this.compute;
+    const auto = this.compute === 'auto';
+    const device: 'webgpu' | 'wasm' = auto ? ((await hasWebGpu()) ? 'webgpu' : 'wasm') : (this.compute as 'webgpu' | 'wasm');
+    try {
+      return await this.run(device, audio, opts);
+    } catch (e) {
+      if (opts.signal?.aborted || (e instanceof DOMException && e.name === 'AbortError')) throw e;
+      this.drop(); // a failed run may have left the graphics memory in a bad state: start the worker over
+      const why = e instanceof Error ? e.message : String(e);
+      if (device === 'webgpu' && auto) {
+        // Automatic never leaves the person with a broken GPU run: say so and do it again on the CPU.
+        this.onStatus?.({ phase: 'transcribing', note: 'The graphics chip failed, so this uses the CPU (slower).' });
+        return this.run('wasm', audio, opts);
+      }
+      throw new Error(device === 'webgpu' ? `The graphics chip (WebGPU) failed: ${why.slice(0, 200)} In Settings, Captions, choose Automatic or CPU as the processor.` : why);
+    }
+  }
+
+  /** Download and store the model now, without transcribing anything (the first-run setup). Always on the CPU path: it only has to fetch the files. */
+  preload(onProgress: (f: number) => void, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    const worker = (this.worker ??= new Worker(new URL('./whisper.worker.ts', import.meta.url), { type: 'module' }));
+    return new Promise((resolve, reject) => {
+      const end = () => ((worker.onmessage = null), (worker.onerror = null), signal?.removeEventListener('abort', stop));
+      const stop = () => (end(), worker.terminate(), (this.worker = null), reject(new DOMException('Cancelled', 'AbortError')));
+      signal?.addEventListener('abort', stop);
+      worker.onmessage = (e) => {
+        if (e.data.type === 'download') onProgress(e.data.progress);
+        else if (e.data.type === 'loaded') (end(), resolve());
+        else if (e.data.type === 'error') (end(), reject(new Error(e.data.message)));
+      };
+      worker.onerror = (e) => (end(), reject(new Error(e.message || 'Could not load the model')));
+      worker.postMessage({ type: 'load', samples: new Float32Array(0), model: this.model, device: 'wasm' });
+    });
+  }
+
+  private drop(): void {
+    this.worker?.terminate();
+    this.worker = null;
+  }
+
+  private run(device: 'webgpu' | 'wasm', audio: Pcm16k, opts: TranscribeOptions): Promise<TimedWord[]> {
+    opts.signal?.throwIfAborted();
     this.worker ??= new Worker(new URL('./whisper.worker.ts', import.meta.url), { type: 'module' });
     const worker = this.worker;
     return new Promise((resolve, reject) => {
@@ -69,7 +129,7 @@ export class LocalTranscriber implements Transcriber {
       const onAbort = () => {
         cleanup();
         worker.terminate();
-        this.worker = null;
+        if (this.worker === worker) this.worker = null;
         reject(new DOMException('Cancelled', 'AbortError'));
       };
       if (opts.signal?.aborted) return onAbort(); // already cancelled: an 'abort' event would never come
@@ -87,4 +147,15 @@ export class LocalTranscriber implements Transcriber {
       worker.postMessage({ type: 'run', samples, model: this.model, device, language: opts.language }, [samples.buffer]);
     });
   }
+}
+
+/**
+ * One transcriber is kept for the session per model and processor, so generating captions again reuses the model that is already loaded
+ * (a new worker every time meant reading the whole model in again: it looked like downloading it again).
+ */
+let shared: { key: string; t: LocalTranscriber } | null = null;
+export function sharedTranscriber(model: string, compute: Compute): LocalTranscriber {
+  const key = `${model}|${compute}`;
+  if (shared?.key !== key) shared = { key, t: new LocalTranscriber(model, compute) };
+  return shared.t;
 }

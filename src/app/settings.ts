@@ -28,6 +28,17 @@ export const PREVIEW_FPS: PreviewFps[] = ['auto', 'full', 'half', 'third', 'quar
 export type TrackGroup = 'captions' | 'video' | 'audio';
 export const TRACK_GROUPS: TrackGroup[] = ['video', 'audio', 'captions'];
 
+/** The colours and UI style, mirrored from the theme engine so a config file can carry them. */
+export interface Look {
+  theme: string;
+  ui: string;
+  glass?: 'regular' | 'clear';
+  wallpaper?: boolean;
+  wallpaperDarkness?: number;
+}
+
+export const UI_SCALE = { min: 80, max: 150 } as const;
+
 export interface Settings {
   /** 2: the letter-hole default became 'filled'; older stored 'rim' values came from the old default and are upgraded once. 3: the preview frame rate became 'auto'; a stored 'full' from before was the old default. */
   settingsVersion: number;
@@ -41,6 +52,14 @@ export interface Settings {
   rememberMedia: boolean;
   /** Android: where a new project is saved. `app` is TurboCut's own storage (the default), `personal` is Documents/TurboCut, which other apps and a computer can see. The desktop app keeps this choice in the shell. */
   saveIn: 'app' | 'personal';
+  /** How big the whole interface is, in percent (100 = normal). */
+  uiScale: number;
+  /** Colour theme and UI style (kept by the theme engine; mirrored here so config files carry them). */
+  look: Look;
+  /** Download newer themes from the internet in the background. Off by default: the themes inside the app are the ones it was tested with, and a download replaces them. */
+  themeUpdates: boolean;
+  /** The first-run setup has been finished or skipped. */
+  onboarded: boolean;
   /** Font for new caption styles, new text layers and the built-in caption style. */
   defaultFont: string;
   /** What the holes of letters look like in new styles. */
@@ -78,6 +97,10 @@ export const DEFAULT_SETTINGS = (touch: boolean): Settings => ({
   trackOrder: [...TRACK_GROUPS],
   rememberMedia: true,
   saveIn: 'app',
+  uiScale: 100,
+  look: { theme: 'auto', ui: 'auto' },
+  themeUpdates: false,
+  onboarded: false,
   defaultFont: 'Arial Black',
   counters: 'filled',
   layout: AUTO_LAYOUT,
@@ -103,7 +126,15 @@ export function mergeSettings(stored: unknown, defaults: Settings): Settings {
   const out: Settings = structuredClone(defaults);
   if (!stored || typeof stored !== 'object') return out;
   const s = stored as Record<string, any>;
-  for (const k of ['snapping', 'waveforms', 'rememberMedia', 'autoCheckUpdates', 'showHome', 'autosave', 'dock', 'autoSwitch', 'shareEnabled'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
+  for (const k of ['snapping', 'waveforms', 'rememberMedia', 'autoCheckUpdates', 'showHome', 'autosave', 'dock', 'autoSwitch', 'shareEnabled', 'themeUpdates', 'onboarded'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
+  if (typeof s.uiScale === 'number' && Number.isFinite(s.uiScale)) out.uiScale = Math.min(UI_SCALE.max, Math.max(UI_SCALE.min, Math.round(s.uiScale)));
+  if (s.look && typeof s.look === 'object' && typeof s.look.theme === 'string' && typeof s.look.ui === 'string' && s.look.theme.length < 60 && s.look.ui.length < 60) {
+    const l: Look = { theme: s.look.theme, ui: s.look.ui };
+    if (s.look.glass === 'regular' || s.look.glass === 'clear') l.glass = s.look.glass;
+    if (typeof s.look.wallpaper === 'boolean') l.wallpaper = s.look.wallpaper;
+    if (typeof s.look.wallpaperDarkness === 'number' && s.look.wallpaperDarkness >= 0 && s.look.wallpaperDarkness <= 0.9) l.wallpaperDarkness = s.look.wallpaperDarkness;
+    out.look = l;
+  }
   if (s.saveIn === 'app' || s.saveIn === 'personal') out.saveIn = s.saveIn;
   // The row order: a list with each kind once. Older settings only said whether video sat above audio.
   if (Array.isArray(s.trackOrder) && s.trackOrder.length === 3 && TRACK_GROUPS.every((g) => s.trackOrder.includes(g))) out.trackOrder = [...s.trackOrder];

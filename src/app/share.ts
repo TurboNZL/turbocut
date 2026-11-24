@@ -145,7 +145,7 @@ export function openSendDialog(store: Store): void {
   if (!api) {
     dialog('Send to another device', h('div', { class: 'stack' },
       h('p', {}, 'Sending a project straight to another TurboCut works from the desktop apps (Windows and Linux): they find each other on the network, and a phone can fetch from a link.'),
-      h('p', { class: 'hint' }, platform === 'android' ? 'This is the Android app. Save the project as a file and move it across, or send from a computer: File → Receive from a computer… takes the link it gives.' : 'This is the web version. Save the project as a file and move it across instead, or install the desktop app.')));
+      h('p', { class: 'hint' }, platform === 'android' ? 'This is the Android app. Save the project as a file and move it across, or use Send or receive (Home screen, or File menu) to take a link from a computer.' : 'This is the web version. Save the project as a file and move it across instead, or install the desktop app.')));
     return;
   }
   const list = h('div', { class: 'share-list', role: 'list' });
@@ -153,7 +153,7 @@ export function openSendDialog(store: Store): void {
   const progress = h('progress', { class: 'prog', max: 1, value: 0, style: { display: 'none' } });
   const withMedia = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Include the video files' });
   const withFonts = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Include the fonts' });
-  const linkOnly = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Send Twitch clips as links' });
+  const linkOnly = h('input', { type: 'checkbox', checked: false, 'aria-label': 'Send Twitch clips as links' });
   const mediaLabel = h('span', {}, 'Include the video files');
   const fontLabel = h('span', {}, 'Include the fonts');
   const linkLabel = h('span', {}, 'Send Twitch clips as links');
@@ -206,7 +206,7 @@ export function openSendDialog(store: Store): void {
   const drawPaired = () => {
     pairedBox.hidden = paired.length === 0;
     pairedBox.replaceChildren(
-      ...(paired.length ? [h('p', { class: 'hint' }, 'Devices you sent a link to before. Send to one, then open Receive from a computer on it.')] : []),
+      ...(paired.length ? [h('p', { class: 'hint' }, 'Devices you sent a link to before. Send to one and it asks its person Yes or No, with nothing to open or paste.')] : []),
       ...paired.map((d) => h('div', { class: 'share-device', role: 'listitem', 'data-paired': d.id },
         h('div', {}, h('strong', {}, d.name)),
         h('div', { class: 'row' },
@@ -317,7 +317,7 @@ export function openSendDialog(store: Store): void {
       if (to) {
         // For a device the computer remembers there is no link: the phone looks in its inbox when Receive from a computer is open.
         linkBox.hidden = false;
-        linkBox.replaceChildren(h('p', {}, 'On ', h('strong', {}, to.name), ' open TurboCut, ', h('strong', {}, 'Receive from a computer'), '. It finds this by itself and starts.'));
+        linkBox.replaceChildren(h('p', {}, 'On ', h('strong', {}, to.name), ' TurboCut asks whether to save it. Tap Yes. (TurboCut has to be open on it.)'));
         note.textContent = `Ready for ${to.name}. It works once, for an hour, on this Wi-Fi. You can close this window${stats.linked && linkOnly.checked ? '. The Twitch clips download on the other device' : ''}.`;
       } else {
       const field = h('input', { class: 'input share-link', type: 'text', readonly: true, value: r.links[0]!, 'aria-label': 'Link for the other device' }) as HTMLInputElement;
@@ -332,7 +332,7 @@ export function openSendDialog(store: Store): void {
       } }, 'Copy link');
       linkBox.hidden = false;
       linkBox.replaceChildren(
-        h('p', {}, 'On the other device open TurboCut, choose ', h('strong', {}, 'From a computer'), ' (Home screen, or File menu) and paste this link:'),
+        h('p', {}, 'On the other device open TurboCut, choose ', h('strong', {}, 'Send or receive'), ' (Home screen, or File menu) and paste this link:'),
         h('div', { class: 'share-link-row' }, field, copy),
         ...(r.links.length > 1 ? [h('small', { class: 'hint' }, `If that one does not work, try ${r.links.slice(1).join(' or ')}`)] : []));
       note.textContent = `Ready. The link works once, for an hour, on this Wi-Fi. You can close this window${stats.linked && linkOnly.checked ? '. The Twitch clips download on the other device' : ''}. After this first transfer the phone remembers this computer, and it shows up here to send to without a link.`;

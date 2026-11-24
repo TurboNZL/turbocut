@@ -7,7 +7,7 @@ A Whisper model runs **on this device** (WebGPU where available, otherwise slowe
 
 ## Settings that matter
 - **Language** is English by default. Automatic detection on a multilingual model sometimes chose the wrong language and invented text; set the language you speak.
-- **Model**: bigger models are more accurate and slower to download and run. The first time you press *Generate captions* on this device TurboCut asks which one to download: **Accurate** (about 250 MB) is preselected on a computer, **Balanced** (about 80 MB) on a phone. Change it later in Settings → Captions.
+- **Model**: bigger models are more accurate and slower to download and run. The first time you press *Generate captions* on this device TurboCut asks which one to download: **Small** (about 250 MB) is preselected on a computer, **Base** (about 80 MB) on a phone. Models run Tiny, Base, Small, Medium, Large (turbo), smallest to largest; Medium and Large are for computers and are slow. Change it later in Settings → Captions.
 - **Caption length**: *Automatic* gives short lines of a few words for tall video and whole sentences for wide video. Pick *Short lines* or *Whole sentences* to force one.
 - **Processor**: *Automatic* tries WebGPU first. If captions look wrong, try the other one.
 
@@ -16,7 +16,7 @@ Whisper sometimes writes words where nobody speaks, repeats a phrase in a loop, 
 
 ## When captions look wrong
 1. Check the language.
-2. Try the Accurate model, or the other processor. The small models time words loosely and mishear more.
+2. Try a bigger model (Small, Medium or Large), or the other processor. The small models time words loosely and mishear more.
 3. Press *Copy captions report* and send it: it lists the model, the processor, the audio level and the first words exactly as the model returned them.
 
 ## Editing

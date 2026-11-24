@@ -14,10 +14,12 @@ export type Density = 'auto' | 'compact' | 'normal' | 'large';
  * Where Split, Trim and the other editing tools sit. `auto`: in line with the play button on a computer, under the timeline on a
  * phone. `top`: in line with the play button, or on a phone in a row just under it (above the panel). `row`: always a row of their
  * own under the play button. `bottom`: under the timeline. `left` / `right`: a column beside the preview (a phone has no room for one
- * and uses `bottom`). `float`: round buttons floating at the bottom right of the screen.
+ * and uses `bottom`). `above`: a bar of its own between the preview and the timeline (a phone treats it as `row`). `float`: round buttons floating at the bottom right of the screen.
  */
-export type ToolsPlacement = 'auto' | 'top' | 'row' | 'bottom' | 'left' | 'right' | 'float';
-const TOOLS_PLACEMENTS: readonly string[] = ['auto', 'top', 'row', 'bottom', 'left', 'right', 'float'];
+export type ToolsPlacement = 'auto' | 'top' | 'row' | 'above' | 'bottom' | 'left' | 'right' | 'float';
+const TOOLS_PLACEMENTS: readonly string[] = ['auto', 'top', 'row', 'above', 'bottom', 'left', 'right', 'float'];
+/** `fixed`: the side panels are as wide as the layout says. `canvas`: they stretch to the picture: each takes `fitPercent` of the room between the window's edge and the picture's edge. */
+export type PanelFit = 'fixed' | 'canvas';
 export type Side = 'left' | 'right';
 
 export const MAX_DIVISIONS = 6;
@@ -44,6 +46,11 @@ export interface Layout {
   density: Density;
   divisions: Division[];
   tools: ToolsPlacement;
+  /** Size of everything inside the side panels, in percent (100 = normal). */
+  panelScale: number;
+  panelFit: PanelFit;
+  /** With `panelFit: 'canvas'`: how much of the room beside the picture the panels take, in percent. */
+  fitPercent: number;
 }
 
 export const AUTO_LAYOUT = 'Automatic';
@@ -58,6 +65,9 @@ const base = (over: Partial<Layout> & { name: string }): Layout => ({
   density: 'auto',
   divisions: [div('Panel', 'right', [...TAB_NAMES])],
   tools: 'auto',
+  panelScale: 100,
+  panelFit: 'fixed',
+  fitPercent: 100,
   ...over,
 });
 
@@ -94,7 +104,7 @@ export function maxColumn(other: number, total: number, minStage = MIN_STAGE): n
   return Math.max(MIN_COLUMN, Math.min(640, total - minStage - other));
 }
 
-export const LIMITS = { panelWidth: [240, 640], timelineHeight: [20, 70], paneSize: [15, 85] } as const;
+export const LIMITS = { panelWidth: [240, 640], timelineHeight: [20, 70], paneSize: [15, 85], panelScale: [80, 160], fitPercent: [30, 100] } as const;
 const clamp = (v: number, [lo, hi]: readonly [number, number] | readonly number[]) => Math.min(hi!, Math.max(lo!, Math.round(v)));
 
 /** Heights that add up to 100 and none below the minimum; equal heights when the given ones do not fit. */
@@ -171,6 +181,9 @@ export function cleanLayout(raw: unknown, fallback: Layout = BUILTIN_LAYOUTS[0]!
     density,
     divisions: finalDivs,
     tools,
+    panelScale: clamp(num(r.panelScale, fallback.panelScale), LIMITS.panelScale),
+    panelFit: r.panelFit === 'canvas' || r.panelFit === 'fixed' ? r.panelFit : fallback.panelFit,
+    fitPercent: clamp(num(r.fitPercent, fallback.fitPercent), LIMITS.fitPercent),
   };
 }
 
@@ -185,7 +198,10 @@ export interface AppliedLayout {
   left: Division[];
   right: Division[];
   /** `inline`: in the transport row; `stage`: a row under it; `bottom`: under the timeline; `left` / `right`: a column beside the preview; `float`: round buttons at the bottom right. */
-  tools: 'inline' | 'stage' | 'bottom' | 'left' | 'right' | 'float';
+  tools: 'inline' | 'stage' | 'above' | 'bottom' | 'left' | 'right' | 'float';
+  panelScale: number;
+  panelFit: PanelFit;
+  fitPercent: number;
 }
 
 export function applyLayout(l: Layout, narrow: boolean, touch: boolean, short = false): AppliedLayout {
@@ -200,9 +216,12 @@ export function applyLayout(l: Layout, narrow: boolean, touch: boolean, short = 
     timelineHeight: l.timelineHeight,
     // A phone held sideways has little height: big touch targets would leave the preview a few pixels tall.
     density: l.density === 'auto' ? (short ? 'compact' : touch ? 'large' : 'normal') : l.density,
+    panelScale: l.panelScale,
+    panelFit: sheet ? 'fixed' : l.panelFit,
+    fitPercent: l.fitPercent,
     left: sheet ? [] : column(l, 'left'),
     right: sheet ? [flat] : column(l, 'right'),
-    tools: l.tools === 'bottom' || l.tools === 'float' ? l.tools : l.tools === 'row' ? 'stage' : l.tools === 'left' || l.tools === 'right' ? (phone && !short ? 'bottom' : l.tools) : l.tools === 'top' ? (phone ? 'stage' : 'inline') : short && !sheet ? 'right' : phone ? 'bottom' : 'inline',
+    tools: l.tools === 'bottom' || l.tools === 'float' ? l.tools : l.tools === 'above' ? (phone && !short ? 'stage' : 'above') : l.tools === 'row' ? 'stage' : l.tools === 'left' || l.tools === 'right' ? (phone && !short ? 'bottom' : l.tools) : l.tools === 'top' ? (phone ? 'stage' : 'inline') : short && !sheet ? 'right' : phone ? 'bottom' : 'inline',
   };
 }
 

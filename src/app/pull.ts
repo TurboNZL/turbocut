@@ -97,6 +97,38 @@ export async function pullShelf(link: string, o: PullOptions = {}): Promise<Pull
   return pullToken(parsed.base, parsed.token, o);
 }
 
+/**
+ * Send a project file (a bundle) from this device to a computer that is running TurboCut: it asks its person to accept, and only then takes the
+ * file. Resolves when the computer has it; throws a sentence for the person (declined, unreachable, ...).
+ */
+export async function pushToComputer(
+  base: string,
+  from: { id: string; name: string },
+  bundle: File,
+  summary: { project: string; media: number; fonts: number },
+  o: { fetch?: typeof fetch; signal?: AbortSignal; onStage?: (s: 'waiting' | 'sending') => void } = {},
+): Promise<void> {
+  const f = o.fetch ?? fetch;
+  const call = async (path: string, init: RequestInit): Promise<any> => {
+    let res: Response;
+    try {
+      res = await f(`${base}${path}`, { ...init, signal: o.signal });
+    } catch (e) {
+      if (o.signal?.aborted) throw e;
+      throw unreachable(base);
+    }
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j?.error || `The computer answered ${res.status}.`);
+    return j;
+  };
+  o.onStage?.('waiting');
+  const offer = await call('/offer', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ from, project: summary.project, media: summary.media, fonts: summary.fonts, links: 0, bytes: bundle.size }) });
+  if (!offer.accepted || typeof offer.transfer !== 'string') throw new Error('The computer did not accept it.');
+  o.onStage?.('sending');
+  await call(`/part/${offer.transfer}/bundle?name=${encodeURIComponent(bundle.name)}`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: bundle });
+  await call(`/done/${offer.transfer}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{}' });
+}
+
 /** Download everything on a shelf of a computer whose address is known. */
 export async function pullToken(base: string, token: string, o: PullOptions = {}): Promise<Pulled> {
   const f = o.fetch ?? fetch;

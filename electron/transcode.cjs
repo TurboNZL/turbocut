@@ -38,6 +38,32 @@ function ffmpegArgs(input, output) {
   return ['-y', '-hide_banner', '-nostdin', '-i', input, '-map', '0:v:0', '-map', '0:a:0?', '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', output];
 }
 
+/**
+ * What this ffmpeg can do on the graphics card: NVDEC to read the video and NVENC to write the H.264 (an NVIDIA card, GeForce 10 series and later).
+ * Looked at once per ffmpeg. It only says the build has them; a card or driver that cannot use them makes the job fail, and `run` then repeats it on the CPU.
+ */
+function probeGpu(bin) {
+  const out = (args) =>
+    new Promise((resolve) => {
+      let s = '';
+      try {
+        const p = spawn(bin, ['-hide_banner', ...args], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+        const t = setTimeout(() => (p.kill(), resolve(s)), 8000);
+        p.stdout.on('data', (c) => (s += c));
+        p.on('error', () => (clearTimeout(t), resolve('')));
+        p.on('exit', () => (clearTimeout(t), resolve(s)));
+      } catch {
+        resolve('');
+      }
+    });
+  return Promise.all([out(['-encoders']), out(['-hwaccels'])]).then(([enc, hw]) => ({ nvenc: /\bh264_nvenc\b/.test(enc), cuda: /^cuda$/m.test(hw) }));
+}
+
+/** The same conversion on the graphics card: NVDEC reads the original, NVENC writes the H.264. Seconds for a clip that takes the CPU minutes. */
+function ffmpegArgsGpu(input, output) {
+  return ['-y', '-hide_banner', '-nostdin', '-hwaccel', 'cuda', '-i', input, '-map', '0:v:0', '-map', '0:a:0?', '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:v', 'h264_nvenc', '-preset', 'p4', '-rc', 'vbr', '-cq', '19', '-b:v', '0', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', output];
+}
+
 const clock = (h, m, s) => Number(h) * 3600 + Number(m) * 60 + Number(s);
 
 class Transcoder {
@@ -82,10 +108,11 @@ class Transcoder {
     await new Promise((resolve, reject) => (j.out.once('error', reject), j.out.end(resolve)));
     const base = j.name.replace(/\.[^.]*$/, '') || 'video';
     const output = path.join(j.dir, 'out.mp4');
-    await new Promise((resolve, reject) => {
+    if (this.gpu === undefined) this.gpu = await probeGpu(this.ffmpeg);
+    const attempt = (args) => new Promise((resolve, reject) => {
       let total = 0;
       let err = '';
-      const p = spawn(this.ffmpeg, ffmpegArgs(j.input, output), { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+      const p = spawn(this.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
       j.proc = p;
       p.stderr.on('data', (c) => {
         err = (err + c).slice(-4000);
@@ -104,6 +131,18 @@ class Transcoder {
         reject(new Error(`ffmpeg could not convert it: ${last}`));
       });
     });
+    // The graphics card first when ffmpeg has the parts for it; any failure there is simply tried again on the CPU.
+    this.usedGpu = false;
+    if (this.gpu.nvenc && this.gpu.cuda && process.env.TURBOCUT_NO_GPU_CONVERT !== '1') {
+      try {
+        await attempt(ffmpegArgsGpu(j.input, output));
+        this.usedGpu = true;
+      } catch (e) {
+        if (e.cancelled) throw e;
+        fs.rmSync(output, { force: true });
+      }
+    }
+    if (!this.usedGpu) await attempt(ffmpegArgs(j.input, output));
     fs.rmSync(j.input, { force: true });
     return { rel: `${id}/out.mp4`, name: `${base}.mp4` };
   }
@@ -128,4 +167,4 @@ class Transcoder {
 
 const defaultDir = () => path.join(os.tmpdir(), 'turbocut-converted');
 
-module.exports = { Transcoder, findFfmpeg, ffmpegArgs, defaultDir };
+module.exports = { Transcoder, findFfmpeg, ffmpegArgs, ffmpegArgsGpu, probeGpu, defaultDir };

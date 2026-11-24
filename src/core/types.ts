@@ -124,6 +124,8 @@ export interface BinFolder {
 export interface Project {
   version: 1;
   name: string;
+  /** The person typed this name. Until then the name follows the file the project is saved in. */
+  nameSet?: boolean;
   fps: number;
   width: number;
   height: number;

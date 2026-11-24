@@ -27,16 +27,23 @@ import { pickFiles, platform } from './platform.ts';
 import { Player } from './player.ts';
 import { openSettings, capturingKey, settingsView, type SettingsTab } from './settingsDialog.ts';
 import { Store, ZOOM_MAX, ZOOM_MIN } from './store.ts';
+import { loadSettings, type Look } from './settings.ts';
 import { detectSystemFonts, fontPermission } from './systemFonts.ts';
 import { TimelineView } from './timelineView.ts';
 import { checkForUpdate } from './updater.ts';
 import { openTwitchImport } from './twitchDialog.ts';
+import { openProjectSettings, SHAPES } from './projectSettings.ts';
+import { canvasInput } from './canvasInput.ts';
+import { startOnboarding } from './onboarding.ts';
 import { openProjectManager } from './projectManager.ts';
-import { openReceiveDialog } from './receive.ts';
+import { openReceiveDialog, startInboxWatch } from './receive.ts';
 import { openSendDialog, startSharing } from './share.ts';
 
 // Phones and some webviews cannot do the Liquid Glass lens; everything else about the look still applies.
-const themes = start({ persist: true, picker: true, lens: platform === 'web' || platform === 'electron', appearance: { theme: 'auto', ui: 'auto' } });
+// Newer themes are only downloaded when the person turned that on (Settings, Look): a download replaces the themes that are inside the app,
+// including the ones added after the downloadable pack was last built.
+const touchDevice = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const themes = start({ persist: true, picker: true, autoUpdate: loadSettings(touchDevice).themeUpdates, lens: platform === 'web' || platform === 'electron', appearance: { theme: 'auto', ui: 'auto' } });
 void loadStoredFonts();
 enhanceSelects(); // every drop-down is drawn by the theme, never the system's own list
 // Installed fonts: the desktop app lists them straight away (no prompt in Electron); a browser only if the person already allowed it.
@@ -45,6 +52,16 @@ void (async () => {
 })();
 
 const store = new Store();
+// The look lives in the theme engine; Settings mirrors it so a config file can carry it. A config that changes it is applied back to the engine.
+const lookOf = (a: ReturnType<typeof themes.appearance>): Look => ({ theme: a.theme, ui: a.ui, ...(a.glass ? { glass: a.glass } : {}), ...(a.wallpaper !== undefined ? { wallpaper: a.wallpaper } : {}), ...(a.wallpaperDarkness !== undefined ? { wallpaperDarkness: a.wallpaperDarkness } : {}) });
+const sameLook = (a: Look, b: Look) => JSON.stringify(a) === JSON.stringify(b);
+store.settings.look = lookOf(themes.appearance());
+themes.onAppearance((a) => !sameLook(store.settings.look, lookOf(a)) && store.updateSettings({ look: lookOf(a) }));
+store.on('settings', () => !sameLook(store.settings.look, lookOf(themes.appearance())) && themes.apply({ ...themes.appearance(), ...store.settings.look }));
+// How big the whole interface is: the root font size, which everything sized in rem follows.
+const applyUiScale = () => (document.documentElement.style.fontSize = store.settings.uiScale === 100 ? '' : `${store.settings.uiScale}%`);
+applyUiScale();
+store.on('settings', applyUiScale);
 const player = new Player(store);
 const actions = new Actions(store, player);
 const timeline = new TimelineView(store, {
@@ -174,8 +191,21 @@ function drawLayout(): void {
   app.dataset.density = l.density;
   app.dataset.tools = l.tools; // inline with the play button, a row under it, under the timeline, or floating
   app.dataset.dock = store.settings.dock ? 'on' : 'off';
-  // The side panels keep what the layout asks for, but give way before the preview gets narrow.
-  const fit = l.mode === 'sheet' ? { left: 0, right: 0 } : fitColumns(l.left.length ? l.leftWidth : 0, l.right.length ? l.panelWidth : 0, window.innerWidth);
+  // The side panels keep what the layout asks for, but give way before the preview gets narrow. In "stretch to the picture" mode they instead take
+  // a share of the room beside the picture, so they snap out to its edges.
+  let want = { left: l.left.length ? l.leftWidth : 0, right: l.right.length ? l.panelWidth : 0 };
+  if (l.mode === 'side' && l.panelFit === 'canvas' && (want.left || want.right)) {
+    const pv = previewBox();
+    const aspect = store.project.width / store.project.height;
+    const cw = Math.min(pv.h * aspect, window.innerWidth - 2 * 200);
+    const room = Math.max(0, window.innerWidth - cw - 2 * 8); // the stage's own padding
+    const each = want.left && want.right ? room / 2 : room;
+    const take = (on: number) => (on ? Math.round(Math.max(200, Math.min(900, ((each - 8) * l.fitPercent) / 100))) : 0);
+    want = { left: take(want.left), right: take(want.right) };
+  }
+  const fit = l.mode === 'sheet' ? { left: 0, right: 0 } : fitColumns(want.left, want.right, window.innerWidth);
+  app.style.setProperty('--panel-scale', String(l.panelScale / 100));
+  app.dataset.fit = l.mode === 'side' ? l.panelFit : 'fixed';
   app.style.setProperty('--left-w', `${fit.left}px`);
   app.style.setProperty('--right-w', `${l.mode === 'sheet' ? (l.right.length ? l.panelWidth : 0) : fit.right}px`);
   app.style.setProperty('--left-on', l.left.length ? '1' : '0');
@@ -209,6 +239,7 @@ store.on('selection', () => {
   if (store.settings.autoSwitch) {
     if (store.selected && store.selected !== lastSelected) showTab('Clip');
     if (store.selectedCue && store.selectedCue !== lastCue) showTab('Captions');
+    if (store.selectedCue) setTimeout(() => captions.reveal(), 0);
   }
   lastSelected = store.selected;
   lastCue = store.selectedCue;
@@ -216,9 +247,8 @@ store.on('selection', () => {
 
 function projectPanel(): HTMLElement {
   const name = h('input', { class: 'input', 'aria-label': 'Project name' });
-  name.addEventListener('change', () => store.edit((p) => (p.name = name.value.trim() || 'Untitled')));
-  const aspects: [string, number, number][] = [['Vertical 9:16 (1080×1920)', 1080, 1920], ['Landscape 16:9 (1920×1080)', 1920, 1080], ['Portrait 4:5 (1080×1350)', 1080, 1350], ['Square 1:1 (1080×1080)', 1080, 1080]];
-  const aspect = h('select', { class: 'input', 'aria-label': 'Aspect ratio' }, ...aspects.map(([l, w, hh]) => h('option', { value: `${w}x${hh}` }, l)), h('option', { value: 'custom', hidden: true }, 'Custom size'));
+  name.addEventListener('change', () => actions.setName(name.value));
+  const aspect = h('select', { class: 'input', 'aria-label': 'Aspect ratio' }, ...SHAPES.map(([l, w, hh]) => h('option', { value: `${w}x${hh}` }, l)), h('option', { value: 'custom', hidden: true }, 'Custom size'));
   aspect.addEventListener('change', () => {
     const [w, hh] = aspect.value.split('x').map(Number) as [number, number];
     store.edit((p) => ((p.width = w), (p.height = hh)));
@@ -227,12 +257,14 @@ function projectPanel(): HTMLElement {
   const missing = h('button', { class: 'btn', onclick: () => actions.relinkDialog() }, 'Find missing media…');
   const sync = () => {
     const p = store.project;
-    if (document.activeElement !== name) name.value = p.name;
-    aspect.value = aspects.some(([, w, hh]) => w === p.width && hh === p.height) ? `${p.width}x${p.height}` : 'custom';
-    rate.textContent = `Frame rate is ${p.fps} fps.`;
+    name.placeholder = store.fileName ? store.fileName.replace(/\.turbocut[cf]?$/i, '') : 'Untitled';
+    if (document.activeElement !== name) name.value = p.nameSet ? p.name : '';
+    aspect.value = SHAPES.some(([, w, hh]) => w === p.width && hh === p.height) ? `${p.width}x${p.height}` : 'custom';
+    rate.textContent = `Frame rate is ${p.fps} fps. ${p.nameSet ? '' : 'The name follows the file until you type one.'}`;
     missing.hidden = store.missingAssets().length === 0;
   };
   store.on('project', sync);
+  store.on('saved', sync);
   sync();
   return panel(
     'Project',
@@ -241,13 +273,16 @@ function projectPanel(): HTMLElement {
       h('label', { class: 'proj-field' }, h('span', { class: 'prop-l' }, 'Shape'), aspect),
       rate,
       h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => void actions.saveProject() }, 'Save'), h('button', { class: 'btn', onclick: () => void actions.openProject() }, 'Open…'), h('button', { class: 'btn', onclick: () => void actions.newProject() }, 'New')),
+      h('button', { class: 'btn', onclick: () => openProjectSettings(store, actions) }, 'Project settings…'),
       missing,
       h('p', { class: 'hint' }, 'A project file holds the edit, not the video. The desktop app remembers where each video is and opens it again by itself; elsewhere you are asked for the files.'),
-      h('button', { class: 'btn', onclick: () => openSendDialog(store) }, 'Send to another device…'),
-      h('button', { class: 'btn', onclick: () => openReceiveDialog(store, actions) }, 'Receive from a computer…'),
+      h('button', { class: 'btn', onclick: () => void sendTo() }, 'Send to another device…'),
+      h('button', { class: 'btn', onclick: () => openReceiveDialog(store, actions) }, 'Receive from another device…'),
       h('button', { class: 'btn', onclick: () => settings() }, 'Settings…')),
   );
 }
+/** A project needs a name before it leaves the draft stage. */
+const sendTo = async () => (await actions.ensureName('The other device files it under this name.')) && openSendDialog(store);
 
 const iconBtn = (name: IconName, label: string, run: () => void, extra = '', hotkey?: string) => {
   const b = h('button', { class: `btn btn-ghost icon-btn ${extra}`.trim(), 'aria-label': label, title: label, onclick: run }, icon(name));
@@ -256,16 +291,15 @@ const iconBtn = (name: IconName, label: string, run: () => void, extra = '', hot
 const fileMenu = h('button', { class: 'btn btn-ghost', 'aria-haspopup': 'menu' }, 'File', icon('chevron', 14));
 fileMenu.addEventListener('click', () =>
   popupMenu(fileMenu, [
-    { label: 'New project', run: () => void actions.newProject() },
-    { label: 'Projects…', run: () => void openProjectManager(store, actions) },
-    { label: 'Open project…', run: () => void actions.openProject() },
-    { label: 'Save project', run: () => void actions.saveProject() },
-    { label: 'Save project as…', run: () => void actions.saveProject(true) },
-    { label: 'Import media…', run: () => void importFiles() },
-    { label: 'Import a Twitch clip…', run: () => openTwitchImport(actions) },
-    { label: 'Send to another device…', run: () => openSendDialog(store) },
-    { label: 'Receive from a computer…', run: () => openReceiveDialog(store, actions) },
-    { label: 'Find missing media…', run: () => actions.relinkDialog(), disabled: store.missingAssets().length === 0 },
+    { label: 'New project', icon: 'plus', run: () => void actions.newProject() },
+    { label: 'Projects…', icon: 'folder', run: () => void openProjectManager(store, actions) },
+    { label: 'Open project…', icon: 'file', run: () => void actions.openProject() },
+    { label: 'Save project', icon: 'download', run: () => void actions.saveProject() },
+    { label: 'Save project as…', icon: 'download', run: () => void actions.saveProject(true) },
+    { label: 'Project settings…', icon: 'sliders', run: () => openProjectSettings(store, actions) },
+    { label: 'Send to another device…', icon: 'send', run: () => void sendTo() },
+    { label: 'Receive from another device…', icon: 'phone', run: () => openReceiveDialog(store, actions) },
+    { label: 'Find missing media…', icon: 'search', run: () => actions.relinkDialog(), disabled: store.missingAssets().length === 0 },
   ]),
 );
 // Next to the File menu: the file the project is saved in, or that it is not saved yet. A dot says there are changes since the last save.
@@ -337,14 +371,32 @@ fabToggle.addEventListener('click', () => {
   fabToggle.setAttribute('aria-expanded', String(!open));
 });
 /** Put the tool bar where the layout wants it. Moving the same element keeps its listeners and state. */
-function placeTools(where: 'inline' | 'stage' | 'bottom' | 'left' | 'right' | 'float'): void {
+function placeTools(where: 'inline' | 'stage' | 'above' | 'bottom' | 'left' | 'right' | 'float'): void {
   const dest = where === 'inline' ? transport : where === 'stage' || where === 'left' || where === 'right' ? stage : app;
   if (editBar.parentElement !== dest) dest.append(editBar);
 }
 
-player.canvas.addEventListener('click', () => player.toggle());
+canvasInput(player.canvas, store);
 const stage = h('section', { class: 'stage' }, h('div', { class: 'preview' }, player.canvas), transport);
 const app = document.getElementById('app')!;
+/** The picture's box: its height does not depend on the width of the side panels, which is what lets the panels be sized from the picture. */
+const previewBox = () => {
+  const el = player.canvas.parentElement;
+  return { w: el?.clientWidth ?? 0, h: el?.clientHeight ?? 0 };
+};
+// The play buttons and tools can be as wide as the picture (`--cw`); the picture's size also feeds "stretch to the picture" panels.
+let lastPreviewSig = '';
+const previewWatch = new ResizeObserver(() => {
+  app.style.setProperty('--cw', `${Math.round(player.canvas.getBoundingClientRect().width)}px`);
+  const sig = `${previewBox().h}|${store.project.width}x${store.project.height}`;
+  if (sig !== lastPreviewSig) {
+    lastPreviewSig = sig;
+    if (app.dataset.fit === 'canvas') drawLayout();
+  }
+});
+previewWatch.observe(player.canvas.parentElement!);
+previewWatch.observe(player.canvas);
+
 const frameBar = windowFrame();
 if (frameBar) app.before(frameBar);
 // The bar between the preview and the timeline: drag to give the timeline more or less of the window.
@@ -406,7 +458,6 @@ function showHome(): void {
   if (docked) view = 'home';
   const handle = openHome({
     store,
-    importFiles: () => importFiles(),
     openProject: () => actions.openProject(),
     openProjects: (opened) => void openProjectManager(store, actions, opened),
     openRecent: (key) => actions.openRecent(key),
@@ -424,9 +475,13 @@ function showHome(): void {
   dock.render(store.settings.dock, view);
 }
 drawLayout();
+startInboxWatch(store, actions); // phone and browser: ask the remembered computers what is waiting, and say yes or no to it
+actions.sendHandler = () => void sendTo();
 startSharing(store, actions); // desktop app: be found by other TurboCut apps and accept what they send (each time, with an Accept)
-if (store.settings.showHome && projectDuration(store.project) === 0) showHome();
-else bootAnimation();
+// The first time TurboCut runs, a short setup (config file, speech model, devices) comes before anything else; the home screen follows it.
+const afterSetup = () => (store.settings.showHome && projectDuration(store.project) === 0 ? showHome() : bootAnimation());
+if (!store.settings.onboarded && !(navigator as any).webdriver) void startOnboarding(store, () => openReceiveDialog(store, actions)).then(afterSetup);
+else afterSetup();
 
 // Once a project has a file, changes are written to it a few seconds after the last one (Settings → Saving). Nothing is kept anywhere else:
 // a project that was never saved is asked about when it would be lost (a new project, opening another, closing the window).

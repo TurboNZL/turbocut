@@ -97,8 +97,10 @@ try {
   await page.screenshot({ path: `${out}ui-desktop-nord-win11.png` });
   await app((b) => window.turbocutApp.themes.apply({ theme: b.theme, ui: b.ui }), before);
 
-  // 7. export through the UI path, capture the download
-  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), app(() => window.turbocutApp.runExport())]);
+  // 7. export through the UI path, capture the download. A draft has to be named first: the dialog asks.
+  await app(() => { window.turbocutApp.actions.runExport(); });
+  await page.getByRole('dialog').getByRole('textbox').fill('App test');
+  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.getByRole('dialog').getByRole('button', { name: 'Continue' }).click()]);
   const file = `${out}app-export.webm`;
   await download.saveAs(file);
   const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-show_streams', '-of', 'json', file], { encoding: 'utf8' }));
