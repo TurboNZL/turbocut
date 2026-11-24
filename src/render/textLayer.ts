@@ -12,10 +12,11 @@ let probe: OffscreenCanvasRenderingContext2D | null = null;
  * colours) at the size its entrance animation has reached, and anchored on the middle of the text block so the layer's
  * position and zoom work around its centre. Returns null while the entrance animation has not started showing it.
  */
-export function textPicture(p: Project, clip: Clip, frame: Frame): Picture | null {
+export function textPicture(p: Project, clip: Clip, frame: Frame, still = false): Picture | null {
   const t = clip.text!;
   const st = t.style;
-  const s = entranceScale(t.animation, frame - clip.start);
+  // A paused preview at the layer's very first frame shows the text at full size: the pop-in starts from nothing, and an empty frame looked like a missing layer.
+  const s = still && frame === clip.start ? 1 : entranceScale(t.animation, frame - clip.start);
   if (s <= 0) return null;
   const q = Math.round(s * 100) / 100;
   const font = (px: number) => `${st.italic ? 'italic ' : ''}${st.bold ? '700 ' : ''}${px}px "${st.fontname}", sans-serif`;

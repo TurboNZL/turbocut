@@ -32,6 +32,7 @@ import { TimelineView } from './timelineView.ts';
 import { checkForUpdate } from './updater.ts';
 import { openTwitchImport } from './twitchDialog.ts';
 import { openProjectSettings, SHAPES } from './projectSettings.ts';
+import { canvasInput } from './canvasInput.ts';
 import { openProjectManager } from './projectManager.ts';
 import { openReceiveDialog } from './receive.ts';
 import { openSendDialog, startSharing } from './share.ts';
@@ -210,6 +211,7 @@ store.on('selection', () => {
   if (store.settings.autoSwitch) {
     if (store.selected && store.selected !== lastSelected) showTab('Clip');
     if (store.selectedCue && store.selectedCue !== lastCue) showTab('Captions');
+    if (store.selectedCue) setTimeout(() => captions.reveal(), 0);
   }
   lastSelected = store.selected;
   lastCue = store.selectedCue;
@@ -346,6 +348,7 @@ function placeTools(where: 'inline' | 'stage' | 'bottom' | 'left' | 'right' | 'f
   if (editBar.parentElement !== dest) dest.append(editBar);
 }
 
+canvasInput(player.canvas, store);
 const stage = h('section', { class: 'stage' }, h('div', { class: 'preview' }, player.canvas), transport);
 const app = document.getElementById('app')!;
 const frameBar = windowFrame();

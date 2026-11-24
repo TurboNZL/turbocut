@@ -197,7 +197,11 @@ function general({ store, openProjects }: SettingsDeps, redraw: () => void, go: 
   const SCALE_LABEL: Record<string, string> = { auto: 'Automatic (up to 960 px on the long side, 640 px on a phone)', '100': 'Full size of the project', '75': '75 %', '50': '50 %', '25': '25 %, draft' };
   const previewScale = h('select', { class: 'input', 'aria-label': 'Preview sharpness' }, ...PREVIEW_SCALES.map((v) => h('option', { value: String(v), selected: s.previewScale === v }, SCALE_LABEL[String(v)]!)));
   previewScale.addEventListener('change', () => store.updateSettings({ previewScale: (previewScale.value === 'auto' ? 'auto' : Number(previewScale.value)) as PreviewScale }));
-  const FPS_LABEL: Record<PreviewFps, string> = { auto: 'Automatic (30 a second on a phone, every frame on a computer)', full: 'Every frame', half: 'Half of the frames', third: 'A third of the frames', quarter: 'A quarter of the frames' };
+  // The choices are shares of the PROJECT's rate (every 2nd frame, every 3rd...), not fixed rates: the label says what that comes to for the open project.
+  const touchPreview = matchMedia('(pointer: coarse)').matches;
+  const rate = store.project.fps;
+  const per = (n: number) => `${Math.round((rate / n) * 10) / 10} a second at ${rate} fps`;
+  const FPS_LABEL: Record<PreviewFps, string> = { auto: `Automatic (${per(touchPreview ? Math.max(1, Math.round(rate / 30)) : 1)} here; 30 a second at most on a phone)`, full: `Every frame (${per(1)})`, half: `Every 2nd frame (${per(2)})`, third: `Every 3rd frame (${per(3)})`, quarter: `Every 4th frame (${per(4)})` };
   const previewFps = h('select', { class: 'input', 'aria-label': 'Preview frame rate' }, ...PREVIEW_FPS.map((v) => h('option', { value: v, selected: s.previewFps === v }, FPS_LABEL[v])));
   previewFps.addEventListener('change', () => store.updateSettings({ previewFps: previewFps.value as PreviewFps }));
 

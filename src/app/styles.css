@@ -47,7 +47,11 @@ button, select, input { font: inherit; }
 .prog { width: 100%; }
 
 .cue-list { display: grid; gap: 0.35rem; margin-top: 0.4rem; }
-.cue { display: grid; grid-template-columns: auto minmax(0, 1fr) 6.2rem auto; gap: 0.3rem; align-items: center; }
+.cue { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'time style del' 'text text text'; gap: 0.3rem; align-items: center; }
+.cue > .cue-time { grid-area: time; }
+.cue > .cue-style { grid-area: style; min-width: 0; }
+.cue > .cue-del { grid-area: del; }
+.cue > .cue-text { grid-area: text; min-width: 0; width: 100%; }
 .cue.sel { outline: 2px solid hsl(var(--accent)); outline-offset: 2px; border-radius: var(--radius, 6px); }
 .input.sm { padding-inline: 0.3rem; }
 

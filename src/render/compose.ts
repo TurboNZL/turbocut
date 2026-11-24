@@ -105,13 +105,13 @@ export function drawClip(ctx: Ctx2D, p: Project, clip: Clip, frame: Frame, pic: 
  * Clearing before the awaits would let the browser present a black canvas between frames (flicker).
  * `overlay` runs in that same synchronous run, for captions.
  */
-export async function drawVideo(ctx: Ctx2D, p: Project, frame: Frame, src: FrameSource, overlay?: () => void): Promise<void> {
+export async function drawVideo(ctx: Ctx2D, p: Project, frame: Frame, src: FrameSource, overlay?: () => void, still = false): Promise<void> {
   const layers: { clip: Clip; pic: Picture }[] = [];
   for (const track of p.tracks) {
     if (track.kind !== 'video' || track.hidden) continue;
     const clip = clipAt(track, frame);
     if (!clip) continue;
-    const pic = clip.text ? textPicture(p, clip, frame) : await src.getFrame(clip, frame, sourceSeconds(p, clip, frame));
+    const pic = clip.text ? textPicture(p, clip, frame, still) : await src.getFrame(clip, frame, sourceSeconds(p, clip, frame));
     if (pic) layers.push({ clip, pic });
   }
   ctx.fillStyle = '#000';
