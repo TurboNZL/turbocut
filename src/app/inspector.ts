@@ -269,6 +269,7 @@ export class Inspector {
       ...(Object.keys(EASE_LABEL) as Easing[]).map((e) => ({ label: `${k.ease === e ? '✓ ' : '   '}${EASE_LABEL[e]}`, run: () => this.store.edit(() => (k.ease = e)) })),
       {
         label: 'Delete keyframe',
+        icon: 'trash',
         run: () =>
           this.store.edit(() => {
             const left = removeKeyframe(param.keys(clip), t);

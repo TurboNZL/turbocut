@@ -69,7 +69,8 @@ button, select, input { font: inherit; }
 .tl-track.locked .tl-clip { background-image: repeating-linear-gradient(135deg, transparent 0 6px, hsl(var(--bg) / 0.25) 6px 12px); cursor: not-allowed; }
 .tl-wave { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .popup-menu { position: fixed; z-index: 60; display: flex; flex-direction: column; min-width: 180px; padding: 4px; }
-.popup-menu .btn { justify-content: flex-start; text-align: left; }
+.popup-menu .btn { justify-content: flex-start; text-align: left; gap: 0.6rem; }
+.popup-menu .menu-item .ico { opacity: 0.8; flex: none; }
 .tl-clip { position: absolute; top: 3px; bottom: 3px; border-radius: calc(var(--radius, 6px) * 0.6); background: hsl(var(--accent) / 0.55); border: 1px solid hsl(var(--accent)); overflow: hidden; display: flex; align-items: center; gap: 4px; padding: 0 9px; cursor: grab; touch-action: none; user-select: none; }
 .tl-audio .tl-clip { background: hsl(var(--good) / 0.45); border-color: hsl(var(--good)); }
 .tl-cue { background: hsl(var(--raised)); border-color: hsl(var(--line)); }

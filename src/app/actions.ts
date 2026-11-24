@@ -1,12 +1,13 @@
 import { cueAt, findCue, splitCue } from '../core/captions.ts';
+import { changeFps } from '../core/fps.ts';
 import { exportPreset } from '../captions/presets.ts';
 import { packBundle, unpackBundle, type BundlePart } from '../core/bundle.ts';
-import { FORMATS, FORMAT_EXT, FORMAT_LABEL, PROJECT_NAME, formatOfName, matchMedia, parseProject, serializeProject, type ProjectFormat } from '../core/projectFile.ts';
+import { FORMATS, FORMAT_EXT, FORMAT_LABEL, PROJECT_NAME, formatOfName, matchMedia, nameOfFile, parseProject, serializeProject, type ProjectFormat } from '../core/projectFile.ts';
 import { addClip, createProject, addTrack, moveTrackTo, clipEnd, createClip, findClip, findFreeStart, newId, projectDuration, removeLinked, removeTrack, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
 import type { AssetSource, Track } from '../core/types.ts';
 import { overlaps } from '../core/timeline.ts';
 import { exportProject } from '../export/exporter.ts';
-import { dialog, h } from './dom.ts';
+import { askText, dialog, h } from './dom.ts';
 import { keepAwake, pickFiles, saveFile } from './platform.ts';
 import type { Player } from './player.ts';
 import { forgetRecent, recentRef, rememberFile } from './recent.ts';
@@ -61,6 +62,67 @@ export class Actions {
     }
   }
 
+  // ---------------------------------------------------------------- project names
+
+  /** A draft: never saved and never named. Anything that leaves the draft (saving, sending, exporting) asks for a name first. */
+  get isDraft(): boolean {
+    return !this.store.fileName && !this.store.project.nameSet;
+  }
+
+  /** Make sure the project has a name. Resolves false when the person would rather not give one. */
+  async ensureName(why = 'A project needs a name before it can leave the draft stage.'): Promise<boolean> {
+    const { store } = this;
+    if (!this.isDraft) return true;
+    const n = await askText(`Name this project. ${why}`, '', 'Project name', 'Continue');
+    if (!n) return false;
+    store.project.nameSet = true;
+    store.project.name = n;
+    store.dirty = true;
+    store.emit('project');
+    return true;
+  }
+
+  /** Until the person types a name, the project is called what its file is called (a name typed by hand stays). */
+  followFileName(): void {
+    const { store } = this;
+    const p = store.project;
+    if (p.nameSet || !store.fileName) return;
+    const n = nameOfFile(store.fileName);
+    if (n && n !== p.name) {
+      p.name = n;
+      store.emit('saved');
+    }
+  }
+
+  /** Change the project's frame rate; every cut stays at the same time in seconds. */
+  setFrameRate(fps: number): void {
+    const { store } = this;
+    const old = store.project.fps;
+    this.player.pause();
+    try {
+      store.edit((p) => changeFps(p, fps));
+    } catch (e) {
+      return store.say(e instanceof Error ? e.message : String(e));
+    }
+    store.seek(Math.round(store.playhead * (store.project.fps / old)));
+    store.say(`Frame rate is now ${store.project.fps} fps.`);
+  }
+
+  /** Set the name by hand; an empty name goes back to following the file's name. */
+  setName(name: string): void {
+    const { store } = this;
+    const n = name.trim();
+    store.edit((p) => {
+      if (n) {
+        p.name = n;
+        p.nameSet = true;
+      } else {
+        delete p.nameSet;
+        p.name = store.fileName ? nameOfFile(store.fileName) || 'Untitled' : 'Untitled';
+      }
+    });
+  }
+
   // ---------------------------------------------------------------- project files
 
   /**
@@ -70,23 +132,28 @@ export class Actions {
    */
   async saveProject(as = false): Promise<boolean> {
     const { store } = this;
+    const wasName = store.fileName;
+    const wasTitle = store.project.name;
     try {
       await Promise.all([...this.keeping]);
       let target: Target | null;
       if (!as && store.fileRef) target = { ref: store.fileRef, name: refName(store.fileRef), format: formatOfName(refName(store.fileRef)) };
       else if (!as && store.fileName && !store.fileRef) target = { ref: null, name: store.fileName, format: formatOfName(store.fileName) }; // a browser that can only download: the same kind again
       else {
+        if (!(await this.ensureName('It is also the suggested file name.'))) return false;
         target = await chooseTarget(store.project.name, () => this.askFormat(), store.settings.saveIn);
         if (!target) return false;
       }
       const at = store.version;
+      store.fileName = target.name;
+      this.followFileName(); // the project is called what its file is, unless a name was typed
       if (target.format !== 'edit') store.say(`Saving ${target.name}…`);
       const built = await this.buildContent(target.format, target.name);
       await writeTarget(target, built.content);
       store.fileRef = target.ref;
       store.fileName = target.name;
       if (store.version === at) store.dirty = false; // an edit made while a long save ran stays unsaved
-      void rememberFile(store.project, target.ref);
+      void rememberFile(store.project, target.ref, true);
       if (target.format !== 'edit' && target.ref?.kind === 'handle') await this.rebindFromBundle(target.ref);
       store.say(
         target.ref
@@ -96,6 +163,8 @@ export class Actions {
       store.emit('saved');
       return true;
     } catch (e) {
+      store.fileName = wasName; // nothing was written: the project is still what it was
+      if (!store.project.nameSet) store.project.name = wasTitle;
       store.say(`Could not save: ${e instanceof Error ? e.message : e}`);
       return false;
     }
@@ -175,6 +244,7 @@ export class Actions {
       const at = store.version;
       await writeRef(ref, serializeProject(store.project));
       if (store.fileRef === ref && store.version === at) store.dirty = false;
+      void rememberFile(store.project, ref, true); // the list shows when the project was last edited
       store.emit('saved');
     } catch (e) {
       store.say(`Could not update ${refName(ref)}: ${e instanceof Error ? e.message : e}. Use Save project to choose another place.`);
@@ -316,7 +386,8 @@ export class Actions {
     this.bundled.clear();
     store.fileRef = ref;
     store.fileName = name;
-    void rememberFile(store.project, ref);
+    this.followFileName();
+    void rememberFile(store.project, ref, false); // opening is not an edit: the list keeps the time it was last changed
     store.emit('saved');
     await this.afterOpen(name);
     return true;
@@ -346,7 +417,8 @@ export class Actions {
     this.bundled.clear();
     store.fileRef = ref;
     store.fileName = name;
-    void rememberFile(store.project, ref);
+    this.followFileName();
+    void rememberFile(store.project, ref, false);
     store.emit('saved');
     const ids: string[] = [];
     await this.relinkMedia(parts.filter((p) => p.kind === 'media').map((p) => new File([p.blob], p.name)), false, ids, undefined, true); // read from the file itself: no second copy
@@ -634,7 +706,16 @@ export class Actions {
 
   trimToPlayhead(side: 'start' | 'end'): void {
     const { store } = this;
-    if (!store.selected) return;
+    if (!store.selected) {
+      // Nothing selected: every clip the playhead is inside, on every unlocked track, is trimmed at once.
+      const f = store.playhead;
+      const hits = store.project.tracks.filter((t) => !t.locked).flatMap((t) => t.clips.filter((c) => f > c.start && f < clipEnd(c)).map((c) => c.id));
+      if (!hits.length) return store.say(`There is no clip under the playhead to trim.`);
+      store.edit((p) => {
+        for (const id of hits) (side === 'start' ? trimStart : trimEnd)(p, id, f);
+      });
+      return;
+    }
     const ids = new Set(store.selectedIds);
     store.edit((p) => {
       const all = p.tracks.flatMap((t) => t.clips);
@@ -691,6 +772,7 @@ export class Actions {
   async runExport(): Promise<void> {
     const { store, player } = this;
     if (projectDuration(store.project) === 0) return store.say('Nothing to export yet. Import a clip first.');
+    if (!(await this.ensureName('It is used as the name of the exported video.'))) return;
     player.pause();
     const abort = new AbortController();
     const bar = h('progress', { class: 'prog', max: 1, value: 0 });

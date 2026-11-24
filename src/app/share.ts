@@ -153,7 +153,7 @@ export function openSendDialog(store: Store): void {
   const progress = h('progress', { class: 'prog', max: 1, value: 0, style: { display: 'none' } });
   const withMedia = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Include the video files' });
   const withFonts = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Include the fonts' });
-  const linkOnly = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Send Twitch clips as links' });
+  const linkOnly = h('input', { type: 'checkbox', checked: false, 'aria-label': 'Send Twitch clips as links' });
   const mediaLabel = h('span', {}, 'Include the video files');
   const fontLabel = h('span', {}, 'Include the fonts');
   const linkLabel = h('span', {}, 'Send Twitch clips as links');

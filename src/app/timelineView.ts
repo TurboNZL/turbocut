@@ -358,13 +358,13 @@ export class TimelineView {
     const many = store.selectedIds.length > 1;
     const what = many ? `${store.selectedIds.length} clips` : 'clip';
     popupMenu({ x: e.clientX, y: e.clientY }, [
-      { label: 'Split at the playhead', run: () => acts.split(), disabled: !inside && !many },
-      { label: 'Trim the start to the playhead', run: () => acts.trimToPlayhead('start'), disabled: !inside },
-      { label: 'Trim the end to the playhead', run: () => acts.trimToPlayhead('end'), disabled: !inside },
-      { label: clip.muted ? 'Unmute' : 'Mute', run: () => acts.toggleMute() },
-      { label: `Duplicate ${what}`, run: () => acts.duplicateSelection(), disabled: track.locked },
-      { label: `Delete ${what}`, run: () => acts.remove(false), disabled: track.locked },
-      { label: `Delete ${what} and close the gap`, run: () => acts.remove(true), disabled: track.locked },
+      { label: 'Split at the playhead', icon: 'split', run: () => acts.split(), disabled: !inside && !many },
+      { label: 'Trim the start to the playhead', icon: 'trimStart', run: () => acts.trimToPlayhead('start'), disabled: !inside },
+      { label: 'Trim the end to the playhead', icon: 'trimEnd', run: () => acts.trimToPlayhead('end'), disabled: !inside },
+      { label: clip.muted ? 'Unmute' : 'Mute', icon: 'mute', run: () => acts.toggleMute() },
+      { label: `Duplicate ${what}`, icon: 'copy', run: () => acts.duplicateSelection(), disabled: track.locked },
+      { label: `Delete ${what}`, icon: 'trash', run: () => acts.remove(false), disabled: track.locked },
+      { label: `Delete ${what} and close the gap`, icon: 'rippleDelete', run: () => acts.remove(true), disabled: track.locked },
     ]);
   }
 
@@ -379,9 +379,9 @@ export class TimelineView {
     const cue = store.project.captions.find((c) => c.id === cueId);
     const inside = !!cue && cueAt(store.project, store.playhead)?.id === cueId && store.playhead > cue.start;
     popupMenu({ x: e.clientX, y: e.clientY }, [
-      { label: 'Split at the playhead', run: () => acts.split(), disabled: !inside },
-      { label: 'Go to this caption', run: () => cue && store.seek(cue.start) },
-      { label: 'Delete caption', run: () => acts.remove(false) },
+      { label: 'Split at the playhead', icon: 'split', run: () => acts.split(), disabled: !inside },
+      { label: 'Go to this caption', icon: 'crosshair', run: () => cue && store.seek(cue.start) },
+      { label: 'Delete caption', icon: 'trash', run: () => acts.remove(false) },
     ]);
   }
 
@@ -394,9 +394,9 @@ export class TimelineView {
     store.clearSelection();
     store.setActiveTrack(trackId);
     popupMenu({ x: e.clientX, y: e.clientY }, [
-      { label: trackId === CAPTION_TRACK ? 'Split the caption at the playhead' : 'Split this track at the playhead', run: () => acts.split() },
-      { label: 'Add a video track', run: () => acts.addTrack('video') },
-      { label: 'Add an audio track', run: () => acts.addTrack('audio') },
+      { label: trackId === CAPTION_TRACK ? 'Split the caption at the playhead' : 'Split this track at the playhead', icon: 'split', run: () => acts.split() },
+      { label: 'Add a video track', icon: 'video', run: () => acts.addTrack('video') },
+      { label: 'Add an audio track', icon: 'audio', run: () => acts.addTrack('audio') },
     ]);
   }
 
@@ -407,10 +407,10 @@ export class TimelineView {
     const last = this.store.project.tracks.filter((t) => t.kind === track.kind).length <= 1;
     popupMenu(anchor, [
       track.kind === 'video'
-        ? { label: track.hidden ? 'Show this track' : 'Hide this track', run: () => acts.toggle(track.id, 'hidden') }
-        : { label: track.muted ? 'Unmute this track' : 'Mute this track', run: () => acts.toggle(track.id, 'muted') },
-      { label: track.locked ? 'Unlock this track' : 'Lock this track', run: () => acts.toggle(track.id, 'locked') },
-      { label: 'Delete this track', run: () => acts.remove(track.id), disabled: track.clips.length > 0 || last },
+        ? { label: track.hidden ? 'Show this track' : 'Hide this track', icon: track.hidden ? 'eye' : 'hidden', run: () => acts.toggle(track.id, 'hidden') }
+        : { label: track.muted ? 'Unmute this track' : 'Mute this track', icon: 'mute', run: () => acts.toggle(track.id, 'muted') },
+      { label: track.locked ? 'Unlock this track' : 'Lock this track', icon: track.locked ? 'unlock' : 'lock', run: () => acts.toggle(track.id, 'locked') },
+      { label: 'Delete this track', icon: 'trash', run: () => acts.remove(track.id), disabled: track.clips.length > 0 || last },
     ]);
   }
 
@@ -463,8 +463,8 @@ export class TimelineView {
       const acts = this.opts.trackActions;
       if (!acts) return;
       popupMenu(btn, [
-        { label: 'Add a video track', run: () => acts.add('video') },
-        { label: 'Add an audio track', run: () => acts.add('audio') },
+        { label: 'Add a video track', icon: 'video', run: () => acts.add('video') },
+        { label: 'Add an audio track', icon: 'audio', run: () => acts.add('audio') },
       ]);
     });
     return btn;
@@ -536,12 +536,15 @@ export class TimelineView {
     }
     // Pressing a clip that is already one of several keeps them all selected, so they can be dragged together.
     const group = mode === 'move' && store.isSelected(clip.id) && store.selectedIds.length > 1;
-    if (!group && !mod) store.select(clip.id);
+    // Dragging an edge of one of several selected clips trims all of them by the same amount and keeps them selected.
+    const edgeGroup = mode !== 'move' && store.isSelected(clip.id) && store.selectedIds.length > 1;
+    const edgeOrigins = edgeGroup ? store.selectedIds.map((id) => ({ id, c: store.project.tracks.flatMap((t) => t.clips).find((x) => x.id === id) })).filter((o): o is { id: string; c: Clip } => !!o.c).map((o) => ({ id: o.id, start: o.c.start, end: clipEnd(o.c) })) : [];
+    if (!group && !edgeGroup && !mod) store.select(clip.id);
     const startX = e.clientX;
     const startY = e.clientY;
     const origStart = clip.start;
     const origEnd = clipEnd(clip);
-    const points = this.snapPoints(new Set(group ? store.selectedIds : [clip.id]));
+    const points = this.snapPoints(new Set(group || edgeGroup ? store.selectedIds : [clip.id]));
     const slop = this.touch ? 6 : 3;
     let began = false;
 
@@ -580,10 +583,14 @@ export class TimelineView {
         const toTrack = under?.dataset.track && store.project.tracks.find((t) => t.id === under.dataset.track && t.kind === track.kind) ? under.dataset.track : undefined;
         moveLinked(store.project, cur.id, Math.max(0, start), toTrack);
       } else if (mode === 'left') {
-        trimStart(store.project, cur.id, this.snap(origStart + dx, points));
+        const to = this.snap(origStart + dx, points);
+        if (edgeGroup) for (const o of edgeOrigins) trimStart(store.project, o.id, o.start + (to - origStart));
+        else trimStart(store.project, cur.id, to);
         edgeFrame = cur.start;
       } else {
-        trimEnd(store.project, cur.id, this.snap(origEnd + dx, points));
+        const to = this.snap(origEnd + dx, points);
+        if (edgeGroup) for (const o of edgeOrigins) trimEnd(store.project, o.id, o.end + (to - origEnd));
+        else trimEnd(store.project, cur.id, to);
         edgeFrame = clipEnd(cur) - 1;
       }
       if (mode !== 'move') {
@@ -599,7 +606,7 @@ export class TimelineView {
       window.removeEventListener('pointercancel', up);
       this.tip.style.display = 'none';
       if (!began && onClick) onClick();
-      else if (group && !began && !mod) store.select(clip.id); // a plain click on one of several selects just that one
+      else if ((group || edgeGroup) && !began && !mod) store.select(clip.id); // a plain click on one of several selects just that one
       if (this.dragging) {
         this.dragging = false;
         this.movePlayhead(true); // bring the edge you just trimmed back to the middle

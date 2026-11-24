@@ -31,6 +31,7 @@ import { detectSystemFonts, fontPermission } from './systemFonts.ts';
 import { TimelineView } from './timelineView.ts';
 import { checkForUpdate } from './updater.ts';
 import { openTwitchImport } from './twitchDialog.ts';
+import { openProjectSettings, SHAPES } from './projectSettings.ts';
 import { openProjectManager } from './projectManager.ts';
 import { openReceiveDialog } from './receive.ts';
 import { openSendDialog, startSharing } from './share.ts';
@@ -216,9 +217,8 @@ store.on('selection', () => {
 
 function projectPanel(): HTMLElement {
   const name = h('input', { class: 'input', 'aria-label': 'Project name' });
-  name.addEventListener('change', () => store.edit((p) => (p.name = name.value.trim() || 'Untitled')));
-  const aspects: [string, number, number][] = [['Vertical 9:16 (1080×1920)', 1080, 1920], ['Landscape 16:9 (1920×1080)', 1920, 1080], ['Portrait 4:5 (1080×1350)', 1080, 1350], ['Square 1:1 (1080×1080)', 1080, 1080]];
-  const aspect = h('select', { class: 'input', 'aria-label': 'Aspect ratio' }, ...aspects.map(([l, w, hh]) => h('option', { value: `${w}x${hh}` }, l)), h('option', { value: 'custom', hidden: true }, 'Custom size'));
+  name.addEventListener('change', () => actions.setName(name.value));
+  const aspect = h('select', { class: 'input', 'aria-label': 'Aspect ratio' }, ...SHAPES.map(([l, w, hh]) => h('option', { value: `${w}x${hh}` }, l)), h('option', { value: 'custom', hidden: true }, 'Custom size'));
   aspect.addEventListener('change', () => {
     const [w, hh] = aspect.value.split('x').map(Number) as [number, number];
     store.edit((p) => ((p.width = w), (p.height = hh)));
@@ -227,12 +227,14 @@ function projectPanel(): HTMLElement {
   const missing = h('button', { class: 'btn', onclick: () => actions.relinkDialog() }, 'Find missing media…');
   const sync = () => {
     const p = store.project;
-    if (document.activeElement !== name) name.value = p.name;
-    aspect.value = aspects.some(([, w, hh]) => w === p.width && hh === p.height) ? `${p.width}x${p.height}` : 'custom';
-    rate.textContent = `Frame rate is ${p.fps} fps.`;
+    name.placeholder = store.fileName ? store.fileName.replace(/\.turbocut[cf]?$/i, '') : 'Untitled';
+    if (document.activeElement !== name) name.value = p.nameSet ? p.name : '';
+    aspect.value = SHAPES.some(([, w, hh]) => w === p.width && hh === p.height) ? `${p.width}x${p.height}` : 'custom';
+    rate.textContent = `Frame rate is ${p.fps} fps. ${p.nameSet ? '' : 'The name follows the file until you type one.'}`;
     missing.hidden = store.missingAssets().length === 0;
   };
   store.on('project', sync);
+  store.on('saved', sync);
   sync();
   return panel(
     'Project',
@@ -241,13 +243,16 @@ function projectPanel(): HTMLElement {
       h('label', { class: 'proj-field' }, h('span', { class: 'prop-l' }, 'Shape'), aspect),
       rate,
       h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => void actions.saveProject() }, 'Save'), h('button', { class: 'btn', onclick: () => void actions.openProject() }, 'Open…'), h('button', { class: 'btn', onclick: () => void actions.newProject() }, 'New')),
+      h('button', { class: 'btn', onclick: () => openProjectSettings(store, actions) }, 'Project settings…'),
       missing,
       h('p', { class: 'hint' }, 'A project file holds the edit, not the video. The desktop app remembers where each video is and opens it again by itself; elsewhere you are asked for the files.'),
-      h('button', { class: 'btn', onclick: () => openSendDialog(store) }, 'Send to another device…'),
-      h('button', { class: 'btn', onclick: () => openReceiveDialog(store, actions) }, 'Receive from a computer…'),
+      h('button', { class: 'btn', onclick: () => void sendTo() }, 'Send to another device…'),
+      h('button', { class: 'btn', onclick: () => openReceiveDialog(store, actions) }, 'Receive from another device…'),
       h('button', { class: 'btn', onclick: () => settings() }, 'Settings…')),
   );
 }
+/** A project needs a name before it leaves the draft stage. */
+const sendTo = async () => (await actions.ensureName('The other device files it under this name.')) && openSendDialog(store);
 
 const iconBtn = (name: IconName, label: string, run: () => void, extra = '', hotkey?: string) => {
   const b = h('button', { class: `btn btn-ghost icon-btn ${extra}`.trim(), 'aria-label': label, title: label, onclick: run }, icon(name));
@@ -256,16 +261,15 @@ const iconBtn = (name: IconName, label: string, run: () => void, extra = '', hot
 const fileMenu = h('button', { class: 'btn btn-ghost', 'aria-haspopup': 'menu' }, 'File', icon('chevron', 14));
 fileMenu.addEventListener('click', () =>
   popupMenu(fileMenu, [
-    { label: 'New project', run: () => void actions.newProject() },
-    { label: 'Projects…', run: () => void openProjectManager(store, actions) },
-    { label: 'Open project…', run: () => void actions.openProject() },
-    { label: 'Save project', run: () => void actions.saveProject() },
-    { label: 'Save project as…', run: () => void actions.saveProject(true) },
-    { label: 'Import media…', run: () => void importFiles() },
-    { label: 'Import a Twitch clip…', run: () => openTwitchImport(actions) },
-    { label: 'Send to another device…', run: () => openSendDialog(store) },
-    { label: 'Receive from a computer…', run: () => openReceiveDialog(store, actions) },
-    { label: 'Find missing media…', run: () => actions.relinkDialog(), disabled: store.missingAssets().length === 0 },
+    { label: 'New project', icon: 'plus', run: () => void actions.newProject() },
+    { label: 'Projects…', icon: 'folder', run: () => void openProjectManager(store, actions) },
+    { label: 'Open project…', icon: 'file', run: () => void actions.openProject() },
+    { label: 'Save project', icon: 'download', run: () => void actions.saveProject() },
+    { label: 'Save project as…', icon: 'download', run: () => void actions.saveProject(true) },
+    { label: 'Project settings…', icon: 'sliders', run: () => openProjectSettings(store, actions) },
+    { label: 'Send to another device…', icon: 'send', run: () => void sendTo() },
+    { label: 'Receive from another device…', icon: 'phone', run: () => openReceiveDialog(store, actions) },
+    { label: 'Find missing media…', icon: 'search', run: () => actions.relinkDialog(), disabled: store.missingAssets().length === 0 },
   ]),
 );
 // Next to the File menu: the file the project is saved in, or that it is not saved yet. A dot says there are changes since the last save.
@@ -342,7 +346,6 @@ function placeTools(where: 'inline' | 'stage' | 'bottom' | 'left' | 'right' | 'f
   if (editBar.parentElement !== dest) dest.append(editBar);
 }
 
-player.canvas.addEventListener('click', () => player.toggle());
 const stage = h('section', { class: 'stage' }, h('div', { class: 'preview' }, player.canvas), transport);
 const app = document.getElementById('app')!;
 const frameBar = windowFrame();
@@ -406,7 +409,6 @@ function showHome(): void {
   if (docked) view = 'home';
   const handle = openHome({
     store,
-    importFiles: () => importFiles(),
     openProject: () => actions.openProject(),
     openProjects: (opened) => void openProjectManager(store, actions, opened),
     openRecent: (key) => actions.openRecent(key),

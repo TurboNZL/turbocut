@@ -51,9 +51,9 @@ export class BinPanel {
     more.addEventListener('click', () => {
       const folders = store.project.folders ?? [];
       popupMenu(more, [
-        ...folders.filter((f) => f.id !== asset.folder).map((f) => ({ label: `Move to ${f.name}`, run: () => this.actions.moveToFolder(asset.id, f.id) })),
-        ...(asset.folder ? [{ label: 'Move out of the folder', run: () => this.actions.moveToFolder(asset.id, null) }] : []),
-        { label: 'Move to a new folder…', run: () => void this.newFolder().then((id) => id && this.actions.moveToFolder(asset.id, id)) },
+        ...folders.filter((f) => f.id !== asset.folder).map((f) => ({ label: `Move to ${f.name}`, icon: 'folder' as const, run: () => this.actions.moveToFolder(asset.id, f.id) })),
+        ...(asset.folder ? [{ label: 'Move out of the folder', icon: 'folder' as const, run: () => this.actions.moveToFolder(asset.id, null) }] : []),
+        { label: 'Move to a new folder…', icon: 'folderPlus', run: () => void this.newFolder().then((id) => id && this.actions.moveToFolder(asset.id, id)) },
       ]);
     });
     thumb.addEventListener('pointerdown', (e) => this.startDrag(e, asset));
@@ -112,9 +112,9 @@ export class BinPanel {
       e.preventDefault();
       e.stopPropagation();
       popupMenu(more, [
-        { label: 'Import into this folder…', run: () => this.importFiles(f.id) },
-        { label: 'Rename…', run: () => void askText('Rename folder', f.name, 'Folder name', 'Rename').then((n) => n && this.actions.renameFolder(f.id, n)) },
-        { label: 'Delete folder (keeps its items)', run: () => this.actions.removeFolder(f.id) },
+        { label: 'Import into this folder…', icon: 'download', run: () => this.importFiles(f.id) },
+        { label: 'Rename…', icon: 'pencil', run: () => void askText('Rename folder', f.name, 'Folder name', 'Rename').then((n) => n && this.actions.renameFolder(f.id, n)) },
+        { label: 'Delete folder (keeps its items)', icon: 'trash', run: () => this.actions.removeFolder(f.id) },
       ]);
     });
     const summary = h('summary', { class: 'bin-folder-head' }, icon('chevron', 14), icon('folder', 16), h('span', { class: 'bin-folder-name' }, f.name), h('span', { class: 'hint' }, `${items.length}`), more);

@@ -12,7 +12,6 @@ const RELEASES = 'https://github.com/TurboNZL/turbocut/releases';
 export interface HomeDeps {
   store: Store;
   /** Pick video files and put them in the bin. Resolves true when files were chosen. */
-  importFiles: () => Promise<boolean>;
   /** Pick a `.turbocut` project file and open it. Resolves true only when one was opened. */
   openProject: () => Promise<boolean>;
   /** Open the project manager (every project in TurboCut's folders). `opened` runs when one was opened, so this screen can close. */
@@ -166,8 +165,7 @@ export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement }
       arrive(recent, 3),
       arrive(h('div', { class: 'home-quicks' },
         quick('folder', 'Projects', 'Open one you saved, or find a file', () => deps.openProjects(close)),
-        quick('video', 'Import video', 'Straight into the media bin', async () => ((await deps.importFiles()) && close())),
-        quick('download', 'From a computer', 'Paste the link it gives', () => deps.receive()),
+        quick('send', 'Send or receive', 'Move projects between your devices', () => deps.receive()),
         quick('settings', 'Make it yours', 'Layouts, fonts and looks', () => deps.openSettings('Layout'))), 4),
       // The update line is the last thing on the first screen. Everything after it waits below the edge.
       arrive(h('section', { class: 'home-card home-updates' },
