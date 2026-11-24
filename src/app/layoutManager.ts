@@ -10,6 +10,7 @@ const TOOLS: [ToolsPlacement, string][] = [
   ['auto', 'Automatic (in line with the play button; under the timeline on a phone)'],
   ['top', 'In line with the play button (a row under it on a phone)'],
   ['row', 'A row of their own under the play button'],
+  ['above', 'A bar above the timeline'],
   ['bottom', 'Under the timeline'],
   ['left', 'A column left of the preview (not on a phone)'],
   ['right', 'A column right of the preview (not on a phone)'],
@@ -34,11 +35,12 @@ export function schematic(l: Layout): SVGElement {
   const W = 120;
   const H = 76;
   const head = 6;
-  const tools = l.tools === 'bottom' ? 5 : 0;
+  const tools = l.tools === 'bottom' || l.tools === 'above' ? 5 : 0;
   const rail = l.tools === 'left' || l.tools === 'right' ? 5 : 0;
   const rest = H - head - tools;
   const tl = Math.round((rest * l.timelineHeight) / 100);
   const main = rest - tl;
+  const above = l.tools === 'above';
   const rects: string[] = [];
   const r = (x: number, y: number, w: number, hh: number, cls: string) => rects.push(`<rect class="${cls}" x="${x}" y="${y}" width="${Math.max(1, w)}" height="${Math.max(1, hh)}" rx="1.5"/>`);
   r(0, 0, W, head - 1, 'sc-bar');
@@ -69,8 +71,8 @@ export function schematic(l: Layout): SVGElement {
     if (left.length) col(left, 2, lw);
     if (right.length) col(right, W - rw - 2, rw);
   }
-  if (tools) r(2, head + main + tl, W - 4, tools - 1.5, 'sc-tools');
-  r(2, head + main, W - 4, tl - 1, 'sc-tl');
+  if (tools) r(2, above ? head + main : head + main + tl, W - 4, tools - 1.5, 'sc-tools');
+  r(2, above ? head + main + tools : head + main, W - 4, tl - 1, 'sc-tl');
   if (l.tools === 'float') r(W - 14, head + main - 12, 9, 9, 'sc-fab');
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -147,7 +149,7 @@ export function layoutManager(store: Store, redraw: () => void): HTMLElement {
     el.addEventListener('change', () => set(el.value as T));
     return field(label, el);
   };
-  const slider = (label: string, value: number, [lo, hi]: readonly [number, number], unit: string, key: 'panelWidth' | 'leftWidth' | 'timelineHeight') => {
+  const slider = (label: string, value: number, [lo, hi]: readonly [number, number], unit: string, key: 'panelWidth' | 'leftWidth' | 'timelineHeight' | 'panelScale' | 'fitPercent') => {
     const range = h('input', { type: 'range', class: 'bt-range bt-hit', min: lo, max: hi, value, 'aria-label': label });
     const out = h('span', { class: 'mono' }, `${value}${unit}`);
     range.addEventListener('input', () => {
@@ -242,5 +244,8 @@ export function layoutManager(store: Store, redraw: () => void): HTMLElement {
       select('Control size', DENSITIES, active.density, (v) => change({ density: v })),
       slider('Right panel width', active.panelWidth, LIMITS.panelWidth, ' px', 'panelWidth'),
       slider('Left panel width', active.leftWidth, LIMITS.panelWidth, ' px', 'leftWidth'),
-      slider('Timeline height', active.timelineHeight, LIMITS.timelineHeight, ' %', 'timelineHeight')));
+      slider('Timeline height', active.timelineHeight, LIMITS.timelineHeight, ' %', 'timelineHeight'),
+      slider('Size of the controls in the panels', active.panelScale, LIMITS.panelScale, ' %', 'panelScale'),
+      select('Panel width', [['fixed', 'Fixed: as wide as set above'], ['canvas', 'Stretch to the picture: the panels fill the room beside it']] as [Layout['panelFit'], string][], active.panelFit, (v) => change({ panelFit: v })),
+      ...(active.panelFit === 'canvas' ? [slider('How much of that room', active.fitPercent, LIMITS.fitPercent, ' %', 'fitPercent'), h('p', { class: 'hint' }, 'With the picture in the middle, each panel takes this share of the room between the window edge and the picture, and the tools and play buttons are as wide as the picture.')] : [])));
 }

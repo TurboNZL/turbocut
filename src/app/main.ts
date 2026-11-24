@@ -176,8 +176,21 @@ function drawLayout(): void {
   app.dataset.density = l.density;
   app.dataset.tools = l.tools; // inline with the play button, a row under it, under the timeline, or floating
   app.dataset.dock = store.settings.dock ? 'on' : 'off';
-  // The side panels keep what the layout asks for, but give way before the preview gets narrow.
-  const fit = l.mode === 'sheet' ? { left: 0, right: 0 } : fitColumns(l.left.length ? l.leftWidth : 0, l.right.length ? l.panelWidth : 0, window.innerWidth);
+  // The side panels keep what the layout asks for, but give way before the preview gets narrow. In "stretch to the picture" mode they instead take
+  // a share of the room beside the picture, so they snap out to its edges.
+  let want = { left: l.left.length ? l.leftWidth : 0, right: l.right.length ? l.panelWidth : 0 };
+  if (l.mode === 'side' && l.panelFit === 'canvas' && (want.left || want.right)) {
+    const pv = previewBox();
+    const aspect = store.project.width / store.project.height;
+    const cw = Math.min(pv.h * aspect, window.innerWidth - 2 * 200);
+    const room = Math.max(0, window.innerWidth - cw - 2 * 8); // the stage's own padding
+    const each = want.left && want.right ? room / 2 : room;
+    const take = (on: number) => (on ? Math.round(Math.max(200, Math.min(900, ((each - 8) * l.fitPercent) / 100))) : 0);
+    want = { left: take(want.left), right: take(want.right) };
+  }
+  const fit = l.mode === 'sheet' ? { left: 0, right: 0 } : fitColumns(want.left, want.right, window.innerWidth);
+  app.style.setProperty('--panel-scale', String(l.panelScale / 100));
+  app.dataset.fit = l.mode === 'side' ? l.panelFit : 'fixed';
   app.style.setProperty('--left-w', `${fit.left}px`);
   app.style.setProperty('--right-w', `${l.mode === 'sheet' ? (l.right.length ? l.panelWidth : 0) : fit.right}px`);
   app.style.setProperty('--left-on', l.left.length ? '1' : '0');
@@ -343,7 +356,7 @@ fabToggle.addEventListener('click', () => {
   fabToggle.setAttribute('aria-expanded', String(!open));
 });
 /** Put the tool bar where the layout wants it. Moving the same element keeps its listeners and state. */
-function placeTools(where: 'inline' | 'stage' | 'bottom' | 'left' | 'right' | 'float'): void {
+function placeTools(where: 'inline' | 'stage' | 'above' | 'bottom' | 'left' | 'right' | 'float'): void {
   const dest = where === 'inline' ? transport : where === 'stage' || where === 'left' || where === 'right' ? stage : app;
   if (editBar.parentElement !== dest) dest.append(editBar);
 }
@@ -351,6 +364,24 @@ function placeTools(where: 'inline' | 'stage' | 'bottom' | 'left' | 'right' | 'f
 canvasInput(player.canvas, store);
 const stage = h('section', { class: 'stage' }, h('div', { class: 'preview' }, player.canvas), transport);
 const app = document.getElementById('app')!;
+/** The picture's box: its height does not depend on the width of the side panels, which is what lets the panels be sized from the picture. */
+const previewBox = () => {
+  const el = player.canvas.parentElement;
+  return { w: el?.clientWidth ?? 0, h: el?.clientHeight ?? 0 };
+};
+// The play buttons and tools can be as wide as the picture (`--cw`); the picture's size also feeds "stretch to the picture" panels.
+let lastPreviewSig = '';
+const previewWatch = new ResizeObserver(() => {
+  app.style.setProperty('--cw', `${Math.round(player.canvas.getBoundingClientRect().width)}px`);
+  const sig = `${previewBox().h}|${store.project.width}x${store.project.height}`;
+  if (sig !== lastPreviewSig) {
+    lastPreviewSig = sig;
+    if (app.dataset.fit === 'canvas') drawLayout();
+  }
+});
+previewWatch.observe(player.canvas.parentElement!);
+previewWatch.observe(player.canvas);
+
 const frameBar = windowFrame();
 if (frameBar) app.before(frameBar);
 // The bar between the preview and the timeline: drag to give the timeline more or less of the window.

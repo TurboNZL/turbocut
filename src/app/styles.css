@@ -39,7 +39,25 @@ button, select, input { font: inherit; }
 .prop { display: grid; grid-template-columns: 5.2rem minmax(0, 1fr) 4.6rem auto; gap: 0.4rem; align-items: center; margin: 0.3rem 0; }
 .prop .bt-range { width: 100%; }
 .prop .num { width: 100%; padding-inline: 0.4rem; }
+.prop-block > .prop { grid-template-columns: minmax(2.6rem, 5.2rem) minmax(4.5rem, 1fr) 4.2rem auto; grid-template-areas: 'name range num keys'; gap: 0.3rem 0.4rem; }
+.prop-block > .prop > .prop-name { grid-area: name; }
+.prop-block > .prop > .bt-range { grid-area: range; min-width: 0; }
+.prop-block > .prop > .num { grid-area: num; min-width: 0; }
+.prop-block > .prop > .kf-group { grid-area: keys; }
 .prop-l { color: hsl(var(--muted)); font-size: 0.85em; }
+.prop-name { text-align: left; background: none; border: 0; padding: 0.15rem 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; font-size: 0.85em; }
+.prop-name:hover, .prop-block[data-open] .prop-name { color: hsl(var(--fg)); }
+.prop-name::after { content: ''; display: inline-block; margin-left: 0.3em; width: 0.35em; height: 0.35em; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-0.15em) rotate(45deg); opacity: 0.55; transition: transform 140ms ease; }
+.prop-block[data-open] .prop-name::after { transform: translateY(0.05em) rotate(225deg); }
+/* Opened out: the name and the number on one line, the slider across the whole width under them, the keyframe controls under that. */
+.prop-block[data-open] > .prop { grid-template-columns: minmax(0, 1fr) 5.2rem; grid-template-areas: 'name num' 'range range' 'keys keys'; }
+.prop-block[data-open] .kf-group { justify-self: end; }
+/* A narrow panel opens every setting out by itself: the slider and keyframe buttons never get a sliver of room. */
+.tab-body { container-type: inline-size; container-name: panelbody; }
+@container panelbody (max-width: 330px) {
+  .prop-block > .prop { grid-template-columns: minmax(0, 1fr) 5.2rem; grid-template-areas: 'name num' 'range range' 'keys keys'; }
+  .prop-block > .prop .kf-group { justify-self: end; }
+}
 .fx-box { margin-top: 0.6rem; padding-top: 0.4rem; border-top: 1px solid hsl(var(--line)); }
 .kf { padding: 0 0.4rem; min-width: 1.8rem; }
 .kf.on { color: hsl(var(--accent)); }
@@ -89,7 +107,9 @@ button, select, input { font: inherit; }
 
 .status { position: fixed; left: 50%; bottom: calc(4.6rem + env(safe-area-inset-bottom)); transform: translate(-50%, 8px); z-index: 30; max-width: min(92vw, 34rem); padding: 0.5rem 0.9rem; font-size: 0.88em; text-align: center; color: hsl(var(--fg)); background: hsl(var(--surface)); border: 1px solid hsl(var(--line)); border-radius: calc(var(--radius, 6px) * 1.6); box-shadow: 0 6px 24px rgb(0 0 0 / 0.22); opacity: 0; pointer-events: none; transition: opacity 200ms ease, transform 200ms ease; }
 .status.show { opacity: 1; transform: translate(-50%, 0); }
-.dlg-backdrop { position: fixed; inset: 0; display: grid; place-items: center; z-index: 50; }
+.dlg-backdrop { position: fixed; inset: 0; display: grid; place-items: center; z-index: 50; box-sizing: border-box; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+/* The drawn title bar is part of the window, not of the page: a dialog is centred in what is under it (and sized from that, not from the whole window). */
+body.has-frame .dlg-backdrop { padding-top: var(--wf-h, 0px); }
 .dlg { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 24px); display: flex; flex-direction: column; }
 /* Rounded looks (Liquid Glass, One UI, ...) cut a dialog's corners deep: keep the content, title and buttons clear of them. The footer rule has no weight so a look's own footer still wins. */
 .dlg { --dlg-pad: max(1rem, calc(var(--win-r, 0px) * 0.55)); }
@@ -155,7 +175,7 @@ kbd { font-family: ui-monospace, Menlo, Consolas, monospace; padding: 0 0.35rem;
 #app[data-density='compact'] .tl-audio { height: 30px; }
 
 /* ---------------------------------------------------------------- settings dialog */
-.dlg-wide { width: min(780px, calc(100vw - 16px)); height: min(640px, calc(100vh - 16px)); }
+.dlg-wide { width: min(780px, calc(100% - 16px)); height: min(640px, calc(100% - 16px)); max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
 .dlg-wide .bt-body { flex: 1; min-height: 0; padding: 0; display: flex; }
 .settings { display: grid; grid-template-columns: 200px minmax(0, 1fr); flex: 1; min-height: 0; width: 100%; }
 .settings-nav { display: flex; flex-direction: column; border-right: 1px solid hsl(var(--line)); overflow-y: auto; }
@@ -367,7 +387,7 @@ button:disabled, .btn:disabled, [aria-disabled='true'] { cursor: not-allowed; }
 .kf-prev .ico { transform: rotate(90deg); }
 .kf-next .ico { transform: rotate(-90deg); }
 .kf-nav:disabled { opacity: 0.35; }
-.kf-lane { position: relative; height: 20px; margin: 0 0.5rem 0.3rem calc(5.2rem + 0.4rem + 0.5rem); border-radius: 4px; background: hsl(var(--line) / 0.28); cursor: col-resize; touch-action: pan-y; }
+.kf-lane { position: relative; height: 20px; margin: 0 0.25rem 0.3rem 0.25rem; border-radius: 4px; background: hsl(var(--line) / 0.28); cursor: col-resize; touch-action: pan-y; }
 .kf-lane::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: hsl(var(--line)); pointer-events: none; }
 .kf-dot { position: absolute; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; padding: 0; border: 0; border-radius: 0; background: none; color: hsl(var(--accent)); display: grid; place-items: center; cursor: grab; touch-action: none; z-index: 2; }
 .kf-dot.sel { color: hsl(var(--fg)); transform: scale(1.25); }
@@ -407,7 +427,7 @@ body.resizing-y, body.resizing-y * { cursor: row-resize !important; }
 
 
 /* ---------------------------------------------------------------- Settings: roomier, grouped, searchable */
-.dlg-settings { width: min(1040px, calc(100vw - 16px)); height: min(780px, calc(100vh - 16px)); }
+.dlg-settings { width: min(1040px, calc(100% - 16px)); height: min(780px, calc(100% - 16px)); max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
 .settings-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; container-type: inline-size; container-name: settings; }
 .settings-top { position: relative; display: flex; align-items: center; padding: 0.7rem 1rem; border-bottom: 1px solid hsl(var(--line)); }
 .settings-search { flex: 1; padding-left: 2.1rem; }
@@ -728,3 +748,35 @@ input.input, textarea.input, select.input { color: hsl(var(--fg)); }
 @media (max-width: 520px) { .pm-text small { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; } }
 /* On a phone the download notes are two lines at most (the guides have the whole story), so the second screen is not three screens long. */
 @media (max-width: 520px) { .home-download-text p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; } .home-download { padding: 0.6rem 0.7rem; } }
+
+/* ---------------------------------------------------------------- the editing tools are a box of their own; the play buttons follow the picture's width */
+#app[data-tools]:not([data-tools='float']) .edit-bar.edit-bar { background: hsl(var(--raised, var(--surface)) / 0.55); border: 1px solid hsl(var(--line)); border-radius: var(--radius, 10px); padding: 0.2rem 0.35rem; }
+#app:is([data-tools='stage'], [data-tools='above'], [data-tools='bottom']) .edit-bar { justify-content: center; }
+#app[data-tools='above'] { grid-template-areas: 'head' 'main' 'tools' 'tl' 'dock'; grid-template-rows: auto minmax(0, 1fr) auto minmax(var(--tl-min), var(--tl-h, 34%)) auto; }
+#app[data-tools='above'] > .edit-bar { grid-area: tools; margin: 0 0.5rem; justify-content: center; }
+#app[data-tools='above'] .edit-bar .spacer { display: none; }
+/* The zoom bar is part of the tools wherever they are, not only in the wide placements: it shrinks and wraps instead of disappearing. */
+#app:is([data-tools='stage'], [data-tools='above'], [data-tools='bottom']) .edit-bar { flex-wrap: wrap; }
+#app:is([data-tools='stage'], [data-tools='above'], [data-tools='bottom'], [data-tools='inline']) .edit-bar .zoom-box { display: inline-flex; flex: 1 1 8rem; max-width: 14rem; min-width: 5rem; }
+#app:is([data-tools='stage'], [data-tools='above'], [data-tools='bottom'], [data-tools='inline']) .edit-bar .zoom { flex: 1; width: auto; min-width: 2rem; }
+@media (pointer: coarse) { #app:is([data-tools='stage'], [data-tools='above'], [data-tools='bottom'], [data-tools='inline']) .edit-bar .zoom-box { display: none; } }
+@container stage (max-width: 420px) { #app[data-tools='inline'] .edit-bar .zoom-box { display: inline-flex; } }
+.transport-main { justify-content: space-between; }
+/* Play controls span the picture with a little overhang each side (never narrower than the buttons need). */
+.stage > .transport { justify-content: center; }
+.transport-main { width: max(14rem, min(100%, calc(var(--cw, 14rem) + 3rem))); }
+#app[data-tools='inline'] .transport { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 0.4rem 0.8rem; }
+#app[data-tools='inline'] .transport > .transport-main { grid-column: 2; }
+#app[data-tools='inline'] .transport > .edit-bar { grid-column: 3; flex: initial; justify-self: start; max-width: 100%; }
+@container stage (max-width: 820px) { #app[data-tools='inline'] .transport { grid-template-columns: minmax(0, 1fr); justify-items: center; } #app[data-tools='inline'] .transport > :is(.transport-main, .edit-bar) { grid-column: 1; justify-self: center; } }
+/* "Stretch to the picture": the tools are as wide as the picture too. */
+#app[data-fit='canvas']:is([data-tools='stage'], [data-tools='above']) .edit-bar { width: max(18rem, calc(var(--cw, 18rem) + 3rem)); max-width: 100%; margin-inline: auto; }
+/* Everything inside the side panels follows the layout's size setting. */
+.side .tab-body { zoom: var(--panel-scale, 1); }
+
+/* The floating looks leave 24 px of padding under <main>; with the panel's own 12 px gap that was a 36 px strip between the panels and the timeline. The panel's gap is enough. */
+:is([data-ui='liquid'], [data-ui='spotify'], [data-ui='oneui']) #app:not([data-panel='sheet']) > .main { padding-bottom: 0; }
+
+/* Liquid Glass: the floating tool buttons are glass (translucent, blurred, a light rim), not opaque discs with a drop shadow. */
+[data-ui='liquid'] #app[data-tools='float'] > .edit-bar .tool { background: hsl(var(--surface) / 0.42); -webkit-backdrop-filter: blur(18px) saturate(1.7); backdrop-filter: blur(18px) saturate(1.7); border: 1px solid rgb(255 255 255 / 0.55); box-shadow: 0 8px 22px rgb(0 0 0 / 0.14), inset 0 1px 1px rgb(255 255 255 / 0.75), inset 0 -1px 1px rgb(255 255 255 / 0.25); }
+[data-ui='liquid'] #app[data-tools='float'] > .edit-bar :is(.tool.btn-accent, .fab-toggle) { background: hsl(var(--accent) / 0.78); border-color: rgb(255 255 255 / 0.45); }
