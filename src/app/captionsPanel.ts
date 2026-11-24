@@ -1,7 +1,7 @@
 import { dialogueToCues, parseAss, writeAss } from '../captions/ass.ts';
 import { entranceTags, styleByName } from '../captions/presets.ts';
 import { groupingFor, groupWords } from '../transcribe/provider.ts';
-import { LocalTranscriber, MODELS, type Compute } from '../transcribe/local.ts';
+import { MODELS, sharedTranscriber, type Compute } from '../transcribe/local.ts';
 import { cleanWords } from '../transcribe/post.ts';
 import { projectDuration } from '../core/timeline.ts';
 import { renderPcm16k } from '../transcribe/pcm.ts';
@@ -197,8 +197,9 @@ export class CaptionsPanel {
   ): Promise<void> {
     const { project: p, lib } = this.store;
     if (!p.tracks.some((t) => t.kind === 'audio' && t.clips.length)) throw new Error('Add a clip with audio first');
-    const localProvider = new LocalTranscriber(local.model, local.compute);
-    localProvider.onStatus = (s) => say(s.phase === 'download' ? `Downloading speech model… ${Math.round((s.progress ?? 0) * 100)}%` : 'Listening…', s.phase === 'download' ? s.progress : undefined);
+    const localProvider = sharedTranscriber(local.model, local.compute);
+    // The percentage is the model being read in: from the network the first time, from this device's own copy after that.
+    localProvider.onStatus = (s) => say(s.phase === 'download' ? `Loading the speech model… ${Math.round((s.progress ?? 0) * 100)}% (it is only downloaded once)` : s.note ?? 'Listening…', s.phase === 'download' ? s.progress : undefined);
     const provider = localProvider;
     say('Preparing audio…');
     const pcm = await renderPcm16k(p, lib, (f) => say('Preparing audio…', f), signal);

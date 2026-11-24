@@ -39,6 +39,16 @@ self.onmessage = async (e: MessageEvent<RunMessage>) => {
       language: m.language,
       task: 'transcribe',
     });
+    // On the graphics chip the model is let go after each run, so it does not hold video memory while the person edits. The CPU path keeps it: the next run starts at once.
+    if (m.device === 'webgpu') {
+      const asr = loaded.asr;
+      loaded = null;
+      try {
+        await asr.dispose?.();
+      } catch {
+        /* the worker is torn down with the next run anyway */
+      }
+    }
     const words = (out.chunks ?? []).map((c: any, i: number, all: any[]) => {
       const start = c.timestamp?.[0] ?? 0;
       const end = c.timestamp?.[1] ?? all[i + 1]?.timestamp?.[0] ?? start + 0.3;

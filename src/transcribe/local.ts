@@ -30,10 +30,23 @@ export interface RunInfo {
 }
 
 export async function hasWebGpu(): Promise<boolean> {
+  return (await webGpuState()).ok;
+}
+
+/**
+ * Whether WebGPU can be trusted for the speech model: there has to be a real graphics adapter. A software ("fallback") adapter is slower than the
+ * CPU path and a weak one can run out of video memory, which on some systems takes the whole desktop down, so Automatic leaves both to the CPU.
+ */
+export async function webGpuState(): Promise<{ ok: boolean; why?: string }> {
   try {
-    return !!(await (navigator as any).gpu?.requestAdapter());
+    const gpu = (navigator as any).gpu;
+    if (!gpu) return { ok: false, why: 'This device has no WebGPU.' };
+    const adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
+    if (!adapter) return { ok: false, why: 'No graphics adapter answered.' };
+    if (adapter.isFallbackAdapter || adapter.info?.isFallbackAdapter) return { ok: false, why: 'WebGPU here is software only, which is slower than the CPU path.' };
+    return { ok: true };
   } catch {
-    return false;
+    return { ok: false, why: 'WebGPU could not be started.' };
   }
 }
 
@@ -48,7 +61,7 @@ export class LocalTranscriber implements Transcriber {
   readonly label = 'This device';
   private worker: Worker | null = null;
   /** Reported while the model downloads (0..1) or runs. */
-  onStatus?: (s: { phase: 'download' | 'transcribing'; progress?: number }) => void;
+  onStatus?: (s: { phase: 'download' | 'transcribing'; progress?: number; note?: string }) => void;
 
   /** What the last run actually used and heard, for the copyable report. */
   lastInfo?: RunInfo;
@@ -57,7 +70,30 @@ export class LocalTranscriber implements Transcriber {
 
   async transcribe(audio: Pcm16k, opts: TranscribeOptions = {}): Promise<TimedWord[]> {
     opts.signal?.throwIfAborted();
-    const device = this.compute === 'auto' ? ((await hasWebGpu()) ? 'webgpu' : 'wasm') : this.compute;
+    const auto = this.compute === 'auto';
+    const device: 'webgpu' | 'wasm' = auto ? ((await hasWebGpu()) ? 'webgpu' : 'wasm') : (this.compute as 'webgpu' | 'wasm');
+    try {
+      return await this.run(device, audio, opts);
+    } catch (e) {
+      if (opts.signal?.aborted || (e instanceof DOMException && e.name === 'AbortError')) throw e;
+      this.drop(); // a failed run may have left the graphics memory in a bad state: start the worker over
+      const why = e instanceof Error ? e.message : String(e);
+      if (device === 'webgpu' && auto) {
+        // Automatic never leaves the person with a broken GPU run: say so and do it again on the CPU.
+        this.onStatus?.({ phase: 'transcribing', note: 'The graphics chip failed, so this uses the CPU (slower).' });
+        return this.run('wasm', audio, opts);
+      }
+      throw new Error(device === 'webgpu' ? `The graphics chip (WebGPU) failed: ${why.slice(0, 200)} In Settings, Captions, choose Automatic or CPU as the processor.` : why);
+    }
+  }
+
+  private drop(): void {
+    this.worker?.terminate();
+    this.worker = null;
+  }
+
+  private run(device: 'webgpu' | 'wasm', audio: Pcm16k, opts: TranscribeOptions): Promise<TimedWord[]> {
+    opts.signal?.throwIfAborted();
     this.worker ??= new Worker(new URL('./whisper.worker.ts', import.meta.url), { type: 'module' });
     const worker = this.worker;
     return new Promise((resolve, reject) => {
@@ -69,7 +105,7 @@ export class LocalTranscriber implements Transcriber {
       const onAbort = () => {
         cleanup();
         worker.terminate();
-        this.worker = null;
+        if (this.worker === worker) this.worker = null;
         reject(new DOMException('Cancelled', 'AbortError'));
       };
       if (opts.signal?.aborted) return onAbort(); // already cancelled: an 'abort' event would never come
@@ -87,4 +123,15 @@ export class LocalTranscriber implements Transcriber {
       worker.postMessage({ type: 'run', samples, model: this.model, device, language: opts.language }, [samples.buffer]);
     });
   }
+}
+
+/**
+ * One transcriber is kept for the session per model and processor, so generating captions again reuses the model that is already loaded
+ * (a new worker every time meant reading the whole model in again: it looked like downloading it again).
+ */
+let shared: { key: string; t: LocalTranscriber } | null = null;
+export function sharedTranscriber(model: string, compute: Compute): LocalTranscriber {
+  const key = `${model}|${compute}`;
+  if (shared?.key !== key) shared = { key, t: new LocalTranscriber(model, compute) };
+  return shared.t;
 }
