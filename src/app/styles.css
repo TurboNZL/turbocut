@@ -780,3 +780,57 @@ input.input, textarea.input, select.input { color: hsl(var(--fg)); }
 /* Liquid Glass: the floating tool buttons are glass (translucent, blurred, a light rim), not opaque discs with a drop shadow. */
 [data-ui='liquid'] #app[data-tools='float'] > .edit-bar .tool { background: hsl(var(--surface) / 0.42); -webkit-backdrop-filter: blur(18px) saturate(1.7); backdrop-filter: blur(18px) saturate(1.7); border: 1px solid rgb(255 255 255 / 0.55); box-shadow: 0 8px 22px rgb(0 0 0 / 0.14), inset 0 1px 1px rgb(255 255 255 / 0.75), inset 0 -1px 1px rgb(255 255 255 / 0.25); }
 [data-ui='liquid'] #app[data-tools='float'] > .edit-bar :is(.tool.btn-accent, .fab-toggle) { background: hsl(var(--accent) / 0.78); border-color: rgb(255 255 255 / 0.45); }
+
+/* ---------------------------------------------------------------- Settings, Look: the picker built on the theme engine's controller */
+.look-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; align-items: start; }
+@media (min-width: 900px) { .look-page { grid-template-columns: minmax(0, 1fr) 19rem; } .look-side { order: 2; position: sticky; top: 0; } }
+.look-preview { border: 2px dashed hsl(var(--accent) / 0.7); border-radius: var(--radius, 10px); padding: 0.5rem; background: hsl(var(--accent) / 0.07); }
+.look-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.78rem; margin-bottom: 0.4rem; }
+.look-badge { background: hsl(var(--accent)); color: hsl(var(--accent-fg)); border-radius: 999px; padding: 0.05rem 0.55rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.7rem; }
+.look-now { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.look-preview-note { text-align: center; font-size: 0.72rem; }
+.look-mock { pointer-events: none; user-select: none; overflow: hidden; border: 1px solid hsl(var(--line)); background: hsl(var(--bg)); color: hsl(var(--fg)); border-radius: var(--radius, 10px); font-size: 0.7rem; position: relative; }
+.look-mock .btn, .look-mock .input, .look-mock .chip, .look-mock .tab { font-size: 0.68rem; line-height: 1.1rem; padding-block: 0.15rem; }
+.look-mock-top { display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.5rem; }
+.look-mock-main { display: grid; grid-template-columns: 38% minmax(0, 1fr); gap: 0.4rem; padding: 0 0.4rem 0.4rem; }
+.look-mock-video { aspect-ratio: 9 / 14; background: #000; position: relative; }
+.look-mock-side { display: grid; gap: 0.35rem; align-content: start; padding: 0.3rem; min-width: 0; }
+.look-mock-side .tabs { display: flex; gap: 0.15rem; }
+.look-mock-side .tab { flex: 1; text-align: center; padding-inline: 0.2rem; }
+.look-mock-fields { display: grid; gap: 0.35rem; }
+.look-mock-tl { position: relative; height: 2.6rem; margin: 0 0.4rem 0.4rem; border-top: 1px solid hsl(var(--line)); }
+.look-mock-clip { position: absolute; top: 0.5rem; left: 8%; width: 46%; height: 0.9rem; border-radius: 4px; background: hsl(var(--accent) / 0.8); }
+.look-mock-clip.b { left: 56%; width: 30%; top: 1.5rem; background: hsl(150 40% 40% / 0.8); }
+.look-mock-dialog { position: absolute; right: 0.6rem; bottom: 0.6rem; width: 55%; font-size: 0.64rem; }
+.look-mock-dialog .bt-titlebar { padding-block: 0.2rem; }
+.look-mock-dialog .bt-body { padding: 0.35rem 0.5rem; }
+.look-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; justify-content: space-between; }
+.look-toolbar .hint { margin: 0; flex: 1 1 14rem; }
+.look-tones, .look-glass { display: flex; gap: 0.3rem; align-items: center; }
+.look-tone { border: 1px solid hsl(var(--line)); background: transparent; color: hsl(var(--muted)); border-radius: 999px; padding: 0.1rem 0.7rem; font-size: 0.78rem; cursor: pointer; }
+.look-tone[aria-pressed='true'] { border-color: hsl(var(--accent)); color: hsl(var(--accent)); }
+.look-groups { display: grid; gap: 0.7rem; margin-top: 0.4rem; }
+.look-h { margin: 0 0 0.3rem; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: hsl(var(--muted)); font-weight: 700; }
+.look-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.25rem, 1fr)); gap: 0.35rem; }
+.look-grid-wide { grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); margin-top: 0.4rem; }
+.look-chip { display: flex; align-items: center; gap: 0.45rem; min-width: 0; padding: 0.25rem 0.4rem; text-align: left; border: 1px solid hsl(var(--line)); border-radius: var(--radius, 8px); background: hsl(var(--raised, var(--surface)) / 0.4); color: inherit; cursor: pointer; font: inherit; font-size: 0.78rem; }
+.look-chip:hover { border-color: hsl(var(--accent)); }
+.look-chip.on { border-color: hsl(var(--accent)); box-shadow: 0 0 0 1px hsl(var(--accent)); }
+.look-chip .ico { margin-left: auto; color: hsl(var(--accent)); flex: none; }
+.look-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.look-sw { display: flex; width: 2.2rem; height: 1.2rem; flex: none; overflow: hidden; border-radius: 4px; border: 1px solid hsl(var(--line) / 0.6); }
+.look-sw i { flex: 1; }
+.look-sw .look-auto { background: linear-gradient(110deg, #f4f4f5 50%, #27272a 50%); }
+.look-note { min-height: 2.6rem; margin: 0.4rem 0 0; padding: 0.4rem 0.6rem; border-radius: var(--radius, 8px); background: hsl(var(--raised, var(--surface)) / 0.5); font-size: 0.78rem; color: hsl(var(--muted)); }
+.look-note strong { color: hsl(var(--fg)); }
+.slider-row .bt-range { flex: 1; min-width: 6rem; }
+
+/* The tool box stays on one line: labels go first when room is short, then the zoom shrinks; it never wraps into a second row. */
+#app[data-tools='inline'] .transport > .edit-bar { flex-wrap: nowrap; overflow: hidden; width: max-content; max-width: 100%; }
+#app[data-tools='inline'] .edit-bar .zoom-box { flex: 0 1 8rem; min-width: 4rem; }
+#app[data-tools='inline'] .edit-bar .spacer { display: none; }
+@container stage (max-width: 1500px) { #app[data-tools='inline'] .transport > .edit-bar .tool-l { display: none; } }
+/* When the two do not fit side by side the tools drop to a row of their own under the play buttons, whole, instead of being clipped. */
+@container stage (max-width: 980px) { #app[data-tools='inline'] .transport { grid-template-columns: minmax(0, 1fr); justify-items: center; } #app[data-tools='inline'] .transport > :is(.transport-main, .edit-bar) { grid-column: 1; justify-self: center; } }
+.look-mock-dialog .bt-titlebar h2 { font-size: 0.72rem !important; line-height: 1.1; }
+.look-mock-dialog .bt-close { transform: scale(0.7); }

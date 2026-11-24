@@ -58,7 +58,7 @@ try {
   await b.route('https://gql.twitch.tv/gql', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify([{ data: { clip: { title: 'Twitch moment', durationSeconds: 4, playbackAccessToken: { signature: 's', value: 'v' }, assets: [{ aspectRatio: 1.77, videoQualities: [{ quality: '360', frameRate: 30, sourceURL: 'https://clips-media-assets2.twitch.tv/test.mp4' }] }] } } }]) }));
   await b.route('https://clips-media-assets2.twitch.tv/**', (r) => r.fulfill({ status: 200, contentType: 'video/mp4', headers: { 'access-control-allow-origin': '*', 'content-length': String(vonly.length) }, body: vonly }));
-  await b.locator('.home-quick', { hasText: 'From a computer' }).click();
+  await b.locator('.home-quick', { hasText: 'Send or receive' }).click();
   const dlg = b.getByRole('dialog', { name: 'Receive from a computer' });
   await dlg.waitFor();
 
@@ -153,7 +153,7 @@ try {
   await wb.end();
   const info3 = pc.shelfReady(sh2.id);
   const d = await newPage({ home: true });
-  await d.locator('.home-quick', { hasText: 'From a computer' }).click();
+  await d.locator('.home-quick', { hasText: 'Send or receive' }).click();
   const dd = d.getByRole('dialog', { name: 'Receive from a computer' });
   await dd.getByLabel('Link from the computer').fill(`http://127.0.0.1:${info3.port}/shelf/${info3.token}`);
   await dd.getByRole('button', { name: 'Receive' }).click();

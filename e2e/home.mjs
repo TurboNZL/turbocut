@@ -42,7 +42,7 @@ try {
   await page.getByRole('button', { name: 'Android install help' }).click();
   await page.getByRole('dialog', { name: 'Guides' }).waitFor();
   assert.match(await page.locator('.guide-page').textContent(), /Install unknown apps/);
-  await page.locator('.dlg .bt-close').click();
+  await page.locator('.dlg button.bt-close').click();
 
   // choosing a shape sets the project and closes the screen
   await page.getByRole('button', { name: /Landscape/ }).click();

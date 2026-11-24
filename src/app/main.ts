@@ -27,6 +27,7 @@ import { pickFiles, platform } from './platform.ts';
 import { Player } from './player.ts';
 import { openSettings, capturingKey, settingsView, type SettingsTab } from './settingsDialog.ts';
 import { Store, ZOOM_MAX, ZOOM_MIN } from './store.ts';
+import { loadSettings, type Look } from './settings.ts';
 import { detectSystemFonts, fontPermission } from './systemFonts.ts';
 import { TimelineView } from './timelineView.ts';
 import { checkForUpdate } from './updater.ts';
@@ -38,7 +39,10 @@ import { openReceiveDialog } from './receive.ts';
 import { openSendDialog, startSharing } from './share.ts';
 
 // Phones and some webviews cannot do the Liquid Glass lens; everything else about the look still applies.
-const themes = start({ persist: true, picker: true, lens: platform === 'web' || platform === 'electron', appearance: { theme: 'auto', ui: 'auto' } });
+// Newer themes are only downloaded when the person turned that on (Settings, Look): a download replaces the themes that are inside the app,
+// including the ones added after the downloadable pack was last built.
+const touchDevice = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const themes = start({ persist: true, picker: true, autoUpdate: loadSettings(touchDevice).themeUpdates, lens: platform === 'web' || platform === 'electron', appearance: { theme: 'auto', ui: 'auto' } });
 void loadStoredFonts();
 enhanceSelects(); // every drop-down is drawn by the theme, never the system's own list
 // Installed fonts: the desktop app lists them straight away (no prompt in Electron); a browser only if the person already allowed it.
@@ -47,6 +51,16 @@ void (async () => {
 })();
 
 const store = new Store();
+// The look lives in the theme engine; Settings mirrors it so a config file can carry it. A config that changes it is applied back to the engine.
+const lookOf = (a: ReturnType<typeof themes.appearance>): Look => ({ theme: a.theme, ui: a.ui, ...(a.glass ? { glass: a.glass } : {}), ...(a.wallpaper !== undefined ? { wallpaper: a.wallpaper } : {}), ...(a.wallpaperDarkness !== undefined ? { wallpaperDarkness: a.wallpaperDarkness } : {}) });
+const sameLook = (a: Look, b: Look) => JSON.stringify(a) === JSON.stringify(b);
+store.settings.look = lookOf(themes.appearance());
+themes.onAppearance((a) => !sameLook(store.settings.look, lookOf(a)) && store.updateSettings({ look: lookOf(a) }));
+store.on('settings', () => !sameLook(store.settings.look, lookOf(themes.appearance())) && themes.apply({ ...themes.appearance(), ...store.settings.look }));
+// How big the whole interface is: the root font size, which everything sized in rem follows.
+const applyUiScale = () => (document.documentElement.style.fontSize = store.settings.uiScale === 100 ? '' : `${store.settings.uiScale}%`);
+applyUiScale();
+store.on('settings', applyUiScale);
 const player = new Player(store);
 const actions = new Actions(store, player);
 const timeline = new TimelineView(store, {

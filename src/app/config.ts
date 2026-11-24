@@ -30,7 +30,11 @@ const SCALARS: [string, string, string][] = [
   ['General', 'autosave', 'Keep the project file up to date'],
   ['General', 'rememberMedia', 'Keep a copy of imported media'],
   ['General', 'autoCheckUpdates', 'Check for updates at start'],
+  ['Look', 'look', 'Colours and style'],
+  ['Look', 'uiScale', 'Interface size'],
+  ['Look', 'themeUpdates', 'Download newer themes'],
   ['Look', 'dock', 'Bottom dock'],
+  ['General', 'saveIn', 'Where new projects are saved'],
   ['Layout', 'layout', 'Active layout'],
   ['Layout', 'openTab', 'Tab that opens first'],
   ['Layout', 'autoSwitch', 'Jump to Clip or Captions on selection'],
@@ -60,7 +64,8 @@ export function entriesOf(s: Settings): ConfigEntry[] {
   const out: ConfigEntry[] = [];
   for (const [group, key, label] of SCALARS) {
     const value = (s as unknown as Record<string, unknown>)[key];
-    out.push({ path: key, group, label, value, text: key === 'trackOrder' ? (value as string[]).join(' above ') : words(value) });
+    const text = key === 'trackOrder' ? (value as string[]).join(' above ') : key === 'look' ? `${(value as { theme: string }).theme} with ${(value as { ui: string }).ui}` : key === 'uiScale' ? `${value} %` : words(value);
+    out.push({ path: key, group, label, value, text });
   }
   for (const [key, label] of TRANSCRIBE) {
     const value = (s.transcribe as unknown as Record<string, unknown>)[key];

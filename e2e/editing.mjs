@@ -334,7 +334,7 @@ try {
     await page.waitForTimeout(80);
     await noHand(`settings ${t}`);
   }
-  await page.locator('.dlg .bt-close').click();
+  await page.locator('.dlg button.bt-close').click();
   await page.getByRole('tab', { name: 'Media', exact: true }).click();
   await noHand('media');
   await page.getByRole('tab', { name: 'Captions', exact: true }).click();

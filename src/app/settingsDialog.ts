@@ -13,7 +13,7 @@ import { configPage } from './configPage.ts';
 import { forgetCopies, memoryUsage } from './mediaMemory.ts';
 import type { Store } from './store.ts';
 import { MODELS, type Compute } from '../transcribe/local.ts';
-import { desktopWindow } from './windowFrame.ts';
+import { lookPicker } from './lookPicker.ts';
 import { shareApi } from './share.ts';
 import { assetFor, checkForUpdate, apkUpdater, desktopUpdater, openApk, type UpdateStatus } from './updater.ts';
 import { APP_VERSION } from './version.ts';
@@ -83,7 +83,7 @@ export function settingsView(deps: SettingsDeps, tab: SettingsTab = 'General'): 
   const build = (t: SettingsTab): HTMLElement => {
     switch (t) {
       case 'General': return general(deps, refresh, show);
-      case 'Look': return look(deps, refresh);
+      case 'Look': return lookPicker(deps.store, refresh);
       case 'Layout': return layoutManager(store, refresh);
       case 'Fonts': return fontsTab(deps, refresh);
       case 'Guides': return guidesView();
@@ -221,21 +221,6 @@ function general({ store, openProjects }: SettingsDeps, redraw: () => void, go: 
     mediaMemoryPanel(store, redraw),
     panel('Settings file', h('p', { class: 'hint' }, 'Back up your settings, choose which ones to carry over, or set up another device from a file.'), h('button', { class: 'btn', onclick: () => go('Config') }, 'Open Config…')),
   );
-}
-
-/** The Look page: the colour theme, UI style and wallpaper picker from turbothemes, and how the window itself is drawn. */
-function look({ store }: SettingsDeps, redraw: () => void): HTMLElement {
-  const picker = Object.assign(document.createElement('turbo-themes-picker'), { variant: 'select' });
-  const w = desktopWindow;
-  return h('div', { class: 'stack' },
-    panel('Look', h('p', { class: 'hint' }, 'Colours, shapes and motion come from the theme you pick. Every look works with every layout.'), picker),
-    panel('Window',
-      check('Bottom dock with Home, Edit and Settings', store.settings.dock, (v) => (store.updateSettings({ dock: v }), redraw()), 'A bar along the bottom of the window, drawn by the look. Settings opens as a page instead of a window.'),
-      ...(w
-        ? [
-            check('Draw the title bar from the theme', w.customFrame, (v) => void w.setCustomFrame(v), 'Applies after TurboCut restarts. Turn it off to use your desktop\'s own title bar; macOS always uses its own.'),
-          ]
-        : [])));
 }
 
 function fontsTab({ store }: SettingsDeps, redraw: () => void): HTMLElement {

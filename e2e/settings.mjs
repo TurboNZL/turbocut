@@ -199,7 +199,7 @@ try {
   assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.previewScale), 100, 'the keyboard chooses a row');
   assert.equal(await menu.count(), 0, 'and the list closes');
   await pick(page, 'Preview sharpness', 'auto');
-  await page.locator('.dlg .bt-close').click();
+  await page.locator('.dlg button.bt-close').click();
   // every drop-down in the editor is upgraded: no visible native select anywhere
   const native = await page.evaluate(() => [...document.querySelectorAll('select')].filter((s) => !s.classList.contains('ts-native') && getComputedStyle(s).display !== 'none').map((s) => s.getAttribute('aria-label') ?? s.className));
   assert.deepEqual(native, [], 'no native drop-down is left in the page');
