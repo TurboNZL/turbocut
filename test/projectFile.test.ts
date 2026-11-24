@@ -76,7 +76,7 @@ describe('project names', () => {
   it('treats an old file with a name other than Untitled as a typed name, and Untitled as following the file', () => {
     const a = createProject({ name: 'Mine' });
     const b = createProject({ name: 'Untitled' });
-    expect(parseProject(JSON.stringify(a)).nameSet).toBe(true);
-    expect(parseProject(JSON.stringify(b)).nameSet).toBeUndefined();
+    expect(parseProject(serializeProject(a)).nameSet).toBe(true);
+    expect(parseProject(serializeProject(b)).nameSet).toBeUndefined();
   });
 });
