@@ -4,6 +4,9 @@ export const MODELS = [
   { id: 'onnx-community/whisper-base_timestamped', label: 'Balanced (base, about 80 MB)' },
   { id: 'onnx-community/whisper-tiny.en_timestamped', label: 'Fast, English only (tiny)' },
   { id: 'onnx-community/whisper-small_timestamped', label: 'Accurate (small, about 250 MB)' },
+  // Larger models for a computer. Their download sizes have not been measured here (the sandbox cannot reach Hugging Face): expect several hundred MB, and slower captions.
+  { id: 'onnx-community/whisper-medium_timestamped', label: 'Very accurate (medium, computers only, large download, slow)' },
+  { id: 'onnx-community/whisper-large-v3-turbo_timestamped', label: 'Most accurate (large-v3-turbo, computers only, very large download, slowest)' },
 ] as const;
 export const BALANCED_MODEL: string = MODELS[0].id;
 export const ACCURATE_MODEL: string = MODELS[2].id;
