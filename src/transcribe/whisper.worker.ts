@@ -3,7 +3,7 @@
 import { pipeline } from '@huggingface/transformers';
 
 interface RunMessage {
-  type: 'run';
+  type: 'run' | 'load';
   samples: Float32Array;
   model: string;
   device: 'webgpu' | 'wasm';
@@ -16,7 +16,7 @@ let loaded: { key: string; asr: any } | null = null;
 
 self.onmessage = async (e: MessageEvent<RunMessage>) => {
   const m = e.data;
-  if (m.type !== 'run') return;
+  if (m.type !== 'run' && m.type !== 'load') return;
   try {
     const key = `${m.model}|${m.device}`;
     if (loaded?.key !== key) {
@@ -29,6 +29,20 @@ self.onmessage = async (e: MessageEvent<RunMessage>) => {
         },
       } as any);
       loaded = { key, asr };
+    }
+    if (m.type === 'load') {
+      // Only fetch and store the model (the first-run setup): nothing is heard. The graphics chip is not kept busy with it.
+      if (m.device === 'webgpu') {
+        const asr = loaded.asr;
+        loaded = null;
+        try {
+          await asr.dispose?.();
+        } catch {
+          /* torn down with the worker */
+        }
+      }
+      (self as any).postMessage({ type: 'loaded' });
+      return;
     }
     (self as any).postMessage({ type: 'transcribing' });
     const out: any = await loaded.asr(m.samples, {

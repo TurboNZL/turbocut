@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld('turbocut', {
     },
     cancel: (id) => ipcRenderer.send('twitch:cancel', id),
   },
+  graphics: { report: () => ipcRenderer.invoke('graphics:report') },
   transcode: {
     available: () => ipcRenderer.invoke('transcode:available'),
     begin: (name) => ipcRenderer.invoke('transcode:begin', name),

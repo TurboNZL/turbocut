@@ -87,6 +87,24 @@ export class LocalTranscriber implements Transcriber {
     }
   }
 
+  /** Download and store the model now, without transcribing anything (the first-run setup). Always on the CPU path: it only has to fetch the files. */
+  preload(onProgress: (f: number) => void, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    const worker = (this.worker ??= new Worker(new URL('./whisper.worker.ts', import.meta.url), { type: 'module' }));
+    return new Promise((resolve, reject) => {
+      const end = () => ((worker.onmessage = null), (worker.onerror = null), signal?.removeEventListener('abort', stop));
+      const stop = () => (end(), worker.terminate(), (this.worker = null), reject(new DOMException('Cancelled', 'AbortError')));
+      signal?.addEventListener('abort', stop);
+      worker.onmessage = (e) => {
+        if (e.data.type === 'download') onProgress(e.data.progress);
+        else if (e.data.type === 'loaded') (end(), resolve());
+        else if (e.data.type === 'error') (end(), reject(new Error(e.data.message)));
+      };
+      worker.onerror = (e) => (end(), reject(new Error(e.message || 'Could not load the model')));
+      worker.postMessage({ type: 'load', samples: new Float32Array(0), model: this.model, device: 'wasm' });
+    });
+  }
+
   private drop(): void {
     this.worker?.terminate();
     this.worker = null;

@@ -34,6 +34,7 @@ import { checkForUpdate } from './updater.ts';
 import { openTwitchImport } from './twitchDialog.ts';
 import { openProjectSettings, SHAPES } from './projectSettings.ts';
 import { canvasInput } from './canvasInput.ts';
+import { startOnboarding } from './onboarding.ts';
 import { openProjectManager } from './projectManager.ts';
 import { openReceiveDialog, startInboxWatch } from './receive.ts';
 import { openSendDialog, startSharing } from './share.ts';
@@ -477,8 +478,10 @@ drawLayout();
 startInboxWatch(store, actions); // phone and browser: ask the remembered computers what is waiting, and say yes or no to it
 actions.sendHandler = () => void sendTo();
 startSharing(store, actions); // desktop app: be found by other TurboCut apps and accept what they send (each time, with an Accept)
-if (store.settings.showHome && projectDuration(store.project) === 0) showHome();
-else bootAnimation();
+// The first time TurboCut runs, a short setup (config file, speech model, devices) comes before anything else; the home screen follows it.
+const afterSetup = () => (store.settings.showHome && projectDuration(store.project) === 0 ? showHome() : bootAnimation());
+if (!store.settings.onboarded && !(navigator as any).webdriver) void startOnboarding(store, () => openReceiveDialog(store, actions)).then(afterSetup);
+else afterSetup();
 
 // Once a project has a file, changes are written to it a few seconds after the last one (Settings → Saving). Nothing is kept anywhere else:
 // a project that was never saved is asked about when it would be lost (a new project, opening another, closing the window).

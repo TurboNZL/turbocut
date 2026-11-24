@@ -22,7 +22,8 @@ protocol.registerSchemesAsPrivileged([
 // list can carry the spellings of several versions. `TURBOCUT_NO_VAAPI=1` turns it off for a driver that misbehaves. Without a driver
 // the page converts the file with ffmpeg instead (transcode.cjs).
 if (process.platform === 'linux' && process.env.TURBOCUT_NO_VAAPI !== '1') {
-  app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder,VaapiIgnoreDriverChecks,AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL,PlatformHEVCDecoderSupport');
+  const nvidia = require('./graphics.cjs').setupNvidia(app); // an NVIDIA card needs nvidia-vaapi-driver for this; set up when it is installed
+  app.commandLine.appendSwitch('enable-features', (nvidia ? 'VaapiOnNvidiaGPUs,' : '') + 'VaapiVideoDecoder,VaapiIgnoreDriverChecks,AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL,PlatformHEVCDecoderSupport');
 }
 
 const DIST = path.join(__dirname, '..', 'dist');
@@ -243,6 +244,11 @@ const transcoder = new Transcoder({ dir: defaultDir() });
 transcoder.sweep();
 app.on('before-quit', () => transcoder.sweep());
 ipcMain.handle('transcode:available', () => transcoder.available());
+ipcMain.handle('graphics:report', async () => {
+  const ok = await transcoder.available();
+  if (ok && transcoder.gpu === undefined) transcoder.gpu = await require('./transcode.cjs').probeGpu(transcoder.ffmpeg);
+  return require('./graphics.cjs').report(ok ? transcoder.gpu : null);
+});
 ipcMain.handle('transcode:begin', (_e, name) => transcoder.begin(name));
 ipcMain.handle('transcode:write', async (_e, id, bytes) => {
   try {

@@ -67,6 +67,15 @@ export async function deviceCheck(w = 1080, h = 1920): Promise<DeviceReport> {
     }
     L.push(`${label}: encode hardware-preferred ${yes(hw)}, software ${yes(sw)}, decode ${yes(dec)}`);
   }
+  let hevc = false;
+  try {
+    hevc = !!(await VideoDecoder.isConfigSupported({ codec: 'hvc1.1.6.L93.B0' })).supported;
+  } catch {
+    /* unsupported */
+  }
+  L.push(`H.265 (HEVC) decode in this window: ${yes(hevc)}${hevc ? '' : ' (clips are converted with ffmpeg instead)'}`);
+  const shell = (globalThis as any).turbocut?.graphics;
+  if (shell) L.push('', await shell.report().catch(() => 'Graphics report failed.'), '');
   for (const [codec, label] of [['mp4a.40.2', 'AAC'], ['opus', 'Opus']] as const) {
     let ok = false;
     try {
