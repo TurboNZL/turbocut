@@ -35,7 +35,7 @@ import { openTwitchImport } from './twitchDialog.ts';
 import { openProjectSettings, SHAPES } from './projectSettings.ts';
 import { canvasInput } from './canvasInput.ts';
 import { openProjectManager } from './projectManager.ts';
-import { openReceiveDialog } from './receive.ts';
+import { openReceiveDialog, startInboxWatch } from './receive.ts';
 import { openSendDialog, startSharing } from './share.ts';
 
 // Phones and some webviews cannot do the Liquid Glass lens; everything else about the look still applies.
@@ -474,6 +474,8 @@ function showHome(): void {
   dock.render(store.settings.dock, view);
 }
 drawLayout();
+startInboxWatch(store, actions); // phone and browser: ask the remembered computers what is waiting, and say yes or no to it
+actions.sendHandler = () => void sendTo();
 startSharing(store, actions); // desktop app: be found by other TurboCut apps and accept what they send (each time, with an Accept)
 if (store.settings.showHome && projectDuration(store.project) === 0) showHome();
 else bootAnimation();

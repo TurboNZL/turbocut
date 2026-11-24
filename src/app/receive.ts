@@ -4,7 +4,7 @@ import { importFont } from './fonts.ts';
 import { importPresetFile } from './presetIO.ts';
 import { platform } from './platform.ts';
 import { keepReceived } from './projectLibrary.ts';
-import { checkInbox, parseLink, pullShelf, pullToken, type Pulled } from './pull.ts';
+import { checkInbox, parseLink, pullShelf, pullToken, pushToComputer, type Pulled } from './pull.ts';
 import { deviceKey, forgetComputer, knownComputers, rememberComputer } from './pairing.ts';
 import type { Store } from './store.ts';
 
@@ -43,7 +43,9 @@ export function openReceiveDialog(store: Store, actions: Actions): void {
   const cancel = h('button', { class: 'btn btn-ghost' }, 'Cancel');
   const known = h('div', { class: 'share-found receive-known', role: 'list' });
   const status = new Map<string, string>();
-  const dlg = dialog('Receive from a computer', h('div', { class: 'stack' },
+  const sendBox = h('div', { class: 'share-found receive-send', role: 'list' });
+  const dlg = dialog('Send or receive', h('div', { class: 'stack' },
+    sendBox,
     known,
     h('label', { class: 'setting col' }, h('span', { class: 'prop-l' }, 'Link from the computer'), h('div', { class: 'share-link-row' }, link, paste)), note, progress), [cancel, go]);
   let abort: AbortController | null = null;
@@ -94,11 +96,45 @@ export function openReceiveDialog(store: Store, actions: Actions): void {
   const run = () => receive((o) => pullShelf(link.value, o));
 
   // ---- computers this device has fetched from before: look for what each has waiting
+  /** Send the open project to a computer this device has fetched from (it asks its person to accept; nothing to paste). */
+  const sendTo = async (c: { base: string; name: string }) => {
+    if (abort) return;
+    if (!(await actions.ensureName('The computer files it under this name.'))) return;
+    abort = new AbortController();
+    clearTimeout(pollTimer);
+    lockUi(true);
+    progress.style.display = '';
+    progress.removeAttribute('value');
+    try {
+      note.textContent = 'Packing the project…';
+      const b = await actions.makeBundle();
+      const id = identity();
+      await pushToComputer(c.base, { id: await shortHash(id.key), name: id.name }, b.file, { project: store.project.name, media: b.media, fonts: b.fonts }, {
+        signal: abort.signal,
+        onStage: (s) => (note.textContent = s === 'waiting' ? `Waiting for ${c.name} to accept…` : `Sending to ${c.name}…`),
+      });
+      watch.disconnect();
+      dlg.close();
+      store.say(`Sent "${store.project.name}" to ${c.name}.`);
+    } catch (e) {
+      if (abort?.signal.aborted) return;
+      note.textContent = e instanceof Error ? e.message : String(e);
+      progress.style.display = 'none';
+      lockUi(false);
+      abort = null;
+      startPolling();
+    }
+  };
   const drawKnown = () => {
     const list = knownComputers();
+    sendBox.hidden = list.length === 0 || store.project.tracks.every((t) => t.clips.length === 0);
+    sendBox.replaceChildren(
+      ...(sendBox.hidden ? [] : [h('p', { class: 'hint' }, `Send "${store.project.name}" to a computer. It asks to accept first, and keeps the project in its Projects.`)]),
+      ...list.map((c) => h('div', { class: 'share-device', role: 'listitem', 'data-send': c.base }, h('div', {}, h('strong', {}, c.name)), h('button', { class: 'btn btn-accent', type: 'button', onclick: () => void sendTo(c) }, 'Send'))),
+    );
     known.hidden = list.length === 0;
     known.replaceChildren(
-      ...(list.length ? [h('p', { class: 'hint' }, 'Computers you have received from. Press Send next to this device\'s name in TurboCut on the computer, and it starts here by itself.')] : []),
+      ...(list.length ? [h('p', { class: 'hint' }, 'Computers you have received from. When one sends you a project, this phone asks whether to keep it, even with this window closed.')] : []),
       ...list.map((c) => h('div', { class: 'share-device', role: 'listitem', 'data-computer': c.base },
         h('div', {}, h('strong', {}, c.name), h('small', { class: 'hint' }, ` ${status.get(c.base) ?? 'Looking…'}`)),
         h('button', { class: 'btn btn-ghost', 'aria-label': `Forget ${c.name}`, onclick: () => (forgetComputer(c.base), drawKnown()) }, 'Forget'))),
@@ -145,4 +181,66 @@ export function openReceiveDialog(store: Store, actions: Actions): void {
   link.addEventListener('paste', () => setTimeout(() => parseLink(link.value) && (note.textContent = 'Press Receive.'), 0));
   queueMicrotask(() => link.focus());
   if (platform !== 'web') void fromClipboard(true); // a browser would ask permission just for opening the window
+}
+
+/** A short, stable name for this device's key: the computer sees it instead of the key. */
+async function shortHash(key: string): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+}
+
+/**
+ * Phones and browsers cannot be found by a computer, so they look instead: while the app is open and showing, every few seconds each computer this
+ * device has received from is asked whether it has something waiting. When it does, a small window asks "Save it to your projects?" and one tap
+ * on Yes brings it across. Nothing is downloaded before that tap. A project that was declined is not asked about again until the app restarts.
+ */
+export function startInboxWatch(store: Store, actions: Actions): void {
+  if (platform === 'electron') return; // a computer is found directly and shows its own Accept
+  const declined = new Set<string>();
+  let asking = false;
+  const tick = async () => {
+    if (asking || document.hidden || document.querySelector('.dlg-backdrop')) return;
+    for (const c of knownComputers()) {
+      try {
+        const w = await checkInbox(c.base, deviceKey(), { signal: AbortSignal.timeout(2500) });
+        if (!w || declined.has(w.token)) continue;
+        asking = true;
+        const yes = await new Promise<boolean>((resolve) => {
+          let done = false;
+          const finish = (v: boolean) => {
+            if (done) return;
+            done = true;
+            seen.disconnect();
+            d.close();
+            resolve(v);
+          };
+          const d = dialog('Incoming project', h('p', {}, h('strong', {}, w.from), ' sent you ', h('strong', {}, `"${w.project}"`), '. Save it to your projects?'), [
+            h('button', { class: 'btn btn-accent', onclick: () => finish(true) }, 'Yes, save it'),
+            h('button', { class: 'btn', onclick: () => finish(false) }, 'No'),
+          ]);
+          const seen = new MutationObserver(() => d.el.isConnected || finish(false));
+          seen.observe(document.body, { childList: true });
+        });
+        if (!yes) {
+          declined.add(w.token);
+          asking = false;
+          continue;
+        }
+        store.say(`Receiving ${w.project} from ${w.from}…`);
+        try {
+          const got = await pullToken(c.base, w.token, { identity: { key: deviceKey(), name: store.settings.deviceName.trim() || (platform === 'android' ? 'Android phone' : 'TurboCut device') } });
+          rememberComputer(got.base, got.from);
+          await applyReceived(store, actions, got);
+        } catch (e) {
+          store.say(`Could not receive it: ${e instanceof Error ? e.message : e}`);
+        }
+        asking = false;
+        return;
+      } catch {
+        /* not reachable right now (another network, the app is closed there): try again next time */
+      }
+    }
+    asking = false;
+  };
+  setInterval(() => void tick(), 5000);
 }

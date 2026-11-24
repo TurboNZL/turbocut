@@ -88,6 +88,7 @@ export function openProjectManager(store: Store, actions: Actions, onOpened?: ()
                   h('small', {}, `${KIND[e.format]} · ${mb(e.size)}${e.modified ? ` · ${ago(e.modified)}` : ''} · ${e.folderLabel}`))),
               h('div', { class: 'pm-acts' },
                 ...(lib.canReveal() ? [h('button', { class: 'btn btn-ghost icon-btn', type: 'button', 'aria-label': `Show ${e.name} in its folder`, title: 'Show in folder', onclick: () => void lib.reveal(e) }, icon('folder', 16))] : []),
+                h('button', { class: 'btn btn-ghost icon-btn', type: 'button', 'aria-label': `Send ${e.name} to another device`, title: 'Send to another device (back to where it came from, or anywhere)', onclick: async () => { if (await actions.openFromRef(e.ref)) { done(); actions.sendHandler?.(); } } }, icon('send', 16)),
                 h('button', { class: 'btn btn-ghost icon-btn', type: 'button', 'aria-label': `Rename ${e.name}`, title: 'Rename', onclick: async () => {
                   const n = await askText('Rename project', e.name.replace(/\.turbocut[cf]?$/i, ''), 'Name', 'Rename');
                   if (n && n.trim()) await act(async () => {

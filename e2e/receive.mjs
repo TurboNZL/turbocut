@@ -59,7 +59,7 @@ try {
     r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify([{ data: { clip: { title: 'Twitch moment', durationSeconds: 4, playbackAccessToken: { signature: 's', value: 'v' }, assets: [{ aspectRatio: 1.77, videoQualities: [{ quality: '360', frameRate: 30, sourceURL: 'https://clips-media-assets2.twitch.tv/test.mp4' }] }] } } }]) }));
   await b.route('https://clips-media-assets2.twitch.tv/**', (r) => r.fulfill({ status: 200, contentType: 'video/mp4', headers: { 'access-control-allow-origin': '*', 'content-length': String(vonly.length) }, body: vonly }));
   await b.locator('.home-quick', { hasText: 'Send or receive' }).click();
-  const dlg = b.getByRole('dialog', { name: 'Receive from a computer' });
+  const dlg = b.getByRole('dialog', { name: 'Send or receive' });
   await dlg.waitFor();
 
   // something that is not a link is explained and the window stays; so is a link that is wrong
@@ -99,8 +99,8 @@ try {
   await w2.end();
   pc.shelfReady(again.id);
   await b.evaluate(() => import('/src/app/receive.ts').then((m) => m.openReceiveDialog(window.turbocutApp.store, window.turbocutApp.actions)));
-  const d3 = b.getByRole('dialog', { name: 'Receive from a computer' });
-  await d3.getByText('Studio PC').waitFor();
+  const d3 = b.getByRole('dialog', { name: 'Send or receive' });
+  await d3.locator('.receive-known').getByText('Studio PC').waitFor();
   await b.getByRole('dialog', { name: 'Save this project first?' }).getByRole('button', { name: 'Discard it' }).click({ timeout: 20000 });
   await b.waitForFunction(() => window.turbocutApp.store.project.name === 'Second one', null, { timeout: 20000 });
   assert.equal(pc.shelves.size, 0, 'it arrived without anyone pasting a link, and the shelf closed');
@@ -125,7 +125,7 @@ try {
   await w.end();
   const info2 = pc.shelfReady(sh.id);
   await c.evaluate(() => import('/src/app/receive.ts').then((m) => m.openReceiveDialog(window.turbocutApp.store, window.turbocutApp.actions)));
-  const d2 = c.getByRole('dialog', { name: 'Receive from a computer' });
+  const d2 = c.getByRole('dialog', { name: 'Send or receive' });
   await d2.getByLabel('Link from the computer').fill(`http://127.0.0.1:${info2.port}/shelf/${info2.token}`);
   await d2.getByRole('button', { name: 'Receive' }).click();
   await c.getByRole('dialog', { name: /Downloading/ }).getByText(/Could not reach Twitch/).waitFor({ timeout: 20000 });
@@ -154,7 +154,7 @@ try {
   const info3 = pc.shelfReady(sh2.id);
   const d = await newPage({ home: true });
   await d.locator('.home-quick', { hasText: 'Send or receive' }).click();
-  const dd = d.getByRole('dialog', { name: 'Receive from a computer' });
+  const dd = d.getByRole('dialog', { name: 'Send or receive' });
   await dd.getByLabel('Link from the computer').fill(`http://127.0.0.1:${info3.port}/shelf/${info3.token}`);
   await dd.getByRole('button', { name: 'Receive' }).click();
   await d.waitForFunction(() => window.turbocutApp.store.project.name === 'From the PC', null, { timeout: 20000 });

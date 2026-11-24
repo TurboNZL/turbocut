@@ -2,7 +2,7 @@ import { cueAt, findCue, splitCue } from '../core/captions.ts';
 import { changeFps } from '../core/fps.ts';
 import { exportPreset } from '../captions/presets.ts';
 import { packBundle, unpackBundle, type BundlePart } from '../core/bundle.ts';
-import { FORMATS, FORMAT_EXT, FORMAT_LABEL, PROJECT_NAME, formatOfName, matchMedia, nameOfFile, parseProject, serializeProject, type ProjectFormat } from '../core/projectFile.ts';
+import { projectFileName, FORMATS, FORMAT_EXT, FORMAT_LABEL, PROJECT_NAME, formatOfName, matchMedia, nameOfFile, parseProject, serializeProject, type ProjectFormat } from '../core/projectFile.ts';
 import { addClip, createProject, addTrack, moveTrackTo, clipEnd, createClip, findClip, findFreeStart, newId, projectDuration, removeLinked, removeTrack, splitLinked, trimEnd, trimStart } from '../core/timeline.ts';
 import type { AssetSource, Track } from '../core/types.ts';
 import { overlaps } from '../core/timeline.ts';
@@ -34,6 +34,18 @@ export class Actions {
       const failed = await this.importOne(file, place, folder);
       if (failed) this.store.say(`Could not open ${file.name}: ${failed}. This device may not support its format.`);
     }
+  }
+
+  /** Set by the app: opens the Send window for the open project (the project manager's Send button uses it). */
+  sendHandler?: () => void;
+
+  /** The open project as one full project file, for sending it to another device. */
+  async makeBundle(): Promise<{ file: File; media: number; fonts: number }> {
+    const { store } = this;
+    await Promise.all([...this.keeping]);
+    const c = await collectShare(store);
+    const built = await this.buildContent('full', store.fileName ?? store.project.name);
+    return { file: new File([built.content], projectFileName(store.project.name, 'full')), media: c.media.length, fonts: c.fonts.length };
   }
 
   /** Say something in the status line. */
