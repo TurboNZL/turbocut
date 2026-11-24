@@ -16,7 +16,7 @@ Whisper sometimes writes words where nobody speaks, repeats a phrase in a loop, 
 
 ## When captions look wrong
 1. Check the language.
-2. Try the Accurate model, or the other processor. The small models time words loosely and mishear more.
+2. Try a bigger model (Small, Medium or Large), or the other processor. The small models time words loosely and mishear more.
 3. Press *Copy captions report* and send it: it lists the model, the processor, the audio level and the first words exactly as the model returned them.
 
 ## Editing

@@ -276,7 +276,7 @@ try {
   assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.transcribe.model), 'onnx-community/whisper-small_timestamped', 'a computer defaults to the accurate model');
   await page.getByRole('button', { name: 'Generate captions' }).click();
   await page.getByRole('dialog', { name: 'Choose a speech model' }).waitFor();
-  assert.ok(await page.getByRole('radio', { name: /Accurate/ }).isChecked(), 'the accurate model is preselected on a computer');
+  assert.ok(await page.getByRole('radio', { name: /^Small/ }).isChecked(), 'the Small model is preselected on a computer');
   await page.getByRole('radio', { name: /Fast/ }).check();
   await page.getByRole('button', { name: 'Use this model' }).click();
   await page.waitForFunction(() => window.turbocutApp.store.settings.transcribe.modelChosen);
