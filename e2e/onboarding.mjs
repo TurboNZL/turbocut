@@ -24,7 +24,7 @@ try {
   let page = await open();
   await dlg(page).waitFor();
   await dlg(page).getByRole('button', { name: 'No, set up from scratch' }).click();
-  await dlg(page).getByLabel(/^Balanced/).check();
+  await dlg(page).getByLabel(/^Base/).check();
   await dlg(page).getByRole('button', { name: 'Choose it, download later' }).click();
   await dlg(page).getByLabel('Device name').fill('Test box');
   await dlg(page).getByRole('button', { name: /Link with a computer|Done/ }).click();

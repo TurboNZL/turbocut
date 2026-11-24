@@ -1,25 +1,28 @@
 import type { Pcm16k, TimedWord, Transcriber, TranscribeOptions } from './provider.ts';
 
+/** Smallest to largest, named by size so the order says what to expect: each step up is slower and more accurate. The ids are Hugging Face repositories. */
 export const MODELS = [
-  { id: 'onnx-community/whisper-base_timestamped', label: 'Balanced (base, about 80 MB)' },
-  { id: 'onnx-community/whisper-tiny.en_timestamped', label: 'Fast, English only (tiny)' },
-  { id: 'onnx-community/whisper-small_timestamped', label: 'Accurate (small, about 250 MB)' },
+  { id: 'onnx-community/whisper-tiny.en_timestamped', label: 'Tiny, English only (about 40 MB): quickest, roughest' },
+  { id: 'onnx-community/whisper-base_timestamped', label: 'Base (about 80 MB): good for clear speech, best on a phone' },
+  { id: 'onnx-community/whisper-small_timestamped', label: 'Small (about 250 MB): fewer wrong words, tighter timing' },
   // Larger models for a computer. Their download sizes have not been measured here (the sandbox cannot reach Hugging Face): expect several hundred MB, and slower captions.
-  { id: 'onnx-community/whisper-medium_timestamped', label: 'Very accurate (medium, computers only, large download, slow)' },
-  { id: 'onnx-community/whisper-large-v3-turbo_timestamped', label: 'Most accurate (large-v3-turbo, computers only, very large download, slowest)' },
+  { id: 'onnx-community/whisper-medium_timestamped', label: 'Medium (large download, computers only): slower, more accurate again' },
+  { id: 'onnx-community/whisper-large-v3-turbo_timestamped', label: 'Large, turbo (very large download, computers only): the most accurate, slowest' },
 ] as const;
-export const BALANCED_MODEL: string = MODELS[0].id;
-export const ACCURATE_MODEL: string = MODELS[2].id;
+const modelId = (repo: string): string => MODELS.find((m) => m.id.endsWith(`/${repo}`))!.id;
+export const TINY_MODEL: string = modelId('whisper-tiny.en_timestamped');
+export const BALANCED_MODEL: string = modelId('whisper-base_timestamped');
+export const ACCURATE_MODEL: string = modelId('whisper-small_timestamped');
 
-/** The model offered first: accurate on a computer (the download is once, the wait is for a short clip), balanced on a phone. */
+/** The model offered first: small on a computer (the download is once, the wait is for a short clip), base on a phone. */
 export const recommendedModel = (touch: boolean): string => (touch ? BALANCED_MODEL : ACCURATE_MODEL);
 export const DEFAULT_MODEL = BALANCED_MODEL;
 
-/** The choices shown the first time captions are generated: what each costs and gives. */
+/** The choices shown the first time captions are generated and in the first-run setup, smallest first: what each costs and gives. */
 export const MODEL_CHOICES: { id: string; name: string; size: string; note: string }[] = [
-  { id: 'onnx-community/whisper-tiny.en_timestamped', name: 'Fast', size: 'about 40 MB', note: 'English only. Quickest, and the most mistakes and the loosest timing.' },
-  { id: BALANCED_MODEL, name: 'Balanced', size: 'about 80 MB', note: 'Good for clear speech. The best fit for a phone.' },
-  { id: ACCURATE_MODEL, name: 'Accurate', size: 'about 250 MB', note: 'Fewer wrong words and tighter timing. Slower, and the better choice on a computer.' },
+  { id: TINY_MODEL, name: 'Tiny (English only)', size: 'about 40 MB', note: 'Quickest. The most mistakes and the loosest timing.' },
+  { id: BALANCED_MODEL, name: 'Base', size: 'about 80 MB', note: 'Good for clear speech. The best fit for a phone.' },
+  { id: ACCURATE_MODEL, name: 'Small', size: 'about 250 MB', note: 'Fewer wrong words and tighter timing. Slower, and the better choice on a computer.' },
 ];
 
 export type Compute = 'auto' | 'webgpu' | 'wasm';
