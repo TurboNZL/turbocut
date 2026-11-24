@@ -91,10 +91,7 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
   assert.equal(await page.locator('.home').count(), 1, 'closing the manager leaves the home screen where it was');
-  const [chooser2] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: /Import video/ }).click()]);
-  await chooser2.setFiles([]);
-  await page.waitForTimeout(300);
-  assert.equal(await page.locator('.home').count(), 1, 'and so does cancelling an import');
+  assert.equal(await page.getByRole('button', { name: /Import video/ }).count(), 0, 'the home screen has no import button: media goes in through the Media tab');
 
   // recent projects: nothing to list yet; once a project is saved to a file it is one tap away on the next start (the list holds the file, not a copy)
   assert.equal(await page.locator('.home-recent').isVisible(), false, 'no recent list while there is nothing to list');
@@ -103,7 +100,7 @@ try {
   await page.evaluate(async (b64) => {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     await window.turbocutApp.importMedia([new File([bytes], 'clip.webm', { type: 'video/webm' })], true);
-    window.turbocutApp.store.edit((p) => (p.name = 'My short'));
+    window.turbocutApp.store.edit((p) => ((p.name = 'My short'), (p.nameSet = true)));
   }, media);
   await page.keyboard.press('Control+s'); // the first save asks where (the test's file dialog answers)
   await page.waitForFunction(() => !window.turbocutApp.store.dirty);

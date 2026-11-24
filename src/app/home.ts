@@ -165,7 +165,7 @@ export function openHome(deps: HomeDeps): { close: () => void; el: HTMLElement }
       arrive(recent, 3),
       arrive(h('div', { class: 'home-quicks' },
         quick('folder', 'Projects', 'Open one you saved, or find a file', () => deps.openProjects(close)),
-        quick('send', 'Send or receive', 'Move projects between your devices', () => deps.receive()),
+        quick('send', 'Send or receive', 'Between your phone and computer', () => deps.receive()),
         quick('settings', 'Make it yours', 'Layouts, fonts and looks', () => deps.openSettings('Layout'))), 4),
       // The update line is the last thing on the first screen. Everything after it waits below the edge.
       arrive(h('section', { class: 'home-card home-updates' },

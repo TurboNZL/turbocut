@@ -26,7 +26,7 @@ try {
   await S(async (b64) => {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     await window.turbocutApp.importMedia([new File([bytes], 'clip.webm', { type: 'video/webm' })], true);
-    window.turbocutApp.store.edit((p) => (p.name = 'My short'));
+    window.turbocutApp.store.edit((p) => ((p.name = 'My short'), (p.nameSet = true)));
   }, media);
   let f = await files();
   assert.equal(f.dirty, true);
@@ -39,7 +39,7 @@ try {
   assert.deepEqual(f.ref, { kind: 'path', path: '/fake/My short.turbocut' });
 
   // ---- the next Save writes to the same file without asking
-  await S(() => window.turbocutApp.store.edit((p) => (p.name = 'My short')));
+  await S(() => window.turbocutApp.store.edit((p) => ((p.name = 'My short'), (p.nameSet = true))));
   await S(() => window.turbocutApp.actions.addText('Second'));
   await page.keyboard.press('Control+s');
   await page.waitForFunction(() => !window.turbocutApp.store.dirty);
@@ -104,7 +104,7 @@ try {
 
   // ---- Save, then continue: cancelling the save dialog keeps everything where it was
   await S(() => window.turbocutApp.actions.addText('Scratch'));
-  await S(() => window.turbocutApp.store.edit((p) => (p.name = 'Scratch')));
+  await S(() => window.turbocutApp.store.edit((p) => ((p.name = 'Scratch'), (p.nameSet = true))));
   await S(() => (window.__files.saveAsPath = () => null)); // the person cancels the save dialog
   await S(() => void window.turbocutApp.actions.newProject());
   await ask.waitFor();
