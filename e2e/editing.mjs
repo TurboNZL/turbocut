@@ -277,7 +277,7 @@ try {
   await page.getByRole('button', { name: 'Generate captions' }).click();
   await page.getByRole('dialog', { name: 'Choose a speech model' }).waitFor();
   assert.ok(await page.getByRole('radio', { name: /^Small/ }).isChecked(), 'the Small model is preselected on a computer');
-  await page.getByRole('radio', { name: /Fast/ }).check();
+  await page.getByRole('radio', { name: /^Tiny/ }).check();
   await page.getByRole('button', { name: 'Use this model' }).click();
   await page.waitForFunction(() => window.turbocutApp.store.settings.transcribe.modelChosen);
   assert.equal(await page.evaluate(() => window.turbocutApp.store.settings.transcribe.model), 'onnx-community/whisper-tiny.en_timestamped');
