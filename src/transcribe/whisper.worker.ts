@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 // Runs Whisper through Transformers.js off the main thread. Loaded only when the user asks for local captions.
 import { pipeline } from '@huggingface/transformers';
+import { downloadProgress } from './downloadProgress.ts';
 
 interface RunMessage {
   type: 'run' | 'load';
@@ -24,9 +25,10 @@ self.onmessage = async (e: MessageEvent<RunMessage>) => {
         device: m.device,
         // fp32 encoder + 4 bit decoder is the combination Transformers.js documents for WebGPU; q8 for the CPU path.
         dtype: dtypeFor(m.device),
-        progress_callback: (p: any) => {
-          if (p?.status === 'progress' && typeof p.progress === 'number') (self as any).postMessage({ type: 'download', progress: p.progress / 100, file: p.file });
-        },
+        progress_callback: ((track) => (p: any) => {
+          const f = track(p);
+          if (f != null) (self as any).postMessage({ type: 'download', progress: f });
+        })(downloadProgress()),
       } as any);
       loaded = { key, asr };
     }
